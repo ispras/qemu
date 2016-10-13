@@ -74,6 +74,10 @@ static void windbg_send_data_packet(uint8_t *data, uint16_t byte_count,
                       sizeof(trailing_byte));
 
     data_packet_id ^= 1;
+
+    DUMP_STRUCT(packet);
+    DUMP_ARRAY(data, byte_count);
+    DUMP_VAR(trailing_byte);
 }
 
 static void windbg_send_control_packet(uint16_t type)
@@ -89,6 +93,8 @@ static void windbg_send_control_packet(uint16_t type)
     qemu_chr_fe_write(windbg_chr, (uint8_t *)&packet, sizeof(packet));
 
     cntrl_packet_id ^= 1;
+
+    DUMP_STRUCT(packet);
 }
 
 static void windbg_process_manipulate_packet(Context *ctx)
@@ -467,7 +473,9 @@ static void windbg_in_chr_receive(void *opaque, const uint8_t *buf, int size)
     if (lock) {
         int i;
         for (i = 0; i < size; i++) {
-            windbg_read_byte(&input_context, buf[i]);
+            uint8_t tmp = buf[i];
+            windbg_read_byte(&input_context, tmp);
+            DUMP_VAR(tmp);
         }
     }
 }

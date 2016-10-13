@@ -4,6 +4,44 @@
 #include "exec/windbgkd.h"
 #include "cpu.h"
 
+// FOR DEBUG
+
+#define COUT(...) printf(__VA_ARGS__);
+#define COUT_DEC(var) COUT_COMMON("%d", var)
+#define COUT_HEX(var) COUT_COMMON("0x%x", var)
+#define COUT_STRING(var) COUT_COMMON("%s", var)
+#define COUT_SIZEOF(var) COUT_DEC(sizeof(var))
+#define COUT_COMMON(fmt, var) COUT(#var ": " fmt "\n", var);
+
+#define COUT_STRUCT(var) COUT_ARRAY(&var, 1)
+#define COUT_PSTRUCT(var) COUT_ARRAY(var, 1)
+#define COUT_ARRAY(var, count) _COUT_STRUCT(var, sizeof(*(var)), count)
+#define _COUT_STRUCT(var, size, count) {          \
+    COUT("%s: ", #var);                           \
+    COUT("[size: %d, count: %d]\n", size, count); \
+    int di;                                       \
+    for (di = 0; di < size * count; ++di) {       \
+        if (di % 16 == 0 && di != 0) {            \
+            COUT("\n");                           \
+        }                                         \
+        COUT("%02x ", ((uint8_t *) (var))[di]);   \
+    }                                             \
+    COUT("\n");                                   \
+}
+
+// FOR DEBUG END
+
+#define DUMP_VAR(var) windbg_dump("%c", var);
+#define DUMP_STRUCT(var) DUMP_ARRAY(&var, 1)
+#define DUMP_PSTRUCT(var) DUMP_ARRAY(var, 1)
+#define DUMP_ARRAY(var, count) _DUMP_STRUCT(var, sizeof(*(var)), count)
+#define _DUMP_STRUCT(var, size, count) {    \
+    int di;                                 \
+    for (di = 0; di < size * count; ++di) { \
+       DUMP_VAR(((uint8_t *) (var))[di]);   \
+    }                                       \
+}
+
 #define ROUND(value, max) value > max ? max : value
 
 #define BYTE(var, index) (COMMON_PTR(uint8_t, var)[index])
