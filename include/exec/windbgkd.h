@@ -282,6 +282,7 @@ typedef ARM_DBGKD_CONTROL_SET DBGKD_CONTROL_SET, *PDBGKD_CONTROL_SET;
 #error Unsupported Architecture
 #endif
 
+/*
 #ifndef EXCEPTION_RECORD32
 typedef struct _EXCEPTION_RECORD32 {
     LONG32 ExceptionCode;
@@ -293,7 +294,7 @@ typedef struct _EXCEPTION_RECORD32 {
 } EXCEPTION_RECORD32, *PEXCEPTION_RECORD32;
 #endif
 
-#ifndef EXCEPTION_RECORD64
+#if !defined(EXCEPTION_RECORD64)
 typedef struct _EXCEPTION_RECORD64 {
     LONG32 ExceptionCode;
     ULONG32 ExceptionFlags;
@@ -304,6 +305,7 @@ typedef struct _EXCEPTION_RECORD64 {
     UINT64 ExceptionInformation[15];
 } EXCEPTION_RECORD64, *PEXCEPTION_RECORD64;
 #endif
+*/
 
 //
 // DBGKM Structure for Exceptions

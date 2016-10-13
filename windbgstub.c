@@ -1,3 +1,6 @@
+#include "qemu/osdep.h"
+
+#include "cpu.h"
 #include "qemu-common.h"
 #include "sysemu/char.h"
 #include "sysemu/sysemu.h"
@@ -6,6 +9,27 @@
 
 //windbg.exe -b -k com:pipe,baud=115200,port=\\.\pipe\windbg,resets=0
 //qemu.exe -windbg pipe:async,windbg
+
+typedef enum ParsingState {
+    STATE_LEADER,
+    STATE_PACKET_TYPE,
+    STATE_PACKET_BYTE_COUNT,
+    STATE_PACKET_ID,
+    STATE_PACKET_CHECKSUM,
+    STATE_PACKET_DATA,
+    STATE_TRAILING_BYTE,
+} ParsingState;
+
+typedef struct Context {
+    // index in the current buffer,
+    // which depends on the current state
+    int index;
+    ParsingState state;
+    KD_PACKET packet;
+    uint8_t data[PACKET_MAX_SIZE];
+} Context;
+
+static Context input_context = { .state = STATE_LEADER };
 
 static CharDriverState *windbg_chr = NULL;
 
@@ -66,6 +90,21 @@ static void windbg_send_control_packet(uint16_t type)
     cntrl_packet_id ^= 1;
 }
 
+static void windbg_process_manipulate_packet(Context *ctx)
+{
+
+}
+
+static void windbg_process_data_packet(Context *ctx)
+{
+
+}
+
+static void windbg_process_control_packet(Context *ctx)
+{
+
+}
+
 static int windbg_chr_can_receive(void *opaque)
 {
   /* We can handle an arbitrarily large amount of data.
@@ -75,17 +114,107 @@ static int windbg_chr_can_receive(void *opaque)
 
 static void windbg_read_byte(Context *ctx, uint8_t byte)
 {
-
+    switch (ctx->state) {
+    case STATE_LEADER:
+        if (byte == PACKET_LEADER_BYTE || byte == CONTROL_PACKET_LEADER_BYTE) {
+            if (ctx->index > 0 && byte != BYTE(ctx->packet.PacketLeader, 0)) {
+                ctx->index = 0;
+            }
+            BYTE(ctx->packet.PacketLeader, ctx->index) = byte;
+            ++ctx->index;
+            if (ctx->index == sizeof(ctx->packet.PacketLeader)) {
+                ctx->state = STATE_PACKET_TYPE;
+                ctx->index = 0;
+            }
+        } else if (byte == BREAKIN_PACKET_BYTE) {
+            //TODO: For all processors
+            //TODO: breakpoint
+            cpu_single_step(find_cpu(0), SSTEP_ENABLE);
+            //TODO: data_packet_id = INITIAL_PACKET_ID;
+            ctx->index = 0;
+        } else {
+            // skip the byte, restart waiting for the leader
+            ctx->index = 0;
+        }
+        break;
+    case STATE_PACKET_TYPE:
+        BYTE(ctx->packet.PacketType, ctx->index) = byte;
+        ++ctx->index;
+        if (ctx->index == sizeof(ctx->packet.PacketType)) {
+            if (ctx->packet.PacketType >= PACKET_TYPE_MAX) {
+                ctx->state = STATE_LEADER;
+            } else {
+                if (ctx->packet.PacketLeader == CONTROL_PACKET_LEADER
+                    && ctx->packet.PacketType == PACKET_TYPE_KD_RESEND) {
+                    ctx->state = STATE_LEADER;
+                } else {
+                    ctx->state = STATE_PACKET_BYTE_COUNT;
+                }
+            }
+            ctx->index = 0;
+        }
+        break;
+    case STATE_PACKET_BYTE_COUNT:
+        BYTE(ctx->packet.ByteCount, ctx->index) = byte;
+        ++ctx->index;
+        if (ctx->index == sizeof(ctx->packet.ByteCount)) {
+            ctx->state = STATE_PACKET_ID;
+            ctx->index = 0;
+        }
+        break;
+    case STATE_PACKET_ID:
+        BYTE(ctx->packet.PacketId, ctx->index) = byte;
+        ++ctx->index;
+        if (ctx->index == sizeof(ctx->packet.PacketId)) {
+            ctx->state = STATE_PACKET_CHECKSUM;
+            ctx->index = 0;
+        }
+        break;
+    case STATE_PACKET_CHECKSUM:
+        BYTE(ctx->packet.Checksum, ctx->index) = byte;
+        ++ctx->index;
+        if (ctx->index == sizeof(ctx->packet.Checksum)) {
+            if (ctx->packet.PacketLeader == CONTROL_PACKET_LEADER) {
+                windbg_process_control_packet(ctx);
+                ctx->state = STATE_LEADER;
+            } else {
+                if (ctx->packet.ByteCount > PACKET_MAX_SIZE) {
+                    ctx->state = STATE_LEADER;
+                    cntrl_packet_id = 0;
+                    windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
+                } else {
+                    ctx->state = STATE_PACKET_DATA;
+                }
+            }
+            ctx->index = 0;
+        }
+        break;
+    case STATE_PACKET_DATA:
+        ctx->data[ctx->index] = byte;
+        ++ctx->index;
+        if (ctx->index == ctx->packet.ByteCount) {
+            ctx->state = STATE_TRAILING_BYTE;
+            ctx->index = 0;
+        }
+        break;
+    case STATE_TRAILING_BYTE:
+        if (byte == PACKET_TRAILING_BYTE) {
+            windbg_process_data_packet(ctx);
+        } else {
+            cntrl_packet_id = 0;
+            windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
+        }
+        ctx->state = STATE_LEADER;
+        break;
+    }
 }
 
 static void windbg_in_chr_receive(void *opaque, const uint8_t *buf, int size)
 {
     if (lock) {
         int i;
-
         for (i = 0; i < size; i++) {
-            uint8_t tmp = buf[i];
-            windbg_read_byte(&input_context, tmp);
+            windbg_read_byte(&input_context, buf[i]);
         }
     }
 }
@@ -100,7 +229,7 @@ static void windbg_close(void)
 
 void windbg_start_sync(void)
 {
-    lock = 1;f
+    lock = 1;
 }
 
 int windbgserver_start(const char *device)
