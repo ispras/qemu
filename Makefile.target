@@ -149,6 +149,12 @@ obj-$(CONFIG_XEN_I386) += xen-hvm.o xen-mapcache.o
 obj-$(call lnot,$(CONFIG_XEN)) += xen-common-stub.o
 obj-$(call lnot,$(CONFIG_XEN_I386)) += xen-hvm-stub.o
 
+# WinDbg support
+ifeq ($(TARGET_ARCH), i386)
+obj-y += windbgstub-utils.o
+obj-y += windbgstub.o
+endif
+
 # Hardware support
 ifeq ($(TARGET_NAME), sparc64)
 obj-y += hw/sparc64/
