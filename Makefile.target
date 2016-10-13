@@ -150,9 +150,9 @@ obj-$(call lnot,$(CONFIG_XEN)) += xen-common-stub.o
 obj-$(call lnot,$(CONFIG_XEN_I386)) += xen-hvm-stub.o
 
 # WinDbg support
-ifeq ($(TARGET_ARCH), i386)
-obj-y += windbgstub-utils.o
+ifeq ($(TARGET_NAME), i386)
 obj-y += windbgstub.o
+# obj-y += windbgstub-utils.o
 endif
 
 # Hardware support
