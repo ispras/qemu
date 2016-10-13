@@ -12,6 +12,8 @@
 #define COMMON_PTR(ptr, var) ((ptr *) &(var))
 #define PTR(var) COMMON_PTR(uint8_t, var)
 
+#define M64_OFFSET(data) data + sizeof(DBGKD_MANIPULATE_STATE64)
+
 #define CPU_ARCH_STATE(cpu) (CPUArchState *) (cpu)->env_ptr
 
 #define OFFSET_KPRCB            0x20
@@ -64,8 +66,10 @@ typedef struct _KSPECIAL_REGISTERS
 PCPU_CTRL_ADDRS         get_KPCRAddress(int index);
 PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index);
 PCONTEXT                get_Context(int index);
+PKSPECIAL_REGISTERS     get_KSpecialRegisters(int index);
 
 void set_Context(uint8_t *data, int len, int index);
+void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index);
 
 CPUState *find_cpu(int index);
 uint8_t cpu_amount(void);

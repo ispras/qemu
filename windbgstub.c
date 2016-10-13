@@ -39,6 +39,8 @@ static uint32_t cntrl_packet_id = RESET_PACKET_ID;
 static UCHAR lock = 0;
 //////////////////////////////////////////////////
 
+static PCPU_CTRL_ADDRS pc_addrs;
+
 static void windbg_dump(const char *fmt, ...)
 {
     va_list ap;
@@ -91,7 +93,197 @@ static void windbg_send_control_packet(uint16_t type)
 
 static void windbg_process_manipulate_packet(Context *ctx)
 {
+    uint8_t packet[PACKET_MAX_SIZE];
+    size_t packet_size = 0,
+           extra_data_size = 0,
+           m64_size = sizeof(DBGKD_MANIPULATE_STATE64);
+    uint32_t count, addr;
+    bool send_only_m64 = false;
+    DBGKD_MANIPULATE_STATE64 m64;
 
+    CPUState *cpu = find_cpu(0);
+
+    memset(packet, 0, PACKET_MAX_SIZE);
+    memcpy(&m64, ctx->data, m64_size);
+
+    extra_data_size = ctx->packet.ByteCount - m64_size;
+
+    m64.ReturnStatus = 0x0;
+
+    switch(m64.ApiNumber) {
+
+    case DbgKdReadVirtualMemoryApi:
+        count = m64.u.ReadMemory.TransferCount;
+        addr = m64.u.ReadMemory.TargetBaseAddress;
+
+        m64.u.ReadMemory.ActualBytesRead = count;
+        cpu_memory_rw_debug(cpu, addr, M64_OFFSET(packet), count, 0);
+
+        packet_size = m64_size + count;
+
+        break;
+    case DbgKdWriteVirtualMemoryApi:
+        count = ROUND(extra_data_size, m64.u.WriteMemory.TransferCount);
+        addr = m64.u.WriteMemory.TargetBaseAddress;
+
+        m64.u.WriteMemory.ActualBytesWritten = count;
+        cpu_memory_rw_debug(cpu, addr, M64_OFFSET(ctx->data), count, 1);
+
+        send_only_m64 = true;
+        break;
+    case DbgKdGetContextApi:
+        packet_size = sizeof(CONTEXT);
+        //TODO: For all processors
+        memcpy(M64_OFFSET(packet), get_Context(0), packet_size);
+        packet_size += m64_size;
+
+        break;
+    case DbgKdSetContextApi:
+        set_Context(M64_OFFSET(ctx->data), ROUND(extra_data_size,
+                    sizeof(CONTEXT)), 0);
+
+        send_only_m64 = true;
+        break;
+    case DbgKdWriteBreakPointApi:
+
+        break;
+    case DbgKdRestoreBreakPointApi:
+        m64.ReturnStatus = 0xc0000001;
+
+        send_only_m64 = true;
+        break;
+    case DbgKdContinueApi:
+
+        send_only_m64 = true;
+        break;
+    case DbgKdReadControlSpaceApi:
+        count = m64.u.ReadMemory.TransferCount;
+        addr = m64.u.ReadMemory.TargetBaseAddress - sizeof(CONTEXT);
+
+        m64.u.ReadMemory.ActualBytesRead = count;
+        //TODO: For all processors
+        memcpy(M64_OFFSET(packet), get_KSpecialRegisters(0) + addr, count);
+        packet_size = m64_size + count;
+
+        break;
+    case DbgKdWriteControlSpaceApi:
+        count = ROUND(extra_data_size, m64.u.WriteMemory.TransferCount);
+        addr = m64.u.WriteMemory.TargetBaseAddress - sizeof(CONTEXT);
+
+        m64.u.WriteMemory.ActualBytesWritten = count;
+        set_KSpecialRegisters(M64_OFFSET(ctx->data), count, addr, 0);
+
+        send_only_m64 = true;
+        break;
+    case DbgKdReadIoSpaceApi:
+
+        break;
+    case DbgKdWriteIoSpaceApi:
+
+        break;
+    case DbgKdRebootApi:
+
+        break;
+    case DbgKdContinueApi2:
+
+        send_only_m64 = true;
+        break;
+    case DbgKdReadPhysicalMemoryApi:
+
+        break;
+    case DbgKdWritePhysicalMemoryApi:
+
+        break;
+    case DbgKdQuerySpecialCallsApi:
+
+        break;
+    case DbgKdSetSpecialCallApi:
+
+        break;
+    case DbgKdClearSpecialCallsApi:
+
+        break;
+    case DbgKdSetInternalBreakPointApi:
+
+        break;
+    case DbgKdGetInternalBreakPointApi:
+
+        break;
+    case DbgKdReadIoSpaceExtendedApi:
+
+        break;
+    case DbgKdWriteIoSpaceExtendedApi:
+
+        break;
+    case DbgKdGetVersionApi:
+        cpu_memory_rw_debug(cpu, pc_addrs->Version, PTR(m64) + 0x10,
+                            m64_size - 0x10, 0);
+
+        send_only_m64 = true;
+        break;
+    case DbgKdWriteBreakPointExApi:
+
+        break;
+    case DbgKdRestoreBreakPointExApi:
+
+        break;
+    case DbgKdCauseBugCheckApi:
+
+        break;
+    case DbgKdSwitchProcessor:
+
+        break;
+    case DbgKdPageInApi:
+
+        break;
+    case DbgKdReadMachineSpecificRegister:
+
+        break;
+    case DbgKdWriteMachineSpecificRegister:
+
+        break;
+    case OldVlm1:
+
+        break;
+    case OldVlm2:
+
+        break;
+    case DbgKdSearchMemoryApi:
+
+        break;
+    case DbgKdGetBusDataApi:
+
+        break;
+    case DbgKdSetBusDataApi:
+
+        break;
+    case DbgKdCheckLowMemoryApi:
+
+        break;
+    case DbgKdClearAllInternalBreakpointsApi:
+
+        return;
+    case DbgKdFillMemoryApi:
+
+        break;
+    case DbgKdQueryMemoryApi:
+
+        break;
+    case DbgKdSwitchPartition:
+
+        break;
+    default:
+
+        break;
+    }
+
+    if (send_only_m64) {
+        windbg_send_data_packet(PTR(m64), m64_size, ctx->packet.PacketType);
+    }
+    else {
+        memcpy(packet, &m64, m64_size);
+        windbg_send_data_packet(packet, packet_size, ctx->packet.PacketType);
+    }
 }
 
 static void windbg_process_data_packet(Context *ctx)
