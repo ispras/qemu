@@ -1,5 +1,4 @@
 #include "qemu/osdep.h"
-
 #include "cpu.h"
 #include "qemu-common.h"
 #include "sysemu/char.h"
