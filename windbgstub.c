@@ -97,12 +97,74 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
 static void windbg_process_data_packet(Context *ctx)
 {
+    switch (ctx->packet.PacketType) {
+    case PACKET_TYPE_KD_STATE_MANIPULATE:
+        windbg_send_control_packet(PACKET_TYPE_KD_ACKNOWLEDGE);
+        windbg_process_manipulate_packet(ctx);
 
+        break;
+    default:
+        cntrl_packet_id = 0;
+        windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
+
+        break;
+    }
 }
 
 static void windbg_process_control_packet(Context *ctx)
 {
+    switch (ctx->packet.PacketType) {
+    case PACKET_TYPE_UNUSED:
 
+        break;
+    case PACKET_TYPE_KD_STATE_CHANGE32:
+
+        break;
+    case PACKET_TYPE_KD_STATE_MANIPULATE:
+
+        break;
+    case PACKET_TYPE_KD_DEBUG_IO:
+
+        break;
+    case PACKET_TYPE_KD_ACKNOWLEDGE:
+
+        break;
+    case PACKET_TYPE_KD_RESEND:
+
+        break;
+    case PACKET_TYPE_KD_RESET:
+        windbg_send_control_packet(ctx->packet.PacketType);
+        //TODO: For all processors
+        windbg_send_data_packet((uint8_t *)get_ExceptionStateChange(0),
+                                sizeof(EXCEPTION_STATE_CHANGE),
+                                PACKET_TYPE_KD_STATE_CHANGE64);
+        cntrl_packet_id = INITIAL_PACKET_ID;
+
+        break;
+    case PACKET_TYPE_KD_STATE_CHANGE64:
+
+        break;
+    case PACKET_TYPE_KD_POLL_BREAKIN:
+
+        break;
+    case PACKET_TYPE_KD_TRACE_IO:
+
+        break;
+    case PACKET_TYPE_KD_CONTROL_REQUEST:
+
+        break;
+    case PACKET_TYPE_KD_FILE_IO:
+
+        break;
+    case PACKET_TYPE_MAX:
+
+        break;
+    default:
+        cntrl_packet_id = 0;
+        windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
+
+        break;
+    }
 }
 
 static int windbg_chr_can_receive(void *opaque)
