@@ -1,8 +1,8 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
-#include "qemu-common.h"
+//#include "qemu-common.h"
 #include "sysemu/char.h"
-#include "sysemu/sysemu.h"
+//#include "sysemu/sysemu.h"
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
@@ -36,7 +36,7 @@ static FILE *dump_file;
 
 //TODO: Remove it
 static uint32_t cntrl_packet_id = RESET_PACKET_ID;
-static UCHAR lock = 0;
+static uint8_t lock = 0;
 //////////////////////////////////////////////////
 
 static PCPU_CTRL_ADDRS pc_addrs;

@@ -14,7 +14,7 @@
 #define INITIAL_PACKET_ID                   0x80800000
 //TODO: 0x80800000?
 #define SYNC_PACKET_ID                      0x00000800
-#define RESET_PACKET_ID                     0x0018359b
+#define RESET_PACKET_ID                     0x0018359B
 
 //
 // Magic Packet bytes
@@ -189,26 +189,26 @@
 //
 // AMD64 Control Space types
 //
-#define AMD64_DEBUG_CONTROL_SPACE_KPCR 0
-#define AMD64_DEBUG_CONTROL_SPACE_KPRCB 1
-#define AMD64_DEBUG_CONTROL_SPACE_KSPECIAL 2
-#define AMD64_DEBUG_CONTROL_SPACE_KTHREAD 3
+#define AMD64_DEBUG_CONTROL_SPACE_KPCR      0
+#define AMD64_DEBUG_CONTROL_SPACE_KPRCB     1
+#define AMD64_DEBUG_CONTROL_SPACE_KSPECIAL  2
+#define AMD64_DEBUG_CONTROL_SPACE_KTHREAD   3
 
-#ifndef NTSTATUS
-typedef LONG NTSTATUS;
-typedef NTSTATUS *PNTSTATUS;
-#endif
+//TODO: Use bool
+typedef uint8_t boolean_t;
+typedef int32_t ntstatus_t;
+typedef ntstatus_t *pntstatus_t;
 
 //
 // KD Packet Structure
 //
 typedef struct _KD_PACKET
 {
-    ULONG PacketLeader;
-    USHORT PacketType;
-    USHORT ByteCount;
-    ULONG PacketId;
-    ULONG Checksum;
+    uint32_t PacketLeader;
+    uint16_t PacketType;
+    uint16_t ByteCount;
+    uint32_t PacketId;
+    uint32_t Checksum;
 } KD_PACKET, *PKD_PACKET;
 
 //
@@ -216,47 +216,46 @@ typedef struct _KD_PACKET
 //
 typedef struct _KD_CONTEXT
 {
-    ULONG KdpDefaultRetries;
-    BOOLEAN KdpControlCPending;
+    uint32_t KdpDefaultRetries;
+    boolean_t KdpControlCPending;
 } KD_CONTEXT, *PKD_CONTEXT;
 
 //
 // Control Sets for Supported Architectures
 //
-#include <pshpack4.h>
 typedef struct _X86_DBGKD_CONTROL_SET
 {
-    ULONG TraceFlag;
-    ULONG Dr7;
-    ULONG CurrentSymbolStart;
-    ULONG CurrentSymbolEnd;
+    uint32_t TraceFlag;
+    uint32_t Dr7;
+    uint32_t CurrentSymbolStart;
+    uint32_t CurrentSymbolEnd;
 } X86_DBGKD_CONTROL_SET, *PX86_DBGKD_CONTROL_SET;
 
 typedef struct _ALPHA_DBGKD_CONTROL_SET
 {
-    ULONG __padding;
+    uint32_t __padding;
 } ALPHA_DBGKD_CONTROL_SET, *PALPHA_DBGKD_CONTROL_SET;
 
 typedef struct _IA64_DBGKD_CONTROL_SET
 {
-    ULONG Continue;
-    ULONG64 CurrentSymbolStart;
-    ULONG64 CurrentSymbolEnd;
+    uint32_t Continue;
+    uint64_t CurrentSymbolStart;
+    uint64_t CurrentSymbolEnd;
 } IA64_DBGKD_CONTROL_SET, *PIA64_DBGKD_CONTROL_SET;
 
 typedef struct _AMD64_DBGKD_CONTROL_SET
 {
-    ULONG TraceFlag;
-    ULONG64 Dr7;
-    ULONG64 CurrentSymbolStart;
-    ULONG64 CurrentSymbolEnd;
+    uint32_t TraceFlag;
+    uint64_t Dr7;
+    uint64_t CurrentSymbolStart;
+    uint64_t CurrentSymbolEnd;
 } AMD64_DBGKD_CONTROL_SET, *PAMD64_DBGKD_CONTROL_SET;
 
 typedef struct _ARM_DBGKD_CONTROL_SET
 {
-    ULONG Continue;
-    ULONG CurrentSymbolStart;
-    ULONG CurrentSymbolEnd;
+    uint32_t Continue;
+    uint32_t CurrentSymbolStart;
+    uint32_t CurrentSymbolEnd;
 } ARM_DBGKD_CONTROL_SET, *PARM_DBGKD_CONTROL_SET;
 
 typedef struct _DBGKD_ANY_CONTROL_SET
@@ -270,18 +269,18 @@ typedef struct _DBGKD_ANY_CONTROL_SET
         ARM_DBGKD_CONTROL_SET ARMControlSet;
     };
 } DBGKD_ANY_CONTROL_SET, *PDBGKD_ANY_CONTROL_SET;
-#include <poppack.h>
 
-#if defined(_M_IX86)
+#if defined(TARGET_I386)
 typedef X86_DBGKD_CONTROL_SET DBGKD_CONTROL_SET, *PDBGKD_CONTROL_SET;
-#elif defined(_M_AMD64)
+#elif defined(TARGET_X86_64)
 typedef AMD64_DBGKD_CONTROL_SET DBGKD_CONTROL_SET, *PDBGKD_CONTROL_SET;
-#elif defined(_M_ARM)
+#elif defined(TARGET_ARM)
 typedef ARM_DBGKD_CONTROL_SET DBGKD_CONTROL_SET, *PDBGKD_CONTROL_SET;
 #else
 #error Unsupported Architecture
 #endif
 
+//TODO: Define here
 /*
 #ifndef EXCEPTION_RECORD32
 typedef struct _EXCEPTION_RECORD32 {
@@ -313,13 +312,13 @@ typedef struct _EXCEPTION_RECORD64 {
 typedef struct _DBGKM_EXCEPTION32
 {
     EXCEPTION_RECORD32 ExceptionRecord;
-    ULONG FirstChance;
+    uint32_t FirstChance;
 } DBGKM_EXCEPTION32, *PDBGKM_EXCEPTION32;
 
 typedef struct _DBGKM_EXCEPTION64
 {
     EXCEPTION_RECORD64 ExceptionRecord;
-    ULONG FirstChance;
+    uint32_t FirstChance;
 } DBGKM_EXCEPTION64, *PDBGKM_EXCEPTION64;
 
 //
@@ -327,49 +326,49 @@ typedef struct _DBGKM_EXCEPTION64
 //
 typedef struct _X86_DBGKD_CONTROL_REPORT
 {
-    ULONG   Dr6;
-    ULONG   Dr7;
-    USHORT  InstructionCount;
-    USHORT  ReportFlags;
-    UCHAR   InstructionStream[DBGKD_MAXSTREAM];
-    USHORT  SegCs;
-    USHORT  SegDs;
-    USHORT  SegEs;
-    USHORT  SegFs;
-    ULONG   EFlags;
+    uint32_t   Dr6;
+    uint32_t   Dr7;
+    uint16_t  InstructionCount;
+    uint16_t  ReportFlags;
+    uint8_t   InstructionStream[DBGKD_MAXSTREAM];
+    uint16_t  SegCs;
+    uint16_t  SegDs;
+    uint16_t  SegEs;
+    uint16_t  SegFs;
+    uint32_t   EFlags;
 } X86_DBGKD_CONTROL_REPORT, *PX86_DBGKD_CONTROL_REPORT;
 
 typedef struct _ALPHA_DBGKD_CONTROL_REPORT
 {
-    ULONG InstructionCount;
-    UCHAR InstructionStream[DBGKD_MAXSTREAM];
+    uint32_t InstructionCount;
+    uint8_t InstructionStream[DBGKD_MAXSTREAM];
 } ALPHA_DBGKD_CONTROL_REPORT, *PALPHA_DBGKD_CONTROL_REPORT;
 
 typedef struct _IA64_DBGKD_CONTROL_REPORT
 {
-    ULONG InstructionCount;
-    UCHAR InstructionStream[DBGKD_MAXSTREAM];
+    uint32_t InstructionCount;
+    uint8_t InstructionStream[DBGKD_MAXSTREAM];
 } IA64_DBGKD_CONTROL_REPORT, *PIA64_DBGKD_CONTROL_REPORT;
 
 typedef struct _AMD64_DBGKD_CONTROL_REPORT
 {
-    ULONG64 Dr6;
-    ULONG64 Dr7;
-    ULONG EFlags;
-    USHORT InstructionCount;
-    USHORT ReportFlags;
-    UCHAR InstructionStream[DBGKD_MAXSTREAM];
-    USHORT SegCs;
-    USHORT SegDs;
-    USHORT SegEs;
-    USHORT SegFs;
+    uint64_t Dr6;
+    uint64_t Dr7;
+    uint32_t EFlags;
+    uint16_t InstructionCount;
+    uint16_t ReportFlags;
+    uint8_t InstructionStream[DBGKD_MAXSTREAM];
+    uint16_t SegCs;
+    uint16_t SegDs;
+    uint16_t SegEs;
+    uint16_t SegFs;
 } AMD64_DBGKD_CONTROL_REPORT, *PAMD64_DBGKD_CONTROL_REPORT;
 
 typedef struct _ARM_DBGKD_CONTROL_REPORT
 {
-    ULONG Cpsr;
-    ULONG InstructionCount;
-    UCHAR InstructionStream[DBGKD_MAXSTREAM];
+    uint32_t Cpsr;
+    uint32_t InstructionCount;
+    uint8_t InstructionStream[DBGKD_MAXSTREAM];
 } ARM_DBGKD_CONTROL_REPORT, *PARM_DBGKD_CONTROL_REPORT;
 
 typedef struct _DBGKD_ANY_CONTROL_REPORT
@@ -384,11 +383,11 @@ typedef struct _DBGKD_ANY_CONTROL_REPORT
     };
 } DBGKD_ANY_CONTROL_REPORT, *PDBGKD_ANY_CONTROL_REPORT;
 
-#if defined(_M_IX86)
+#if defined(TARGET_I386)
 typedef X86_DBGKD_CONTROL_REPORT DBGKD_CONTROL_REPORT, *PDBGKD_CONTROL_REPORT;
-#elif defined(_M_AMD64)
+#elif defined(TARGET_X86_64)
 typedef AMD64_DBGKD_CONTROL_REPORT DBGKD_CONTROL_REPORT, *PDBGKD_CONTROL_REPORT;
-#elif defined(_M_ARM)
+#elif defined(TARGET_ARM)
 typedef ARM_DBGKD_CONTROL_REPORT DBGKD_CONTROL_REPORT, *PDBGKD_CONTROL_REPORT;
 #else
 #error Unsupported Architecture
@@ -399,7 +398,7 @@ typedef ARM_DBGKD_CONTROL_REPORT DBGKD_CONTROL_REPORT, *PDBGKD_CONTROL_REPORT;
 //
 typedef struct _DBGKD_PRINT_STRING
 {
-    ULONG LengthOfString;
+    uint32_t LengthOfString;
 } DBGKD_PRINT_STRING, *PDBGKD_PRINT_STRING;
 
 //
@@ -407,8 +406,8 @@ typedef struct _DBGKD_PRINT_STRING
 //
 typedef struct _DBGKD_GET_STRING
 {
-    ULONG LengthOfPromptString;
-    ULONG LengthOfStringRead;
+    uint32_t LengthOfPromptString;
+    uint32_t LengthOfStringRead;
 } DBGKD_GET_STRING, *PDBGKD_GET_STRING;
 
 //
@@ -416,9 +415,9 @@ typedef struct _DBGKD_GET_STRING
 //
 typedef struct _DBGKD_DEBUG_IO
 {
-    ULONG ApiNumber;
-    USHORT ProcessorLevel;
-    USHORT Processor;
+    uint32_t ApiNumber;
+    uint16_t ProcessorLevel;
+    uint16_t Processor;
     union
     {
         DBGKD_PRINT_STRING PrintString;
@@ -431,9 +430,9 @@ typedef struct _DBGKD_DEBUG_IO
 //
 typedef struct _DBGKD_COMMAND_STRING
 {
-    ULONG Flags;
-    ULONG Reserved1;
-    ULONG64 Reserved2[7];
+    uint32_t Flags;
+    uint32_t Reserved1;
+    uint64_t Reserved2[7];
 } DBGKD_COMMAND_STRING, *PDBGKD_COMMAND_STRING;
 
 //
@@ -441,22 +440,22 @@ typedef struct _DBGKD_COMMAND_STRING
 //
 typedef struct _DBGKD_LOAD_SYMBOLS32
 {
-    ULONG PathNameLength;
-    ULONG BaseOfDll;
-    ULONG ProcessId;
-    ULONG CheckSum;
-    ULONG SizeOfImage;
-    BOOLEAN UnloadSymbols;
+    uint32_t PathNameLength;
+    uint32_t BaseOfDll;
+    uint32_t ProcessId;
+    uint32_t CheckSum;
+    uint32_t SizeOfImage;
+    boolean_t UnloadSymbols;
 } DBGKD_LOAD_SYMBOLS32, *PDBGKD_LOAD_SYMBOLS32;
 
 typedef struct _DBGKD_LOAD_SYMBOLS64
 {
-    ULONG PathNameLength;
-    ULONG64 BaseOfDll;
-    ULONG64 ProcessId;
-    ULONG CheckSum;
-    ULONG SizeOfImage;
-    BOOLEAN UnloadSymbols;
+    uint32_t PathNameLength;
+    uint64_t BaseOfDll;
+    uint64_t ProcessId;
+    uint32_t CheckSum;
+    uint32_t SizeOfImage;
+    boolean_t UnloadSymbols;
 } DBGKD_LOAD_SYMBOLS64, *PDBGKD_LOAD_SYMBOLS64;
 
 //
@@ -465,12 +464,12 @@ typedef struct _DBGKD_LOAD_SYMBOLS64
 
 typedef struct _DBGKD_WAIT_STATE_CHANGE32
 {
-    ULONG NewState;
-    USHORT ProcessorLevel;
-    USHORT Processor;
-    ULONG NumberProcessors;
-    ULONG Thread;
-    ULONG ProgramCounter;
+    uint32_t NewState;
+    uint16_t ProcessorLevel;
+    uint16_t Processor;
+    uint32_t NumberProcessors;
+    uint32_t Thread;
+    uint32_t ProgramCounter;
     union
     {
         DBGKM_EXCEPTION32 Exception;
@@ -480,12 +479,12 @@ typedef struct _DBGKD_WAIT_STATE_CHANGE32
 
 typedef struct _DBGKD_WAIT_STATE_CHANGE64
 {
-    ULONG NewState;
-    USHORT ProcessorLevel;
-    USHORT Processor;
-    ULONG NumberProcessors;
-    ULONG64 Thread;
-    ULONG64 ProgramCounter;
+    uint32_t NewState;
+    uint16_t ProcessorLevel;
+    uint16_t Processor;
+    uint32_t NumberProcessors;
+    uint64_t Thread;
+    uint64_t ProgramCounter;
     union
     {
         DBGKM_EXCEPTION64 Exception;
@@ -495,12 +494,12 @@ typedef struct _DBGKD_WAIT_STATE_CHANGE64
 
 typedef struct _DBGKD_ANY_WAIT_STATE_CHANGE
 {
-    ULONG NewState;
-    USHORT ProcessorLevel;
-    USHORT Processor;
-    ULONG NumberProcessors;
-    ULONG64 Thread;
-    ULONG64 ProgramCounter;
+    uint32_t NewState;
+    uint16_t ProcessorLevel;
+    uint16_t Processor;
+    uint32_t NumberProcessors;
+    uint64_t Thread;
+    uint64_t ProgramCounter;
     union
     {
         DBGKM_EXCEPTION64 Exception;
@@ -519,247 +518,245 @@ typedef struct _DBGKD_ANY_WAIT_STATE_CHANGE
 //
 typedef struct _DBGKD_READ_MEMORY32
 {
-    ULONG TargetBaseAddress;
-    ULONG TransferCount;
-    ULONG ActualBytesRead;
+    uint32_t TargetBaseAddress;
+    uint32_t TransferCount;
+    uint32_t ActualBytesRead;
 } DBGKD_READ_MEMORY32, *PDBGKD_READ_MEMORY32;
 
 typedef struct _DBGKD_READ_MEMORY64
 {
-    ULONG64 TargetBaseAddress;
-    ULONG TransferCount;
-    ULONG ActualBytesRead;
+    uint64_t TargetBaseAddress;
+    uint32_t TransferCount;
+    uint32_t ActualBytesRead;
 } DBGKD_READ_MEMORY64, *PDBGKD_READ_MEMORY64;
 
 typedef struct _DBGKD_WRITE_MEMORY32
 {
-    ULONG TargetBaseAddress;
-    ULONG TransferCount;
-    ULONG ActualBytesWritten;
+    uint32_t TargetBaseAddress;
+    uint32_t TransferCount;
+    uint32_t ActualBytesWritten;
 } DBGKD_WRITE_MEMORY32, *PDBGKD_WRITE_MEMORY32;
 
 typedef struct _DBGKD_WRITE_MEMORY64
 {
-    ULONG64 TargetBaseAddress;
-    ULONG TransferCount;
-    ULONG ActualBytesWritten;
+    uint64_t TargetBaseAddress;
+    uint32_t TransferCount;
+    uint32_t ActualBytesWritten;
 } DBGKD_WRITE_MEMORY64, *PDBGKD_WRITE_MEMORY64;
 
 typedef struct _DBGKD_GET_CONTEXT
 {
-    ULONG Unused;
+    uint32_t Unused;
 } DBGKD_GET_CONTEXT, *PDBGKD_GET_CONTEXT;
 
 typedef struct _DBGKD_SET_CONTEXT
 {
-    ULONG ContextFlags;
+    uint32_t ContextFlags;
 } DBGKD_SET_CONTEXT, *PDBGKD_SET_CONTEXT;
 
 typedef struct _DBGKD_WRITE_BREAKPOINT32
 {
-    ULONG BreakPointAddress;
-    ULONG BreakPointHandle;
+    uint32_t BreakPointAddress;
+    uint32_t BreakPointHandle;
 } DBGKD_WRITE_BREAKPOINT32, *PDBGKD_WRITE_BREAKPOINT32;
 
 typedef struct _DBGKD_WRITE_BREAKPOINT64
 {
-    ULONG64 BreakPointAddress;
-    ULONG BreakPointHandle;
+    uint64_t BreakPointAddress;
+    uint32_t BreakPointHandle;
 } DBGKD_WRITE_BREAKPOINT64, *PDBGKD_WRITE_BREAKPOINT64;
 
 typedef struct _DBGKD_RESTORE_BREAKPOINT
 {
-    ULONG BreakPointHandle;
+    uint32_t BreakPointHandle;
 } DBGKD_RESTORE_BREAKPOINT, *PDBGKD_RESTORE_BREAKPOINT;
 
 typedef struct _DBGKD_CONTINUE
 {
-    NTSTATUS ContinueStatus;
+    ntstatus_t ContinueStatus;
 } DBGKD_CONTINUE, *PDBGKD_CONTINUE;
 
-#include <pshpack4.h>
 typedef struct _DBGKD_CONTINUE2
 {
-    NTSTATUS ContinueStatus;
+    ntstatus_t ContinueStatus;
     union
     {
         DBGKD_CONTROL_SET ControlSet;
         DBGKD_ANY_CONTROL_SET AnyControlSet;
     };
 } DBGKD_CONTINUE2, *PDBGKD_CONTINUE2;
-#include <poppack.h>
 
 typedef struct _DBGKD_READ_WRITE_IO32
 {
-    ULONG IoAddress;
-    ULONG DataSize;
-    ULONG DataValue;
+    uint32_t IoAddress;
+    uint32_t DataSize;
+    uint32_t DataValue;
 } DBGKD_READ_WRITE_IO32, *PDBGKD_READ_WRITE_IO32;
 
 typedef struct _DBGKD_READ_WRITE_IO64
 {
-    ULONG64 IoAddress;
-    ULONG DataSize;
-    ULONG DataValue;
+    uint64_t IoAddress;
+    uint32_t DataSize;
+    uint32_t DataValue;
 } DBGKD_READ_WRITE_IO64, *PDBGKD_READ_WRITE_IO64;
 
 typedef struct _DBGKD_READ_WRITE_IO_EXTENDED32
 {
-    ULONG DataSize;
-    ULONG InterfaceType;
-    ULONG BusNumber;
-    ULONG AddressSpace;
-    ULONG IoAddress;
-    ULONG DataValue;
+    uint32_t DataSize;
+    uint32_t InterfaceType;
+    uint32_t BusNumber;
+    uint32_t AddressSpace;
+    uint32_t IoAddress;
+    uint32_t DataValue;
 } DBGKD_READ_WRITE_IO_EXTENDED32, *PDBGKD_READ_WRITE_IO_EXTENDED32;
 
 typedef struct _DBGKD_READ_WRITE_IO_EXTENDED64
 {
-    ULONG DataSize;
-    ULONG InterfaceType;
-    ULONG BusNumber;
-    ULONG AddressSpace;
-    ULONG64 IoAddress;
-    ULONG DataValue;
+    uint32_t DataSize;
+    uint32_t InterfaceType;
+    uint32_t BusNumber;
+    uint32_t AddressSpace;
+    uint64_t IoAddress;
+    uint32_t DataValue;
 } DBGKD_READ_WRITE_IO_EXTENDED64, *PDBGKD_READ_WRITE_IO_EXTENDED64;
 
 typedef struct _DBGKD_READ_WRITE_MSR
 {
-    ULONG Msr;
-    ULONG DataValueLow;
-    ULONG DataValueHigh;
+    uint32_t Msr;
+    uint32_t DataValueLow;
+    uint32_t DataValueHigh;
 } DBGKD_READ_WRITE_MSR, *PDBGKD_READ_WRITE_MSR;
 
 typedef struct _DBGKD_QUERY_SPECIAL_CALLS
 {
-    ULONG NumberOfSpecialCalls;
+    uint32_t NumberOfSpecialCalls;
 } DBGKD_QUERY_SPECIAL_CALLS, *PDBGKD_QUERY_SPECIAL_CALLS;
 
 typedef struct _DBGKD_SET_SPECIAL_CALL32
 {
-    ULONG SpecialCall;
+    uint32_t SpecialCall;
 } DBGKD_SET_SPECIAL_CALL32, *PDBGKD_SET_SPECIAL_CALL32;
 
 typedef struct _DBGKD_SET_SPECIAL_CALL64
 {
-    ULONG64 SpecialCall;
+    uint64_t SpecialCall;
 } DBGKD_SET_SPECIAL_CALL64, *PDBGKD_SET_SPECIAL_CALL64;
 
 typedef struct _DBGKD_SET_INTERNAL_BREAKPOINT32
 {
-    ULONG BreakpointAddress;
-    ULONG Flags;
+    uint32_t BreakpointAddress;
+    uint32_t Flags;
 } DBGKD_SET_INTERNAL_BREAKPOINT32, *PDBGKD_SET_INTERNAL_BREAKPOINT32;
 
 typedef struct _DBGKD_SET_INTERNAL_BREAKPOINT64
 {
-    ULONG64 BreakpointAddress;
-    ULONG Flags;
+    uint64_t BreakpointAddress;
+    uint32_t Flags;
 } DBGKD_SET_INTERNAL_BREAKPOINT64, *PDBGKD_SET_INTERNAL_BREAKPOINT64;
 
 typedef struct _DBGKD_GET_INTERNAL_BREAKPOINT32
 {
-    ULONG BreakpointAddress;
-    ULONG Flags;
-    ULONG Calls;
-    ULONG MaxCallsPerPeriod;
-    ULONG MinInstructions;
-    ULONG MaxInstructions;
-    ULONG TotalInstructions;
+    uint32_t BreakpointAddress;
+    uint32_t Flags;
+    uint32_t Calls;
+    uint32_t MaxCallsPerPeriod;
+    uint32_t MinInstructions;
+    uint32_t MaxInstructions;
+    uint32_t TotalInstructions;
 } DBGKD_GET_INTERNAL_BREAKPOINT32, *PDBGKD_GET_INTERNAL_BREAKPOINT32;
 
 typedef struct _DBGKD_GET_INTERNAL_BREAKPOINT64
 {
-    ULONG64 BreakpointAddress;
-    ULONG Flags;
-    ULONG Calls;
-    ULONG MaxCallsPerPeriod;
-    ULONG MinInstructions;
-    ULONG MaxInstructions;
-    ULONG TotalInstructions;
+    uint64_t BreakpointAddress;
+    uint32_t Flags;
+    uint32_t Calls;
+    uint32_t MaxCallsPerPeriod;
+    uint32_t MinInstructions;
+    uint32_t MaxInstructions;
+    uint32_t TotalInstructions;
 } DBGKD_GET_INTERNAL_BREAKPOINT64, *PDBGKD_GET_INTERNAL_BREAKPOINT64;
 
 typedef struct _DBGKD_GET_VERSION32
 {
-    USHORT MajorVersion;
-    USHORT MinorVersion;
-    USHORT ProtocolVersion;
-    USHORT Flags;
-    ULONG KernBase;
-    ULONG PsLoadedModuleList;
-    USHORT MachineType;
-    USHORT ThCallbackStack;
-    USHORT NextCallback;
-    USHORT FramePointer;
-    ULONG KiCallUserMode;
-    ULONG KeUserCallbackDispatcher;
-    ULONG BreakpointWithStatus;
-    ULONG DebuggerDataList;
+    uint16_t MajorVersion;
+    uint16_t MinorVersion;
+    uint16_t ProtocolVersion;
+    uint16_t Flags;
+    uint32_t KernBase;
+    uint32_t PsLoadedModuleList;
+    uint16_t MachineType;
+    uint16_t ThCallbackStack;
+    uint16_t NextCallback;
+    uint16_t FramePointer;
+    uint32_t KiCallUserMode;
+    uint32_t KeUserCallbackDispatcher;
+    uint32_t BreakpointWithStatus;
+    uint32_t DebuggerDataList;
 } DBGKD_GET_VERSION32, *PDBGKD_GET_VERSION32;
 
 typedef struct _DBGKD_GET_VERSION64
 {
-    USHORT MajorVersion;
-    USHORT MinorVersion;
-    UCHAR ProtocolVersion;
-    UCHAR KdSecondaryVersion;
-    USHORT Flags;
-    USHORT MachineType;
-    UCHAR MaxPacketType;
-    UCHAR MaxStateChange;
-    UCHAR MaxManipulate;
-    UCHAR Simulation;
-    USHORT Unused[1];
-    ULONG64 KernBase;
-    ULONG64 PsLoadedModuleList;
-    ULONG64 DebuggerDataList;
+    uint16_t MajorVersion;
+    uint16_t MinorVersion;
+    uint8_t ProtocolVersion;
+    uint8_t KdSecondaryVersion;
+    uint16_t Flags;
+    uint16_t MachineType;
+    uint8_t MaxPacketType;
+    uint8_t MaxStateChange;
+    uint8_t MaxManipulate;
+    uint8_t Simulation;
+    uint16_t Unused[1];
+    uint64_t KernBase;
+    uint64_t PsLoadedModuleList;
+    uint64_t DebuggerDataList;
 } DBGKD_GET_VERSION64, *PDBGKD_GET_VERSION64;
 
 typedef struct _DBGKD_BREAKPOINTEX
 {
-    ULONG BreakPointCount;
-    NTSTATUS ContinueStatus;
+    uint32_t BreakPointCount;
+    ntstatus_t ContinueStatus;
 } DBGKD_BREAKPOINTEX, *PDBGKD_BREAKPOINTEX;
 
 typedef struct _DBGKD_SEARCH_MEMORY
 {
     union
     {
-        ULONG64 SearchAddress;
-        ULONG64 FoundAddress;
+        uint64_t SearchAddress;
+        uint64_t FoundAddress;
     };
-    ULONG64 SearchLength;
-    ULONG PatternLength;
+    uint64_t SearchLength;
+    uint32_t PatternLength;
 } DBGKD_SEARCH_MEMORY, *PDBGKD_SEARCH_MEMORY;
 
 typedef struct _DBGKD_GET_SET_BUS_DATA
 {
-    ULONG BusDataType;
-    ULONG BusNumber;
-    ULONG SlotNumber;
-    ULONG Offset;
-    ULONG Length;
+    uint32_t BusDataType;
+    uint32_t BusNumber;
+    uint32_t SlotNumber;
+    uint32_t Offset;
+    uint32_t Length;
 } DBGKD_GET_SET_BUS_DATA, *PDBGKD_GET_SET_BUS_DATA;
 
 typedef struct _DBGKD_FILL_MEMORY
 {
-    ULONG64 Address;
-    ULONG Length;
-    USHORT Flags;
-    USHORT PatternLength;
+    uint64_t Address;
+    uint32_t Length;
+    uint16_t Flags;
+    uint16_t PatternLength;
 } DBGKD_FILL_MEMORY, *PDBGKD_FILL_MEMORY;
 
 typedef struct _DBGKD_QUERY_MEMORY
 {
-    ULONG64 Address;
-    ULONG64 Reserved;
-    ULONG AddressSpace;
-    ULONG Flags;
+    uint64_t Address;
+    uint64_t Reserved;
+    uint32_t AddressSpace;
+    uint32_t Flags;
 } DBGKD_QUERY_MEMORY, *PDBGKD_QUERY_MEMORY;
 
 typedef struct _DBGKD_SWITCH_PARTITION
 {
-    ULONG Partition;
+    uint32_t Partition;
 } DBGKD_SWITCH_PARTITION;
 
 //
@@ -767,10 +764,10 @@ typedef struct _DBGKD_SWITCH_PARTITION
 //
 typedef struct _DBGKD_MANIPULATE_STATE32
 {
-    ULONG ApiNumber;
-    USHORT ProcessorLevel;
-    USHORT Processor;
-    NTSTATUS ReturnStatus;
+    uint32_t ApiNumber;
+    uint16_t ProcessorLevel;
+    uint16_t Processor;
+    ntstatus_t ReturnStatus;
     union
     {
         DBGKD_READ_MEMORY32 ReadMemory;
@@ -802,10 +799,10 @@ typedef struct _DBGKD_MANIPULATE_STATE32
 
 typedef struct _DBGKD_MANIPULATE_STATE64
 {
-    ULONG ApiNumber;
-    USHORT ProcessorLevel;
-    USHORT Processor;
-    NTSTATUS ReturnStatus;
+    uint32_t ApiNumber;
+    uint16_t ProcessorLevel;
+    uint16_t Processor;
+    ntstatus_t ReturnStatus;
     union
     {
         DBGKD_READ_MEMORY64 ReadMemory;
@@ -838,41 +835,41 @@ typedef struct _DBGKD_MANIPULATE_STATE64
 //
 typedef struct _DBGKD_CREATE_FILE
 {
-    ULONG DesiredAccess;
-    ULONG FileAttributes;
-    ULONG ShareAccess;
-    ULONG CreateDisposition;
-    ULONG CreateOptions;
-    ULONG64 Handle;
-    ULONG64 Length;
+    uint32_t DesiredAccess;
+    uint32_t FileAttributes;
+    uint32_t ShareAccess;
+    uint32_t CreateDisposition;
+    uint32_t CreateOptions;
+    uint64_t Handle;
+    uint64_t Length;
 } DBGKD_CREATE_FILE, *PDBGKD_CREATE_FILE;
 
 typedef struct _DBGKD_READ_FILE
 {
-    ULONG64 Handle;
-    ULONG64 Offset;
-    ULONG Length;
+    uint64_t Handle;
+    uint64_t Offset;
+    uint32_t Length;
 } DBGKD_READ_FILE, *PDBGKD_READ_FILE;
 
 typedef struct _DBGKD_WRITE_FILE
 {
-    ULONG64 Handle;
-    ULONG64 Offset;
-    ULONG Length;
+    uint64_t Handle;
+    uint64_t Offset;
+    uint32_t Length;
 } DBGKD_WRITE_FILE, *PDBGKD_WRITE_FILE;
 
 typedef struct _DBGKD_CLOSE_FILE
 {
-    ULONG64 Handle;
+    uint64_t Handle;
 } DBGKD_CLOSE_FILE, *PDBGKD_CLOSE_FILE;
 
 typedef struct _DBGKD_FILE_IO
 {
-    ULONG ApiNumber;
-    ULONG Status;
+    uint32_t ApiNumber;
+    uint32_t Status;
     union
     {
-        ULONG64 ReserveSpace[7];
+        uint64_t ReserveSpace[7];
         DBGKD_CREATE_FILE CreateFile;
         DBGKD_READ_FILE ReadFile;
         DBGKD_WRITE_FILE WriteFile;
@@ -886,19 +883,19 @@ typedef struct _DBGKD_FILE_IO
 //
 typedef struct _DBGKD_REQUEST_BREAKPOINT
 {
-    ULONG HardwareBreakPointNumber;
-    ULONG Available;
+    uint32_t HardwareBreakPointNumber;
+    uint32_t Available;
 } DBGKD_REQUEST_BREAKPOINT, *PDBGKD_REQUEST_BREAKPOINT;
 
 typedef struct _DBGKD_RELEASE_BREAKPOINT
 {
-    ULONG HardwareBreakPointNumber;
-    ULONG Released;
+    uint32_t HardwareBreakPointNumber;
+    uint32_t Released;
 } DBGKD_RELEASE_BREAKPOINT, *PDBGKD_RELEASE_BREAKPOINT;
 
 typedef struct _DBGKD_CONTROL_REQUEST
 {
-    ULONG ApiNumber;
+    uint32_t ApiNumber;
     union
     {
         DBGKD_REQUEST_BREAKPOINT RequestBreakpoint;
@@ -911,17 +908,17 @@ typedef struct _DBGKD_CONTROL_REQUEST
 //
 typedef struct _DBGKD_PRINT_TRACE
 {
-    ULONG LengthOfData;
+    uint32_t LengthOfData;
 } DBGKD_PRINT_TRACE, *PDBGKD_PRINT_TRACE;
 
 typedef struct _DBGKD_TRACE_IO
 {
-   ULONG ApiNumber;
-   USHORT ProcessorLevel;
-   USHORT Processor;
+   uint32_t ApiNumber;
+   uint16_t ProcessorLevel;
+   uint16_t Processor;
    union
    {
-       ULONG64 ReserveSpace[7];
+       uint64_t ReserveSpace[7];
        DBGKD_PRINT_TRACE PrintTrace;
    } u;
 } DBGKD_TRACE_IO, *PDBGKD_TRACE_IO;

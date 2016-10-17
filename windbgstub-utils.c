@@ -2,7 +2,7 @@
 
 static CPU_CTRL_ADDRS pca;
 static EXCEPTION_STATE_CHANGE esc;
-static CONTEXT c;
+static CPU_CONTEXT c;
 static KSPECIAL_REGISTERS kr;
 
 PCPU_CTRL_ADDRS get_KPCRAddress(int index)
@@ -88,7 +88,7 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
     return &esc;
 }
 
-PCONTEXT get_Context(int index)
+PCPU_CONTEXT get_Context(int index)
 {
     // CPUState *cpu = find_cpu(index);
     // CPUArchState *env = CPU_ARCH_STATE(cpu);
@@ -158,14 +158,14 @@ void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index)
     env->dr[6] = kr.KernelDr6;
     env->dr[7] = kr.KernelDr7;
 
-    env->gdt.selector   = kr.Gdtr.Pad;
-    env->gdt.limit      = kr.Gdtr.Limit;
-    env->gdt.base       = kr.Gdtr.Base;
-    env->idt.selector   = kr.Idtr.Pad;
-    env->idt.limit      = kr.Idtr.Limit;
-    env->idt.base       = kr.Idtr.Base;
-    env->tr.selector    = kr.Tr;
-    env->ldt.selector   = kr.Ldtr;
+    env->gdt.selector = kr.Gdtr.Pad;
+    env->gdt.limit    = kr.Gdtr.Limit;
+    env->gdt.base     = kr.Gdtr.Base;
+    env->idt.selector = kr.Idtr.Pad;
+    env->idt.limit    = kr.Idtr.Limit;
+    env->idt.base     = kr.Idtr.Base;
+    env->tr.selector  = kr.Tr;
+    env->ldt.selector = kr.Ldtr;
 
     // kr.Reserved[6];
 }
