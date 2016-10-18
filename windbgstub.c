@@ -490,6 +490,8 @@ static void windbg_close(void)
 
 void windbg_start_sync(void)
 {
+    pc_addrs = get_KPCRAddress(0);
+    
     lock = 1;
 }
 
@@ -508,8 +510,7 @@ int windbgserver_start(const char *device)
 
     qemu_chr_fe_claim_no_fail(windbg_chr);
     qemu_chr_add_handlers(windbg_chr, windbg_chr_can_receive,
-                          windbg_in_chr_receive, NULL,
-                          NULL);
+                          windbg_in_chr_receive, NULL, NULL);
 
     // open dump file
     dump_file = fopen("windbg.dump", "wb");
