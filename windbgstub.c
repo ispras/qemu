@@ -138,7 +138,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
         send_only_m64 = true;
         break;
     case DbgKdGetContextApi:
-        packet_size = sizeof(CONTEXT);
+        packet_size = sizeof(CPU_CONTEXT);
         //TODO: For all processors
         memcpy(M64_OFFSET(packet), get_Context(0), packet_size);
         packet_size += m64_size;
@@ -146,7 +146,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     case DbgKdSetContextApi:
         set_Context(M64_OFFSET(ctx->data), ROUND(extra_data_size,
-                    sizeof(CONTEXT)), 0);
+                    sizeof(CPU_CONTEXT)), 0);
 
         send_only_m64 = true;
         break;
@@ -164,7 +164,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     case DbgKdReadControlSpaceApi:
         count = m64.u.ReadMemory.TransferCount;
-        addr = m64.u.ReadMemory.TargetBaseAddress - sizeof(CONTEXT);
+        addr = m64.u.ReadMemory.TargetBaseAddress - sizeof(CPU_CONTEXT);
 
         m64.u.ReadMemory.ActualBytesRead = count;
         //TODO: For all processors
@@ -174,7 +174,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     case DbgKdWriteControlSpaceApi:
         count = ROUND(extra_data_size, m64.u.WriteMemory.TransferCount);
-        addr = m64.u.WriteMemory.TargetBaseAddress - sizeof(CONTEXT);
+        addr = m64.u.WriteMemory.TargetBaseAddress - sizeof(CPU_CONTEXT);
 
         m64.u.WriteMemory.ActualBytesWritten = count;
         set_KSpecialRegisters(M64_OFFSET(ctx->data), count, addr, 0);
