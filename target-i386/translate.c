@@ -31,6 +31,7 @@
 #include "trace-tcg.h"
 #include "exec/log.h"
 
+#include "exec/windbgstub.h"
 
 #define PREFIX_REPZ   0x01
 #define PREFIX_REPNZ  0x02
@@ -6932,6 +6933,11 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
             gen_update_cc_op(s);
             gen_jmp_im(pc_start - s->cs_base);
             if (b & 2) {
+                static int8_t windbg_lock = 1; 
+                if (windbg_lock) {
+                    windbg_start_sync();
+                    windbg_lock = 0;
+                } 
                 gen_helper_rdmsr(cpu_env);
             } else {
                 gen_helper_wrmsr(cpu_env);

@@ -80,14 +80,14 @@ typedef struct _CPU_CTRL_ADDRS {
 #define SIZE_OF_X86_REG 80
 #define MAX_SUP_EXT 512
 
-typedef struct _DESCRIPTOR
+typedef struct _CPU_DESCRIPTOR
 {
     uint16_t Pad;
     uint16_t Limit;
     uint32_t Base;
-} DESCRIPTOR, *PDESCRIPTOR;
+} CPU_DESCRIPTOR, *PCPU_DESCRIPTOR;
 
-typedef struct _KSPECIAL_REGISTERS
+typedef struct _CPU_KSPECIAL_REGISTERS
 {
     uint32_t Cr0;
     uint32_t Cr2;
@@ -99,14 +99,14 @@ typedef struct _KSPECIAL_REGISTERS
     uint32_t KernelDr3;
     uint32_t KernelDr6;
     uint32_t KernelDr7;
-    DESCRIPTOR Gdtr;
-    DESCRIPTOR Idtr;
+    CPU_DESCRIPTOR Gdtr;
+    CPU_DESCRIPTOR Idtr;
     uint16_t Tr;
     uint16_t Ldtr;
     uint32_t Reserved[6];
-} KSPECIAL_REGISTERS, *PKSPECIAL_REGISTERS;
+} CPU_KSPECIAL_REGISTERS, *PCPU_KSPECIAL_REGISTERS;
 
-typedef struct _FLOATING_SAVE_AREA {
+typedef struct _CPU_FLOATING_SAVE_AREA {
     uint32_t ControlWord;
     uint32_t StatusWord;
     uint32_t TagWord;
@@ -116,7 +116,7 @@ typedef struct _FLOATING_SAVE_AREA {
     uint32_t DataSelector;
     uint8_t RegisterArea[SIZE_OF_X86_REG];
     uint32_t Cr0NpxState;
-} FLOATING_SAVE_AREA, *PFLOATING_SAVE_AREA;
+} CPU_FLOATING_SAVE_AREA, *PCPU_FLOATING_SAVE_AREA;
 
 typedef struct _CPU_CONTEXT {
     uint32_t ContextFlags;
@@ -126,7 +126,7 @@ typedef struct _CPU_CONTEXT {
     uint32_t Dr3;
     uint32_t Dr6;
     uint32_t Dr7;
-    FLOATING_SAVE_AREA FloatSave;
+    CPU_FLOATING_SAVE_AREA FloatSave;
     uint32_t SegGs;
     uint32_t SegFs;
     uint32_t SegEs;
@@ -148,7 +148,15 @@ typedef struct _CPU_CONTEXT {
 } CPU_CONTEXT, *PCPU_CONTEXT;
 
 #elif defined(TARGET_X86_64)
-typedef struct _XMM_SAVE_AREA32 {
+
+#pragma pack(push, 2)
+typedef struct _CPU_M128A {
+    uint64_t Low;
+    int64_t High;
+} CPU_M128A, *PCPU_M128A;
+#pragma pack(pop)
+
+typedef struct _CPU_XMM_SAVE_AREA32 {
     uint16_t ControlWord;
     uint16_t StatusWord;
     uint8_t TagWord;
@@ -162,14 +170,13 @@ typedef struct _XMM_SAVE_AREA32 {
     uint16_t Reserved3;
     uint32_t MxCsr;
     uint32_t MxCsr_Mask;
-    M128A FloatRegisters[8];
-    M128A XmmRegisters[16];
+    CPU_M128A FloatRegisters[8];
+    CPU_M128A XmmRegisters[16];
     uint8_t Reserved4[96];
-} XMM_SAVE_AREA32, *PXMM_SAVE_AREA32;
+} CPU_XMM_SAVE_AREA32, *PCPU_XMM_SAVE_AREA32;
 
-#define LEGACY_SAVE_AREA_LENGTH sizeof(XMM_SAVE_AREA32)
-
-typedef struct DECLSPEC_ALIGN(16) _CPU_CONTEXT {
+#pragma pack(push, 2)
+typedef struct _CPU_CONTEXT {
     uint64_t P1Home;
     uint64_t P2Home;
     uint64_t P3Home;
@@ -208,31 +215,31 @@ typedef struct DECLSPEC_ALIGN(16) _CPU_CONTEXT {
     uint64_t R14;
     uint64_t R15;
     uint64_t Rip;
-    __C89_NAMELESS union {
-        XMM_SAVE_AREA32 FltSave;
-        XMM_SAVE_AREA32 FloatSave;
-        __C89_NAMELESS struct {
-            M128A Header[2];
-            M128A Legacy[8];
-            M128A Xmm0;
-            M128A Xmm1;
-            M128A Xmm2;
-            M128A Xmm3;
-            M128A Xmm4;
-            M128A Xmm5;
-            M128A Xmm6;
-            M128A Xmm7;
-            M128A Xmm8;
-            M128A Xmm9;
-            M128A Xmm10;
-            M128A Xmm11;
-            M128A Xmm12;
-            M128A Xmm13;
-            M128A Xmm14;
-            M128A Xmm15;
+    union {
+        CPU_XMM_SAVE_AREA32 FltSave;
+        CPU_XMM_SAVE_AREA32 FloatSave;
+        struct {
+            CPU_M128A Header[2];
+            CPU_M128A Legacy[8];
+            CPU_M128A Xmm0;
+            CPU_M128A Xmm1;
+            CPU_M128A Xmm2;
+            CPU_M128A Xmm3;
+            CPU_M128A Xmm4;
+            CPU_M128A Xmm5;
+            CPU_M128A Xmm6;
+            CPU_M128A Xmm7;
+            CPU_M128A Xmm8;
+            CPU_M128A Xmm9;
+            CPU_M128A Xmm10;
+            CPU_M128A Xmm11;
+            CPU_M128A Xmm12;
+            CPU_M128A Xmm13;
+            CPU_M128A Xmm14;
+            CPU_M128A Xmm15;
         };
     };
-    M128A VectorRegister[26];
+    CPU_M128A VectorRegister[26];
     uint64_t VectorControl;
     uint64_t DebugControl;
     uint64_t LastBranchToRip;
@@ -240,12 +247,14 @@ typedef struct DECLSPEC_ALIGN(16) _CPU_CONTEXT {
     uint64_t LastExceptionToRip;
     uint64_t LastExceptionFromRip;
 } CPU_CONTEXT, *PCPU_CONTEXT;
+#pragma pack(pop)
+
 #endif
 
 PCPU_CTRL_ADDRS         get_KPCRAddress(int index);
 PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index);
 PCPU_CONTEXT            get_Context(int index);
-PKSPECIAL_REGISTERS     get_KSpecialRegisters(int index);
+PCPU_KSPECIAL_REGISTERS get_KSpecialRegisters(int index);
 
 void set_Context(uint8_t *data, int len, int index);
 void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index);

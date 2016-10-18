@@ -7,7 +7,7 @@
 #include "exec/windbgstub-utils.h"
 
 //windbg.exe -b -k com:pipe,baud=115200,port=\\.\pipe\windbg,resets=0
-//qemu.exe -windbg pipe:async,windbg
+//qemu.exe -windbg pipe:windbg
 
 typedef enum ParsingState {
     STATE_LEADER,

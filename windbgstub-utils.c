@@ -3,7 +3,7 @@
 static CPU_CTRL_ADDRS pca;
 static EXCEPTION_STATE_CHANGE esc;
 static CPU_CONTEXT c;
-static KSPECIAL_REGISTERS kr;
+static CPU_KSPECIAL_REGISTERS kr;
 
 PCPU_CTRL_ADDRS get_KPCRAddress(int index)
 {
@@ -106,7 +106,7 @@ void set_Context(uint8_t *data, int len, int index)
     memcpy(PTR(c), data, ROUND(len, sizeof(c)));
 }
 
-PKSPECIAL_REGISTERS get_KSpecialRegisters(int index)
+PCPU_KSPECIAL_REGISTERS get_KSpecialRegisters(int index)
 {
     CPUState *cpu = find_cpu(index);
     CPUArchState *env = CPU_ARCH_STATE(cpu);

@@ -280,44 +280,40 @@ typedef ARM_DBGKD_CONTROL_SET DBGKD_CONTROL_SET, *PDBGKD_CONTROL_SET;
 #error Unsupported Architecture
 #endif
 
-//TODO: Define here
-/*
-#ifndef EXCEPTION_RECORD32
-typedef struct _EXCEPTION_RECORD32 {
-    LONG32 ExceptionCode;
-    ULONG32 ExceptionFlags;
-    ULONG32 ExceptionRecord;
-    ULONG32 ExceptionAddress;
-    ULONG32 NumberParameters;
-    ULONG32 ExceptionInformation[15];
-} EXCEPTION_RECORD32, *PEXCEPTION_RECORD32;
-#endif
+//
+// EXCEPTION_RECORD Structures
+//
+typedef struct _DBGKM_EXCEPTION_RECORD32 {
+    int32_t ExceptionCode;
+    uint32_t ExceptionFlags;
+    uint32_t ExceptionRecord;
+    uint32_t ExceptionAddress;
+    uint32_t NumberParameters;
+    uint32_t ExceptionInformation[15];
+} DBGKM_EXCEPTION_RECORD32, *PDBGKM_EXCEPTION_RECORD32;
 
-#if !defined(EXCEPTION_RECORD64)
-typedef struct _EXCEPTION_RECORD64 {
-    LONG32 ExceptionCode;
-    ULONG32 ExceptionFlags;
-    UINT64 ExceptionRecord;
-    UINT64 ExceptionAddress;
-    ULONG32 NumberParameters;
-    ULONG32 __unusedAligment;
-    UINT64 ExceptionInformation[15];
-} EXCEPTION_RECORD64, *PEXCEPTION_RECORD64;
-#endif
-*/
+typedef struct _DBGKM_EXCEPTION_RECORD64 {
+    int32_t ExceptionCode;
+    uint32_t ExceptionFlags;
+    uint64_t ExceptionRecord;
+    uint64_t ExceptionAddress;
+    uint32_t NumberParameters;
+    uint32_t __unusedAligment;
+    uint64_t ExceptionInformation[15];
+} DBGKM_EXCEPTION_RECORD64, *PDBGKM_EXCEPTION_RECORD64;
 
 //
 // DBGKM Structure for Exceptions
 //
 typedef struct _DBGKM_EXCEPTION32
 {
-    EXCEPTION_RECORD32 ExceptionRecord;
+    DBGKM_EXCEPTION_RECORD32 ExceptionRecord;
     uint32_t FirstChance;
 } DBGKM_EXCEPTION32, *PDBGKM_EXCEPTION32;
 
 typedef struct _DBGKM_EXCEPTION64
 {
-    EXCEPTION_RECORD64 ExceptionRecord;
+    DBGKM_EXCEPTION_RECORD64 ExceptionRecord;
     uint32_t FirstChance;
 } DBGKM_EXCEPTION64, *PDBGKM_EXCEPTION64;
 
