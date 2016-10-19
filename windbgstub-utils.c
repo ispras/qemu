@@ -90,20 +90,153 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
 
 PCPU_CONTEXT get_Context(int index)
 {
-    // CPUState *cpu = find_cpu(index);
-    // CPUArchState *env = CPU_ARCH_STATE(cpu);
+    CPUState *cpu = find_cpu(index);
+    CPUArchState *env = CPU_ARCH_STATE(cpu);
+    int i;
 
     memset(&c, 0, sizeof(c));
+
+#if defined(TARGET_I386)
+
+    c.ContextFlags = CPU_CONTEXT_FULL
+                   | CPU_CONTEXT_FLOATING_POINT
+                // | CPU_CONTEXT_DEBUG_REGISTERS
+                   | CPU_CONTEXT_EXTENDED_REGISTERS
+                   ;
+
+    if (c.ContextFlags & CPU_CONTEXT_FULL) {
+        c.Dr0    = env->dr[0];
+        c.Dr1    = env->dr[1];
+        c.Dr2    = env->dr[2];
+        c.Dr3    = env->dr[3];
+        c.Dr6    = env->dr[6];
+        c.Dr7    = env->dr[7];
+
+        c.Edi    = env->regs[R_EDI];
+        c.Esi    = env->regs[R_ESI];
+        c.Ebx    = env->regs[R_EBX];
+        c.Edx    = env->regs[R_EDX];
+        c.Ecx    = env->regs[R_ECX];
+        c.Eax    = env->regs[R_EAX];
+        c.Ebp    = env->regs[R_EBP];
+        c.Esp    = env->regs[R_ESP];
+
+        c.Eip    = env->eip;
+        c.EFlags = env->eflags;
+
+        c.SegGs  = env->segs[R_GS].selector;
+        c.SegFs  = env->segs[R_FS].selector;
+        c.SegEs  = env->segs[R_ES].selector;
+        c.SegDs  = env->segs[R_DS].selector;
+        c.SegCs  = env->segs[R_CS].selector;
+        c.SegSs  = env->segs[R_SS].selector;
+    }
+
+    if (c.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
+        c.FloatSave.ControlWord    = env->fpuc;
+        c.FloatSave.StatusWord     = env->fpus;
+        c.FloatSave.TagWord        = env->fpstt;
+        c.FloatSave.ErrorOffset    = LONG(env->fpip, 0);
+        c.FloatSave.ErrorSelector  = LONG(env->fpip, 1);
+        c.FloatSave.DataOffset     = LONG(env->fpdp, 0);
+        c.FloatSave.DataSelector   = LONG(env->fpdp, 1);
+        c.FloatSave.Cr0NpxState    = env->cr[0];
+
+        for (i = 0; i < 8; ++i) {
+            memcpy(PTR(c.FloatSave.RegisterArea[i * 10]),
+                   PTR(env->fpregs[i].mmx), sizeof(MMXReg));
+        }
+    }
+
+    if (c.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
+
+    }
+
+    if (c.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
+        for (i = 0; i < 8; ++i) {
+            memcpy(PTR(c.ExtendedRegisters[(10 + i) * 16]), PTR(env->xmm_regs[i]), sizeof(ZMMReg));
+        }
+        // offset 24
+        LONG(c.ExtendedRegisters, 6) = env->mxcsr;
+    }
+
+    c.ExtendedRegisters[0] = 0xaa;
+
+#elif defined(TARGET_X86_64)
+
+#endif
 
     return &c;
 }
 
 void set_Context(uint8_t *data, int len, int index)
 {
-    // CPUState *cpu = find_cpu(index);
-    // CPUArchState *env = CPU_ARCH_STATE(cpu);
+    CPUState *cpu = find_cpu(index);
+    CPUArchState *env = CPU_ARCH_STATE(cpu);
+    int i;
 
     memcpy(PTR(c), data, ROUND(len, sizeof(c)));
+
+#if defined(TARGET_I386)
+
+    if (c.ContextFlags & CPU_CONTEXT_FULL) {
+        env->dr[0] = c.Dr0;
+        env->dr[1] = c.Dr1;
+        env->dr[2] = c.Dr2;
+        env->dr[3] = c.Dr3;
+        env->dr[6] = c.Dr6;
+        env->dr[7] = c.Dr7;
+
+        env->regs[R_EDI] = c.Edi;
+        env->regs[R_ESI] = c.Esi;
+        env->regs[R_EBX] = c.Ebx;
+        env->regs[R_EDX] = c.Edx;
+        env->regs[R_ECX] = c.Ecx;
+        env->regs[R_EAX] = c.Eax;
+        env->regs[R_EBP] = c.Ebp;
+        env->regs[R_ESP] = c.Esp;
+
+        env->eip    = c.Eip;
+        env->eflags = c.EFlags;
+
+        env->segs[R_GS].selector = c.SegGs;
+        env->segs[R_FS].selector = c.SegFs;
+        env->segs[R_ES].selector = c.SegEs;
+        env->segs[R_DS].selector = c.SegDs;
+        env->segs[R_CS].selector = c.SegCs;
+        env->segs[R_SS].selector = c.SegSs;
+    }
+
+    if (c.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
+        env->fpuc  = c.FloatSave.ControlWord;
+        env->fpus  = c.FloatSave.StatusWord;
+        env->fpstt = c.FloatSave.TagWord;
+        LONG(env->fpip, 0) = c.FloatSave.ErrorOffset;
+        LONG(env->fpip, 1) = c.FloatSave.ErrorSelector;
+        LONG(env->fpdp, 0) = c.FloatSave.DataOffset;
+        LONG(env->fpdp, 1) = c.FloatSave.DataSelector;
+        env->cr[0] = c.FloatSave.Cr0NpxState;
+
+        for (i = 0; i < 8; ++i) {
+            memcpy(PTR(env->fpregs[i].mmx),
+                   PTR(c.FloatSave.RegisterArea[i * 10]), sizeof(MMXReg));
+        }
+    }
+
+    if (c.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
+
+    }
+
+    if (c.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
+        for (i = 0; i < 8; ++i) {
+            memcpy(PTR(env->xmm_regs[i]), PTR(c.ExtendedRegisters[(10 + i) * 16]), sizeof(ZMMReg));
+        }
+        env->mxcsr = LONG(c.ExtendedRegisters, 6);
+    }
+
+#elif defined(TARGET_X86_64)
+
+#endif
 }
 
 PCPU_KSPECIAL_REGISTERS get_KSpecialRegisters(int index)

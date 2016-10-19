@@ -10,7 +10,7 @@
 #define COUT_DEC(var) COUT_COMMON("%d", var)
 #define COUT_HEX(var) COUT_COMMON("0x%x", var)
 #define COUT_STRING(var) COUT_COMMON("%s", var)
-#define COUT_SIZEOF(var) COUT_DEC(sizeof(var))
+#define COUT_SIZEOF(var) COUT_COMMON("%lld", sizeof(var))
 #define COUT_COMMON(fmt, var) COUT(#var ": " fmt "\n", var);
 
 #define COUT_STRUCT(var) COUT_ARRAY(&var, 1)
@@ -42,7 +42,7 @@
     }                                       \
 }
 
-#define ROUND(value, max) value > max ? max : value
+#define ROUND(value, max) (value > max ? max : value)
 
 #define BYTE(var, index) (COMMON_PTR(uint8_t, var)[index])
 #define LONG(var, index) (COMMON_PTR(uint32_t, var)[index])
@@ -50,9 +50,9 @@
 #define COMMON_PTR(ptr, var) ((ptr *) &(var))
 #define PTR(var) COMMON_PTR(uint8_t, var)
 
-#define M64_OFFSET(data) data + sizeof(DBGKD_MANIPULATE_STATE64)
+#define M64_OFFSET(data) (data + sizeof(DBGKD_MANIPULATE_STATE64))
 
-#define CPU_ARCH_STATE(cpu) (CPUArchState *) (cpu)->env_ptr
+#define CPU_ARCH_STATE(cpu) ((CPUArchState *) (cpu)->env_ptr)
 
 #define OFFSET_KPRCB            0x20
 #define OFFSET_KPRCB_CURRTHREAD 0x4
@@ -80,15 +80,13 @@ typedef struct _CPU_CTRL_ADDRS {
 #define SIZE_OF_X86_REG 80
 #define MAX_SUP_EXT 512
 
-typedef struct _CPU_DESCRIPTOR
-{
+typedef struct _CPU_DESCRIPTOR {
     uint16_t Pad;
     uint16_t Limit;
     uint32_t Base;
 } CPU_DESCRIPTOR, *PCPU_DESCRIPTOR;
 
-typedef struct _CPU_KSPECIAL_REGISTERS
-{
+typedef struct _CPU_KSPECIAL_REGISTERS {
     uint32_t Cr0;
     uint32_t Cr2;
     uint32_t Cr3;
@@ -117,6 +115,18 @@ typedef struct _CPU_FLOATING_SAVE_AREA {
     uint8_t RegisterArea[SIZE_OF_X86_REG];
     uint32_t Cr0NpxState;
 } CPU_FLOATING_SAVE_AREA, *PCPU_FLOATING_SAVE_AREA;
+
+#define CPU_CONTEXT_i386 0x10000
+
+#define CPU_CONTEXT_CONTROL (CPU_CONTEXT_i386 | 0x1)
+#define CPU_CONTEXT_INTEGER (CPU_CONTEXT_i386 | 0x2)
+#define CPU_CONTEXT_SEGMENTS (CPU_CONTEXT_i386 | 0x4)
+#define CPU_CONTEXT_FLOATING_POINT (CPU_CONTEXT_i386 | 0x8)
+#define CPU_CONTEXT_DEBUG_REGISTERS (CPU_CONTEXT_i386 | 0x10)
+#define CPU_CONTEXT_EXTENDED_REGISTERS (CPU_CONTEXT_i386 | 0x20)
+
+#define CPU_CONTEXT_FULL (CPU_CONTEXT_CONTROL | CPU_CONTEXT_INTEGER | CPU_CONTEXT_SEGMENTS)
+#define CPU_CONTEXT_ALL (CPU_CONTEXT_FULL | CPU_CONTEXT_FLOATING_POINT | CPU_CONTEXT_DEBUG_REGISTERS | CPU_CONTEXT_EXTENDED_REGISTERS)
 
 typedef struct _CPU_CONTEXT {
     uint32_t ContextFlags;
@@ -174,6 +184,17 @@ typedef struct _CPU_XMM_SAVE_AREA32 {
     CPU_M128A XmmRegisters[16];
     uint8_t Reserved4[96];
 } CPU_XMM_SAVE_AREA32, *PCPU_XMM_SAVE_AREA32;
+
+#define CPU_CONTEXT_AMD64 0x100000
+
+#define CPU_CONTEXT_CONTROL (CPU_CONTEXT_AMD64 | 0x1)
+#define CPU_CONTEXT_INTEGER (CPU_CONTEXT_AMD64 | 0x2)
+#define CPU_CONTEXT_SEGMENTS (CPU_CONTEXT_AMD64 | 0x4)
+#define CPU_CONTEXT_FLOATING_POINT (CPU_CONTEXT_AMD64 | 0x8)
+#define CPU_CONTEXT_DEBUG_REGISTERS (CPU_CONTEXT_AMD64 | 0x10)
+
+#define CPU_CONTEXT_FULL (CPU_CONTEXT_CONTROL | CPU_CONTEXT_INTEGER | CPU_CONTEXT_FLOATING_POINT)
+#define CPU_CONTEXT_ALL (CPU_CONTEXT_FULL | CPU_CONTEXT_SEGMENTS | CPU_CONTEXT_DEBUG_REGISTERS)
 
 #pragma pack(push, 2)
 typedef struct _CPU_CONTEXT {
@@ -249,6 +270,8 @@ typedef struct _CPU_CONTEXT {
 } CPU_CONTEXT, *PCPU_CONTEXT;
 #pragma pack(pop)
 
+#else
+#error Unsupported Architecture
 #endif
 
 PCPU_CTRL_ADDRS         get_KPCRAddress(int index);

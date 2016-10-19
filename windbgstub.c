@@ -491,7 +491,7 @@ static void windbg_close(void)
 void windbg_start_sync(void)
 {
     pc_addrs = get_KPCRAddress(0);
-    
+
     lock = 1;
 }
 
