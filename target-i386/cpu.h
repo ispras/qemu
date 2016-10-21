@@ -155,6 +155,19 @@
 #define HF_SVMI_SHIFT       21 /* SVM intercepts are active */
 #define HF_OSFXSR_SHIFT     22 /* CR4.OSFXSR */
 #define HF_SMAP_SHIFT       23 /* CR4.SMAP */
+#define HF_VMXE_SHIFT       24 /* CR4.VMXE */
+#define HF_VMX_SHIFT        25 /* in VMX operations if set */
+//vmx state occupy bits 25-26
+
+//vmx macros:
+#define NOT_IN_VMX      (!((env->hflags >> HF_VMX_SHIFT) & 3))
+#define VMX_ROOT        (((env->hflags >> HF_VMX_SHIFT) & 3) == 1)
+#define VMX_NON_ROOT    (((env->hflags >> HF_VMX_SHIFT) & 3) == 2)
+#define IN_VMX          (((env->hflags >> HF_VMX_SHIFT) & 3) > 0)
+
+#define VMX_LEAVE       env->hflags &= ~HF_VMX_MASK
+#define VMX_SET_ROOT    env->hflags = ((env->hflags & ~HF_VMX_MASK) | (1 << HF_VMX_SHIFT))
+#define VMX_SET_GUEST   env->hflags = ((env->hflags & ~HF_VMX_MASK) | (2 << HF_VMX_SHIFT))
 
 #define HF_CPL_MASK          (3 << HF_CPL_SHIFT)
 #define HF_SOFTMMU_MASK      (1 << HF_SOFTMMU_SHIFT)
@@ -178,20 +191,26 @@
 #define HF_SVMI_MASK         (1 << HF_SVMI_SHIFT)
 #define HF_OSFXSR_MASK       (1 << HF_OSFXSR_SHIFT)
 #define HF_SMAP_MASK         (1 << HF_SMAP_SHIFT)
+#define HF_VMXE_MASK         (1 << HF_VMXE_SHIFT)
+#define HF_VMX_MASK          (3 << HF_VMX_SHIFT)
 
 /* hflags2 */
 
-#define HF2_GIF_SHIFT            0 /* if set CPU takes interrupts */
-#define HF2_HIF_SHIFT            1 /* value of IF_MASK when entering SVM */
-#define HF2_NMI_SHIFT            2 /* CPU serving NMI */
-#define HF2_VINTR_SHIFT          3 /* value of V_INTR_MASKING bit */
-#define HF2_SMM_INSIDE_NMI_SHIFT 4 /* CPU serving SMI nested inside NMI */
+#define HF2_GIF_SHIFT             0 /* if set CPU takes interrupts */
+#define HF2_HIF_SHIFT             1 /* value of IF_MASK when entering SVM */
+#define HF2_NMI_SHIFT             2 /* CPU serving NMI */
+#define HF2_VINTR_SHIFT           3 /* value of V_INTR_MASKING bit */
+#define HF2_SMM_INSIDE_NMI_SHIFT  4 /* CPU serving SMI nested inside NMI */
+#define HF2_STI_BLOCKING_SHIFT    5 /* events are blocked due sti */
+#define HF2_MOV_SS_BLOCKING_SHIFT 6 /* events are blocked due mov ss */
 
-#define HF2_GIF_MASK            (1 << HF2_GIF_SHIFT)
-#define HF2_HIF_MASK            (1 << HF2_HIF_SHIFT)
-#define HF2_NMI_MASK            (1 << HF2_NMI_SHIFT)
-#define HF2_VINTR_MASK          (1 << HF2_VINTR_SHIFT)
-#define HF2_SMM_INSIDE_NMI_MASK (1 << HF2_SMM_INSIDE_NMI_SHIFT)
+#define HF2_GIF_MASK              (1 << HF2_GIF_SHIFT)
+#define HF2_HIF_MASK              (1 << HF2_HIF_SHIFT)
+#define HF2_NMI_MASK              (1 << HF2_NMI_SHIFT)
+#define HF2_VINTR_MASK            (1 << HF2_VINTR_SHIFT)
+#define HF2_SMM_INSIDE_NMI_MASK   (1 << HF2_SMM_INSIDE_NMI_SHIFT)
+#define HF2_STI_BLOCKING_MASK     (1 << HF2_STI_BLOCKING_SHIFT)
+#define HF2_MOV_SS_BLOCKING_MASK  (1 << HF2_MOV_SS_BLOCKING_SHIFT)
 
 #define CR0_PE_SHIFT 0
 #define CR0_MP_SHIFT 1
@@ -797,6 +816,8 @@ typedef struct {
 
 #define NB_OPMASK_REGS 8
 
+#include "vmx.h"
+
 typedef enum TPRAccess {
     TPR_ACCESS_READ,
     TPR_ACCESS_WRITE,
@@ -869,6 +890,12 @@ typedef struct CPUX86State {
     uint64_t star;
 
     uint64_t vm_hsave;
+
+    /* vmx */
+    uint64_t vmxon_ptr;
+    uint64_t curr_vmcs_ptr;
+    VMCS curr_vmcs;
+    uint32_t vmx_int_icount;
 
 #ifdef TARGET_X86_64
     target_ulong lstar;
@@ -994,7 +1021,7 @@ void x86_cpu_list(FILE *f, fprintf_function cpu_fprintf);
 void x86_cpudef_setup(void);
 int cpu_x86_support_mca_broadcast(CPUX86State *env);
 
-int cpu_get_pic_interrupt(CPUX86State *s);
+int cpu_get_pic_interrupt(CPUX86State *s, int int_ack);
 /* MSDOS compatibility mode FPU exception support */
 void cpu_set_ferr(CPUX86State *s);
 
@@ -1331,6 +1358,16 @@ void helper_lock_init(void);
 void cpu_svm_check_intercept_param(CPUX86State *env1, uint32_t type,
                                    uint64_t param);
 void cpu_vmexit(CPUX86State *nenv, uint32_t exit_code, uint64_t exit_info_1);
+
+/* vmx_helper.c */
+void cpu_vmx_check_intercept_vectored(CPUX86State *env, uint32_t type, int intno, int error_code);
+uint32_t cpu_vmx_get_masked_new_cr(CPUX86State *env, uint32_t new_cr, int cr_number);
+target_ulong cpu_vmx_get_shadow_cr(CPUX86State *env, int cr_number);
+void cpu_vmx_need_exit(CPUX86State *env, uint32_t type);
+void cpu_vmx_set_exit_reason(CPUX86State *env, uint32_t type);
+void cpu_vmx_set_param(int index, uint64_t val);
+void cpu_vmx_set_nested_exception(CPUX86State *env, int val);
+int cpu_vmx_need_exit_on_interrupt(CPUX86State *env);
 
 /* seg_helper.c */
 void do_interrupt_x86_hardirq(CPUX86State *env, int intno, int is_hw);

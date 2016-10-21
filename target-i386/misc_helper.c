@@ -108,6 +108,7 @@ void helper_cpuid(CPUX86State *env)
 {
     uint32_t eax, ebx, ecx, edx;
 
+    cpu_vmx_need_exit(env, VMX_EXIT_CPUID);
     cpu_svm_check_intercept_param(env, SVM_EXIT_CPUID, 0);
 
     cpu_x86_cpuid(env, (uint32_t)env->regs[R_EAX], (uint32_t)env->regs[R_ECX],
@@ -138,15 +139,33 @@ target_ulong helper_read_crN(CPUX86State *env, int reg)
 
     cpu_svm_check_intercept_param(env, SVM_EXIT_READ_CR0 + reg, 0);
     switch (reg) {
-    default:
-        val = env->cr[reg];
+    case 0:
+    case 4:
+        if (VMX_NON_ROOT) {
+            val = cpu_vmx_get_shadow_cr(env, reg);
+        } else {
+            val = env->cr[reg];
+        }
+        break;
+    case 3:
+        if (VMX_NON_ROOT) {
+            cpu_vmx_need_exit(env, VMX_EXIT_MOV_FROM_CR3);
+        } else {
+            val = env->cr[reg];
+        }
         break;
     case 8:
+        if (VMX_NON_ROOT) {
+            cpu_vmx_need_exit(env, VMX_EXIT_MOV_FROM_CR8);
+        }
         if (!(env->hflags2 & HF2_VINTR_MASK)) {
             val = cpu_get_apic_tpr(x86_env_get_cpu(env)->apic_state);
         } else {
             val = env->v_tpr;
         }
+        break;
+    default:
+        val = env->cr[reg];
         break;
     }
     return val;
@@ -160,12 +179,18 @@ void helper_write_crN(CPUX86State *env, int reg, target_ulong t0)
         cpu_x86_update_cr0(env, t0);
         break;
     case 3:
+        if (VMX_NON_ROOT) {
+            cpu_vmx_need_exit(env, VMX_EXIT_MOV_TO_CR3);
+        }
         cpu_x86_update_cr3(env, t0);
         break;
     case 4:
         cpu_x86_update_cr4(env, t0);
         break;
     case 8:
+        if (VMX_NON_ROOT) {
+            cpu_vmx_need_exit(env, VMX_EXIT_MOV_TO_CR8);
+        }
         if (!(env->hflags2 & HF2_VINTR_MASK)) {
             cpu_set_apic_tpr(x86_env_get_cpu(env)->apic_state, t0);
         }
@@ -204,6 +229,7 @@ void helper_lmsw(CPUX86State *env, target_ulong t0)
     /* only 4 lower bits of CR0 are modified. PE cannot be set to zero
        if already set to one. */
     t0 = (env->cr[0] & ~0xe) | (t0 & 0xf);
+    cpu_vmx_set_exit_reason(env, VMX_EXIT_LMSW);
     helper_write_crN(env, 0, t0);
 }
 
@@ -245,6 +271,7 @@ void helper_rdpmc(CPUX86State *env)
     /* currently unimplemented */
     qemu_log_mask(LOG_UNIMP, "x86: unimplemented rdpmc\n");
     raise_exception_err(env, EXCP06_ILLOP, 0);
+    cpu_vmx_need_exit(env, VMX_EXIT_RDPMC);
 }
 
 #if defined(CONFIG_USER_ONLY)
@@ -539,6 +566,43 @@ void helper_rdmsr(CPUX86State *env)
     case MSR_IA32_MISC_ENABLE:
         val = env->msr_ia32_misc_enable;
         break;
+    case MSR_IA32_FEATURE_CONTROL:
+        val = 5; //Nobody wants set the reg, so we do
+        break;
+        /* VMX MSRs */
+    case MSR_VMX_BASIC:
+        val = VMX_MSR_VMX_BASIC;
+        break;
+    case MSR_VMX_PINBASED_CTLS:
+        val = VMX_MSR_VMX_PINBASED_CTLS;
+        break;  
+    case MSR_VMX_PROCBASED_CTLS:
+        val = VMX_MSR_VMX_PROCBASED_CTLS;
+        break;
+    case MSR_VMX_EXIT_CTLS:
+        val = VMX_MSR_VMX_EXIT_CTLS;
+        break;                           
+    case MSR_VMX_ENTRY_CTLS:
+        val = VMX_MSR_VMX_ENTRY_CTLS;
+        break;
+    case MSR_VMX_MISC:
+        val = VMX_MSR_VMX_MISC;
+        break;  
+    case MSR_VMX_CR0_FIXED0:
+        val = VMX_MSR_VMX_CR0_FIXED0;
+        break;
+    case MSR_VMX_CR0_FIXED1:
+        val = VMX_MSR_VMX_CR0_FIXED1;
+        break;         
+    case MSR_VMX_CR4_FIXED0:
+        val = VMX_MSR_VMX_CR4_FIXED0;
+        break;
+    case MSR_VMX_CR4_FIXED1:
+        val = VMX_MSR_VMX_CR4_FIXED1;
+        break; 
+    case MSR_VMX_VMCS_ENUM:
+        val = VMX_MSR_VMX_VMCS_ENUM;
+        break; 
     default:
         if ((uint32_t)env->regs[R_ECX] >= MSR_MC0_CTL
             && (uint32_t)env->regs[R_ECX] < MSR_MC0_CTL +
@@ -580,6 +644,7 @@ void helper_hlt(CPUX86State *env, int next_eip_addend)
 {
     X86CPU *cpu = x86_env_get_cpu(env);
 
+    cpu_vmx_need_exit(env, VMX_EXIT_HLT);
     cpu_svm_check_intercept_param(env, SVM_EXIT_HLT, 0);
     env->eip += next_eip_addend;
 
@@ -592,6 +657,7 @@ void helper_monitor(CPUX86State *env, target_ulong ptr)
         raise_exception_ra(env, EXCP0D_GPF, GETPC());
     }
     /* XXX: store address? */
+    cpu_vmx_need_exit(env, VMX_EXIT_MONITOR);
     cpu_svm_check_intercept_param(env, SVM_EXIT_MONITOR, 0);
 }
 
@@ -603,6 +669,7 @@ void helper_mwait(CPUX86State *env, int next_eip_addend)
     if ((uint32_t)env->regs[R_ECX] != 0) {
         raise_exception_ra(env, EXCP0D_GPF, GETPC());
     }
+    cpu_vmx_need_exit(env, VMX_EXIT_MWAIT);
     cpu_svm_check_intercept_param(env, SVM_EXIT_MWAIT, 0);
     env->eip += next_eip_addend;
 
@@ -620,6 +687,7 @@ void helper_pause(CPUX86State *env, int next_eip_addend)
 {
     X86CPU *cpu = x86_env_get_cpu(env);
 
+    cpu_vmx_need_exit(env, VMX_EXIT_PAUSE);
     cpu_svm_check_intercept_param(env, SVM_EXIT_PAUSE, 0);
     env->eip += next_eip_addend;
 

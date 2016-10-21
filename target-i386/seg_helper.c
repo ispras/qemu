@@ -342,6 +342,9 @@ static void switch_tss_ra(CPUX86State *env, int tss_selector,
     cpu_stb_kernel_ra(env, env->tr.base, v1, retaddr);
     cpu_stb_kernel_ra(env, env->tr.base + old_tss_limit_max, v2, retaddr);
 
+    cpu_vmx_set_param(0, 0);
+    cpu_vmx_set_param(1, source);
+    cpu_vmx_need_exit(env, VMX_EXIT_TASK_SWITCH);
     /* clear busy bit (it is restartable) */
     if (source == SWITCH_TSS_JMP || source == SWITCH_TSS_IRET) {
         target_ulong ptr;
@@ -635,6 +638,7 @@ static void do_interrupt_protected(CPUX86State *env, int intno, int is_int,
         if (!(e2 & DESC_P_MASK)) {
             raise_exception_err(env, EXCP0B_NOSEG, intno * 8 + 2);
         }
+        cpu_vmx_set_param(0, 1);
         switch_tss(env, intno * 8, e1, e2, SWITCH_TSS_CALL, old_eip);
         if (has_error_code) {
             int type;
@@ -1240,6 +1244,9 @@ static void do_interrupt_all(X86CPU *cpu, int intno, int is_int,
             count++;
         }
     }
+    if (VMX_NON_ROOT && !is_hw) {
+        cpu_vmx_check_intercept_vectored(env, VMX_EXIT_EXCEPTION, intno, error_code);
+    }
     if (env->cr[0] & CR0_PE_MASK) {
 #if !defined(CONFIG_USER_ONLY)
         if (env->hflags & HF_SVMI_MASK) {
@@ -1302,6 +1309,7 @@ void x86_cpu_do_interrupt(CPUState *cs)
                      env->error_code,
                      env->exception_next_eip, 0);
     /* successfully delivered */
+    cpu_vmx_set_nested_exception(env, 0);
     env->old_exception = -1;
 #endif
 }
@@ -1338,6 +1346,7 @@ bool x86_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
         } else if ((interrupt_request & CPU_INTERRUPT_NMI) &&
                    !(env->hflags2 & HF2_NMI_MASK)) {
             cs->interrupt_request &= ~CPU_INTERRUPT_NMI;
+            cpu_vmx_check_intercept_vectored(env, VMX_EXIT_NMI, EXCP02_NMI, 0);
             env->hflags2 |= HF2_NMI_MASK;
             do_interrupt_x86_hardirq(env, EXCP02_NMI, 1);
             ret = true;
@@ -1351,11 +1360,20 @@ bool x86_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
                     (!(env->hflags2 & HF2_VINTR_MASK) &&
                      (env->eflags & IF_MASK &&
                       !(env->hflags & HF_INHIBIT_IRQ_MASK))))) {
+            //if (VMX_NON_ROOT && (env->vmx_int_icount < 500))
+            //    return true;
             int intno;
             cpu_svm_check_intercept_param(env, SVM_EXIT_INTR, 0);
             cs->interrupt_request &= ~(CPU_INTERRUPT_HARD |
                                        CPU_INTERRUPT_VIRQ);
-            intno = cpu_get_pic_interrupt(env);
+
+            if (VMX_NON_ROOT && !ACKNOWLEDGE_INT_ON_EXIT) {
+                intno = cpu_get_pic_interrupt(env, 0);
+            } else {
+                intno = cpu_get_pic_interrupt(env, 1);
+            }
+            
+            cpu_vmx_check_intercept_vectored(env, VMX_EXIT_EXTERNAL_INTERRUPT, intno, 0);
             qemu_log_mask(CPU_LOG_TB_IN_ASM,
                           "Servicing hardware INT=0x%02x\n", intno);
             do_interrupt_x86_hardirq(env, intno, 1);

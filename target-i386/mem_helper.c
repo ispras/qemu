@@ -142,6 +142,7 @@ void tlb_fill(CPUState *cs, target_ulong addr, int is_write, int mmu_idx,
         X86CPU *cpu = X86_CPU(cs);
         CPUX86State *env = &cpu->env;
 
+        cpu_vmx_set_param(0, addr);
         raise_exception_err_ra(env, cs->exception_index, env->error_code, retaddr);
     }
 }

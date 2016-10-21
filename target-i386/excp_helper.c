@@ -55,7 +55,7 @@ static int check_exception(CPUX86State *env, int intno, int *error_code)
         }
 
         qemu_log_mask(CPU_LOG_RESET, "Triple fault\n");
-
+        cpu_vmx_check_intercept_vectored(env, VMX_EXIT_TRIPLE_FAULT, 0, 0);
         qemu_system_reset_request();
         return EXCP_HLT;
     }
@@ -88,7 +88,7 @@ static void QEMU_NORETURN raise_interrupt2(CPUX86State *env, int intno,
                                            uintptr_t retaddr)
 {
     CPUState *cs = CPU(x86_env_get_cpu(env));
-
+    cpu_vmx_set_nested_exception(env, 1);
     if (!is_int) {
         cpu_svm_check_intercept_param(env, SVM_EXIT_EXCP_BASE + intno,
                                       error_code);

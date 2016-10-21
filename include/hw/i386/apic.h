@@ -9,7 +9,7 @@ void apic_deliver_irq(uint8_t dest, uint8_t dest_mode, uint8_t delivery_mode,
 int apic_accept_pic_intr(DeviceState *s);
 void apic_deliver_pic_intr(DeviceState *s, int level);
 void apic_deliver_nmi(DeviceState *d);
-int apic_get_interrupt(DeviceState *s);
+int apic_get_interrupt(DeviceState *s, int int_ack);
 void apic_reset_irq_delivered(void);
 int apic_get_irq_delivered(void);
 void cpu_set_apic_base(DeviceState *s, uint64_t val);

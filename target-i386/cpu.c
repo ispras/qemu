@@ -319,11 +319,11 @@ static const char *cpuid_6_feature_name[] = {
           /* missing:
           CPUID_VME, CPUID_DTS, CPUID_SS, CPUID_HT, CPUID_TM, CPUID_PBE */
 #define TCG_EXT_FEATURES (CPUID_EXT_SSE3 | CPUID_EXT_PCLMULQDQ | \
-          CPUID_EXT_MONITOR | CPUID_EXT_SSSE3 | CPUID_EXT_CX16 | \
+          CPUID_EXT_MONITOR | CPUID_EXT_VMX | CPUID_EXT_SSSE3 | CPUID_EXT_CX16 | \
           CPUID_EXT_SSE41 | CPUID_EXT_SSE42 | CPUID_EXT_POPCNT | \
           CPUID_EXT_MOVBE | CPUID_EXT_AES | CPUID_EXT_HYPERVISOR)
           /* missing:
-          CPUID_EXT_DTES64, CPUID_EXT_DSCPL, CPUID_EXT_VMX, CPUID_EXT_SMX,
+          CPUID_EXT_DTES64, CPUID_EXT_DSCPL, CPUID_EXT_SMX,
           CPUID_EXT_EST, CPUID_EXT_TM2, CPUID_EXT_CID, CPUID_EXT_FMA,
           CPUID_EXT_XTPR, CPUID_EXT_PDCM, CPUID_EXT_PCID, CPUID_EXT_DCA,
           CPUID_EXT_X2APIC, CPUID_EXT_TSC_DEADLINE_TIMER, CPUID_EXT_XSAVE,
@@ -696,7 +696,7 @@ static X86CPUDefinition builtin_x86_defs[] = {
     {
         .name = "qemu64",
         .level = 0xd,
-        .vendor = CPUID_VENDOR_AMD,
+        .vendor = CPUID_VENDOR_INTEL,
         .family = 6,
         .model = 6,
         .stepping = 3,
@@ -705,11 +705,11 @@ static X86CPUDefinition builtin_x86_defs[] = {
             CPUID_MTRR | CPUID_CLFLUSH | CPUID_MCA |
             CPUID_PSE36,
         .features[FEAT_1_ECX] =
-            CPUID_EXT_SSE3 | CPUID_EXT_CX16 | CPUID_EXT_POPCNT,
+            CPUID_EXT_SSE3 | CPUID_EXT_CX16 | CPUID_EXT_POPCNT | CPUID_EXT_VMX,
         .features[FEAT_8000_0001_EDX] =
             CPUID_EXT2_LM | CPUID_EXT2_SYSCALL | CPUID_EXT2_NX,
         .features[FEAT_8000_0001_ECX] =
-            CPUID_EXT3_LAHF_LM | CPUID_EXT3_SVM |
+            CPUID_EXT3_LAHF_LM | //CPUID_EXT3_SVM |
             CPUID_EXT3_ABM | CPUID_EXT3_SSE4A,
         .xlevel = 0x8000000A,
     },
@@ -758,10 +758,10 @@ static X86CPUDefinition builtin_x86_defs[] = {
             CPUID_MTRR | CPUID_CLFLUSH | CPUID_MCA |
             CPUID_PSE36 | CPUID_VME | CPUID_ACPI | CPUID_SS,
         /* Missing: CPUID_EXT_DTES64, CPUID_EXT_DSCPL, CPUID_EXT_EST,
-         * CPUID_EXT_TM2, CPUID_EXT_XTPR, CPUID_EXT_PDCM, CPUID_EXT_VMX */
+         * CPUID_EXT_TM2, CPUID_EXT_XTPR, CPUID_EXT_PDCM */
         .features[FEAT_1_ECX] =
             CPUID_EXT_SSE3 | CPUID_EXT_MONITOR | CPUID_EXT_SSSE3 |
-            CPUID_EXT_CX16,
+            CPUID_EXT_CX16 | CPUID_EXT_VMX,
         .features[FEAT_8000_0001_EDX] =
             CPUID_EXT2_LM | CPUID_EXT2_SYSCALL | CPUID_EXT2_NX,
         .features[FEAT_8000_0001_ECX] =
@@ -839,9 +839,9 @@ static X86CPUDefinition builtin_x86_defs[] = {
             CPUID_MTRR | CPUID_CLFLUSH | CPUID_MCA | CPUID_ACPI |
             CPUID_SS,
         /* Missing: CPUID_EXT_EST, CPUID_EXT_TM2 , CPUID_EXT_XTPR,
-         * CPUID_EXT_PDCM, CPUID_EXT_VMX */
+         * CPUID_EXT_PDCM */
         .features[FEAT_1_ECX] =
-            CPUID_EXT_SSE3 | CPUID_EXT_MONITOR,
+            CPUID_EXT_SSE3 | CPUID_EXT_MONITOR | CPUID_EXT_VMX,
         .features[FEAT_8000_0001_EDX] =
             CPUID_EXT2_NX,
         .xlevel = 0x80000008,
@@ -2687,6 +2687,8 @@ static void x86_cpu_reset(CPUState *s)
     if (kvm_enabled()) {
         kvm_arch_reset_vcpu(cpu);
     }
+    
+    VMX_LEAVE;
 #endif
 }
 

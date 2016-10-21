@@ -61,6 +61,16 @@
 
 //#define MACRO_TEST   1
 
+//vmx macros
+#undef NOT_IN_VMX
+#undef VMX_ROOT
+#undef VMX_NON_ROOT
+#undef IN_VMX
+#define NOT_IN_VMX      (!((s->flags >> HF_VMX_SHIFT) & 3))
+#define VMX_ROOT        (((s->flags >> HF_VMX_SHIFT) & 3) == 1)
+#define VMX_NON_ROOT    (((s->flags >> HF_VMX_SHIFT) & 3) == 2)
+#define IN_VMX          (((s->flags >> HF_VMX_SHIFT) & 3) > 0)
+
 /* global register indexes */
 static TCGv_ptr cpu_env;
 static TCGv cpu_A0;
@@ -667,6 +677,8 @@ static void gen_check_io(DisasContext *s, TCGMemOp ot, target_ulong cur_eip,
 
     if (s->pe && (s->cpl > s->iopl || s->vm86)) {
         tcg_gen_trunc_tl_i32(cpu_tmp2_i32, cpu_T[0]);
+        gen_update_cc_op(s);
+        gen_jmp_im(cur_eip);
         switch (ot) {
         case MO_8:
             gen_helper_check_iob(cpu_env, cpu_tmp2_i32);
@@ -4389,6 +4401,141 @@ static void gen_sse(CPUX86State *env, DisasContext *s, int b,
     }
 }
 
+static void gen_vmx(CPUX86State *env, DisasContext *s, int b,
+                    target_ulong pc_start, int rex_r)
+{
+    int modrm, mod, reg, rm, op, ot;
+    //qemu_log_mask(CPU_LOG_VMX, "translate: GEN VMX\n");
+    gen_update_cc_op(s);
+    gen_jmp_im(pc_start - s->cs_base);
+
+    switch (b) {
+        case 0x101:
+            modrm = cpu_ldub_code(env, s->pc - 1);
+            rm = modrm & 7;
+            switch (rm) {
+            case 1: /* vmcall */
+                //qemu_log_mask(CPU_LOG_VMX, "translate: GEN VMCALL\n");
+                goto illegal_op;
+                break;
+            case 2: /* vmlaunch */ 
+            case 3: /* vmresume */
+                //qemu_log_mask(CPU_LOG_VMX, "translate: GEN VMLAUNCH/VMRESUME\n");
+                if (NOT_IN_VMX || !s->pe || 
+                    s->vm86 || (s->lma && !s->code64)) {
+                    goto illegal_op;
+                } else {
+                    gen_helper_vmlaunch_vmresume(cpu_env, tcg_const_tl(rm));
+                    gen_eob(s);
+                }
+                break;
+            case 4: /* vmxoff */
+                //qemu_log_mask(CPU_LOG_VMX, "translate: GEN VMXOFF\n");
+                if (NOT_IN_VMX || !s->pe || 
+                    s->vm86 || (s->lma && !s->code64)) {
+                    goto illegal_op;
+                } else {
+                    gen_helper_vmxoff(cpu_env);
+                }
+                break;
+            default:
+                goto illegal_op;
+            }
+            break;
+        case 0x1c7:
+            modrm = cpu_ldub_code(env, s->pc - 1);
+            mod = (modrm >> 6) & 3;
+            op = (modrm >> 3) & 7;
+            if (mod == 3) {
+                goto illegal_op;
+            }
+            switch (op) {
+                case 6:
+                    if (s->prefix & PREFIX_DATA) { /* vmclear */
+                        //qemu_log_mask(CPU_LOG_VMX, "translate: GEN VMCLEAR\n");
+                        if (NOT_IN_VMX || !s->pe || 
+                            s->vm86 || (s->lma && !s->code64)) {
+                            goto illegal_op;
+                        } else {
+                            gen_ldst_modrm(env, s, modrm, MO_64, OR_TMP0, 0);
+                            gen_helper_vmclear(cpu_env, cpu_T[0]);
+                        }
+                    } else if (s->prefix & PREFIX_REPZ) { /* vmxon */
+                        //qemu_log_mask(CPU_LOG_VMX, "translate: GEN VMXON\n");
+                        if (!s->pe || !(s->flags & HF_VMXE_MASK) || 
+                            s->vm86 || (s->lma && !s->code64)) {
+                            goto illegal_op;
+                        } else {
+                            gen_ldst_modrm(env, s, modrm, MO_64, OR_TMP0, 0);
+                            gen_helper_vmxon(cpu_env, cpu_T[0]);
+                        }
+                    } else { /* vmptrld */
+                        //qemu_log_mask(CPU_LOG_VMX, "translate: GEN VMPTRLD\n");
+                        if (NOT_IN_VMX || !s->pe || 
+                                s->vm86 || (s->lma && !s->code64)) {
+                            goto illegal_op;
+                        } else {
+                            gen_ldst_modrm(env, s, modrm, MO_64, OR_TMP0, 0);
+                            gen_helper_vmptrld(cpu_env, cpu_T[0]);
+                        }
+                    }
+                    break;
+                case 7: /* vmptrst */  // it's possible, other prefixes should lead to ill_op
+                    //qemu_log_mask(CPU_LOG_VMX, "translate: GEN VMPTRST\n");
+                    if (!(s->prefix & PREFIX_DATA)) {
+                        if (NOT_IN_VMX || !s->pe  || 
+                            s->vm86 || (s->lma && !s->code64)) {
+                            goto illegal_op;
+                        } else {
+                            gen_ldst_modrm(env, s, modrm, MO_64, OR_TMP0, 0);
+                            gen_helper_vmptrst(cpu_env, cpu_T[0]);
+                        }
+                    } else {
+                        goto illegal_op;
+                    }
+                    break;
+                default:
+                    goto illegal_op;
+            }
+            break;
+        case 0x178:
+        case 0x179:
+            if (!(s->prefix & (PREFIX_REPZ | PREFIX_REPNZ | PREFIX_DATA))) {
+                if (NOT_IN_VMX || !s->pe ||
+                    s->vm86 || (s->lma && !s->code64)) {
+                    goto illegal_op;
+                } else {
+                    ot = s->lma ? MO_64 : MO_32;
+                    modrm = cpu_ldub_code(env, s->pc++);
+                    mod = (modrm >> 6) & 3;
+                    reg = ((modrm >> 3) & 7) | rex_r;
+                    rm = (modrm & 7) | REX_B(s);
+                    if (b & 1) { //vmwrite
+                        //qemu_log_mask(CPU_LOG_VMX, "translate: GEN VWRITE\n");
+                        gen_op_mov_v_reg(ot, cpu_T[1], reg); //encoding 
+                        gen_ldst_modrm(env, s, modrm, ot, OR_TMP0, 0);
+                        gen_helper_vmwrite(cpu_env, cpu_T[1], cpu_T[0]);
+                    } else { //vmread
+                        //qemu_log_mask(CPU_LOG_VMX, "translate: GEN VMREAD\n");
+                        gen_op_mov_v_reg(ot, cpu_T[1], reg); //encoding                             
+                        gen_helper_vmread(cpu_T[0], cpu_env, cpu_T[1]);
+                        gen_ldst_modrm(env, s, modrm, ot, OR_TMP0, 1); // XXX: OR_TMP0 instead rm???
+                        gen_helper_vm_succeed(cpu_env);
+                    }
+                }
+            } else {
+                goto illegal_op;
+            }
+            break;
+        default:
+            break;
+    }
+    set_cc_op(s, CC_OP_EFLAGS);
+    return;
+illegal_op:
+    gen_exception(s, EXCP06_ILLOP, pc_start - s->cs_base);
+}
+
 /* convert one instruction. s->is_jmp is set if the translation must
    be stopped. Return the next pc value */
 static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
@@ -4403,6 +4550,12 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
 
     if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT))) {
         tcg_gen_debug_insn_start(pc_start);
+    }
+    //vmx int_window_handling
+    if (unlikely(VMX_NON_ROOT)) {
+        gen_update_cc_op(s);
+        gen_jmp_im(pc_start - s->cs_base);
+        gen_helper_vmx_check_int_window_exiting(cpu_env);    
     }
     s->pc = pc_start;
     prefixes = 0;
@@ -5183,23 +5336,38 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
     case 0x1c7: /* cmpxchg8b */
         modrm = cpu_ldub_code(env, s->pc++);
         mod = (modrm >> 6) & 3;
-        if ((mod == 3) || ((modrm & 0x38) != 0x8))
+        if (mod == 3)
             goto illegal_op;
+        op = (modrm >> 3) & 7;
+        switch (op) {
+            case 1:
 #ifdef TARGET_X86_64
-        if (dflag == MO_64) {
-            if (!(s->cpuid_ext_features & CPUID_EXT_CX16))
-                goto illegal_op;
-            gen_lea_modrm(env, s, modrm);
-            gen_helper_cmpxchg16b(cpu_env, cpu_A0);
-        } else
+                if (dflag == MO_64) {
+                    if (!(s->cpuid_ext_features & CPUID_EXT_CX16))
+                        goto illegal_op;
+                    gen_jmp_im(pc_start - s->cs_base);
+                    gen_update_cc_op(s);
+                    gen_lea_modrm(env, s, modrm);
+                    gen_helper_cmpxchg16b(cpu_env, cpu_A0);
+                } else
 #endif        
-        {
-            if (!(s->cpuid_features & CPUID_CX8))
+                {
+                    if (!(s->cpuid_features & CPUID_CX8))
+                        goto illegal_op;
+                    gen_jmp_im(pc_start - s->cs_base);
+                    gen_update_cc_op(s);
+                    gen_lea_modrm(env, s, modrm);
+                    gen_helper_cmpxchg8b(cpu_env, cpu_A0);
+                }
+                set_cc_op(s, CC_OP_EFLAGS);
+                break;
+            case 6:
+            case 7:
+                gen_vmx(env, s, b, pc_start, rex_r);
+                break;
+            default:
                 goto illegal_op;
-            gen_lea_modrm(env, s, modrm);
-            gen_helper_cmpxchg8b(cpu_env, cpu_A0);
         }
-        set_cc_op(s, CC_OP_EFLAGS);
         break;
 
         /**************************/
@@ -5304,7 +5472,7 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
             /* If several instructions disable interrupts, only the
                _first_ does it */
             if (!(s->tb->flags & HF_INHIBIT_IRQ_MASK))
-                gen_helper_set_inhibit_irq(cpu_env);
+                gen_helper_set_inhibit_irq(cpu_env, tcg_const_i32(HF2_MOV_SS_BLOCKING_MASK));
             s->tf = 0;
         }
         if (s->is_jmp) {
@@ -5372,7 +5540,7 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
             /* If several instructions disable interrupts, only the
                _first_ does it */
             if (!(s->tb->flags & HF_INHIBIT_IRQ_MASK))
-                gen_helper_set_inhibit_irq(cpu_env);
+                gen_helper_set_inhibit_irq(cpu_env, tcg_const_i32(HF2_MOV_SS_BLOCKING_MASK));
             s->tf = 0;
         }
         if (s->is_jmp) {
@@ -6905,7 +7073,7 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
                 /* If several instructions disable interrupts, only the
                    _first_ does it */
                 if (!(s->tb->flags & HF_INHIBIT_IRQ_MASK))
-                    gen_helper_set_inhibit_irq(cpu_env);
+                    gen_helper_set_inhibit_irq(cpu_env, tcg_const_i32(HF2_STI_BLOCKING_MASK));
                 /* give a chance to handle pending irqs */
                 gen_jmp_im(s->pc - s->cs_base);
                 gen_eob(s);
@@ -7163,19 +7331,21 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
         op = (modrm >> 3) & 7;
         rm = modrm & 7;
         switch(op) {
-        case 0: /* sgdt */
-            if (mod == 3)
-                goto illegal_op;
-            gen_svm_check_intercept(s, pc_start, SVM_EXIT_GDTR_READ);
-            gen_lea_modrm(env, s, modrm);
-            tcg_gen_ld32u_tl(cpu_T[0], cpu_env, offsetof(CPUX86State, gdt.limit));
-            gen_op_st_v(s, MO_16, cpu_T[0], cpu_A0);
-            gen_add_A0_im(s, 2);
-            tcg_gen_ld_tl(cpu_T[0], cpu_env, offsetof(CPUX86State, gdt.base));
-            if (dflag == MO_16) {
-                tcg_gen_andi_tl(cpu_T[0], cpu_T[0], 0xffffff);
+        case 0:
+            if (mod == 3) { //vmcall, vmlaunch, vmresume, vmxoff
+                gen_vmx(env, s, b, pc_start, rex_r);
+            } else { /* sgdt */
+                gen_svm_check_intercept(s, pc_start, SVM_EXIT_GDTR_READ);
+                gen_lea_modrm(env, s, modrm);
+                tcg_gen_ld32u_tl(cpu_T[0], cpu_env, offsetof(CPUX86State, gdt.limit));
+                gen_op_st_v(s, MO_16, cpu_T[0], cpu_A0);
+                gen_add_A0_im(s, 2);
+                tcg_gen_ld_tl(cpu_T[0], cpu_env, offsetof(CPUX86State, gdt.base));
+                if (dflag == MO_16) {
+                    tcg_gen_andi_tl(cpu_T[0], cpu_T[0], 0xffffff);
+                }
+                gen_op_st_v(s, CODE64(s) + MO_32, cpu_T[0], cpu_A0);
             }
-            gen_op_st_v(s, CODE64(s) + MO_32, cpu_T[0], cpu_A0);
             break;
         case 1:
             if (mod == 3) {
@@ -7344,11 +7514,13 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
             break;
         case 4: /* smsw */
             gen_svm_check_intercept(s, pc_start, SVM_EXIT_READ_CR0);
-#if defined TARGET_X86_64 && defined HOST_WORDS_BIGENDIAN
-            tcg_gen_ld32u_tl(cpu_T[0], cpu_env, offsetof(CPUX86State,cr[0]) + 4);
-#else
-            tcg_gen_ld32u_tl(cpu_T[0], cpu_env, offsetof(CPUX86State,cr[0]));
-#endif
+//#if defined TARGET_X86_64 && defined HOST_WORDS_BIGENDIAN
+//            tcg_gen_ld32u_tl(cpu_T[0], cpu_env, offsetof(CPUX86State,cr[0]) + 4);
+//#else
+//            tcg_gen_ld32u_tl(cpu_T[0], cpu_env, offsetof(CPUX86State,cr[0]));
+//#endif
+            //may be I have broken something here
+            gen_helper_read_crN(cpu_T[0], cpu_env, tcg_const_i32(0));
             gen_ldst_modrm(env, s, modrm, MO_16, OR_TMP0, 1);
             break;
         case 6: /* lmsw */
@@ -7357,6 +7529,14 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
             } else {
                 gen_svm_check_intercept(s, pc_start, SVM_EXIT_WRITE_CR0);
                 gen_ldst_modrm(env, s, modrm, MO_16, OR_TMP0, 0);
+                if (VMX_NON_ROOT) {
+                    gen_helper_vmx_set_param(tcg_const_i32(0), tcg_const_i64(modrm));
+                    gen_helper_vmx_set_param(tcg_const_i32(1), cpu_T[0]);
+                    gen_lea_modrm(env, s, modrm); //really?
+                    gen_helper_vmx_set_param(tcg_const_i32(2), cpu_A0);
+                    gen_update_cc_op(s);
+                    gen_jmp_im(pc_start - s->cs_base);
+                }
                 gen_helper_lmsw(cpu_env, cpu_T[0]);
                 gen_jmp_im(s->pc - s->cs_base);
                 gen_eob(s);
@@ -7370,6 +7550,10 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
                     gen_update_cc_op(s);
                     gen_jmp_im(pc_start - s->cs_base);
                     gen_lea_modrm(env, s, modrm);
+                    if (VMX_NON_ROOT) {
+                        gen_helper_vmx_set_param(0, cpu_A0);
+                        gen_helper_vmx_need_exit(cpu_env, tcg_const_i32(VMX_EXIT_INVLPG));
+                    }
                     gen_helper_invlpg(cpu_env, cpu_A0);
                     gen_jmp_im(s->pc - s->cs_base);
                     gen_eob(s);
@@ -7398,13 +7582,13 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
                     }
                     break;
                 case 1: /* rdtscp */
-                    if (!(s->cpuid_ext2_features & CPUID_EXT2_RDTSCP))
+                    if (!(s->cpuid_ext2_features & CPUID_EXT2_RDTSCP) || VMX_NON_ROOT)
                         goto illegal_op;
                     gen_update_cc_op(s);
                     gen_jmp_im(pc_start - s->cs_base);
                     if (s->tb->cflags & CF_USE_ICOUNT) {
                         gen_io_start();
-		    }
+		            }
                     gen_helper_rdtscp(cpu_env);
                     if (s->tb->cflags & CF_USE_ICOUNT) {
                         gen_io_end();
@@ -7581,6 +7765,7 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
             case 8:
                 gen_update_cc_op(s);
                 gen_jmp_im(pc_start - s->cs_base);
+                gen_helper_vmx_set_param(tcg_const_i32(0), tcg_const_i64(rm));
                 if (b & 2) {
                     gen_op_mov_v_reg(ot, cpu_T[0], rm);
                     gen_helper_write_crN(cpu_env, tcg_const_i32(reg),
@@ -7599,6 +7784,15 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
         break;
     case 0x121: /* mov reg, drN */
     case 0x123: /* mov drN, reg */
+        if (VMX_NON_ROOT) {
+            modrm = cpu_ldub_code(env, s->pc);
+            gen_helper_vmx_set_param(tcg_const_i32(0), tcg_const_i64((modrm >> 3) & 7));
+            gen_helper_vmx_set_param(tcg_const_i32(1), tcg_const_i64(b & 2));
+            gen_helper_vmx_set_param(tcg_const_i32(2), tcg_const_i64((modrm & 7) | REX_B(s)));
+            gen_update_cc_op(s);
+            gen_jmp_im(pc_start - s->cs_base);
+            gen_helper_vmx_need_exit(cpu_env, tcg_const_i32(VMX_EXIT_MOV_DR));
+        }
         if (s->cpl != 0) {
             gen_exception(s, EXCP0D_GPF, pc_start - s->cs_base);
         } else {
@@ -7635,6 +7829,8 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
             gen_exception(s, EXCP0D_GPF, pc_start - s->cs_base);
         } else {
             gen_svm_check_intercept(s, pc_start, SVM_EXIT_WRITE_CR0);
+            gen_update_cc_op(s);
+            gen_jmp_im(pc_start - s->cs_base);
             gen_helper_clts(cpu_env);
             /* abort block because static cpu state changed */
             gen_jmp_im(s->pc - s->cs_base);
@@ -7767,12 +7963,16 @@ static target_ulong disas_insn(CPUX86State *env, DisasContext *s,
     case 0x110 ... 0x117:
     case 0x128 ... 0x12f:
     case 0x138 ... 0x13a:
-    case 0x150 ... 0x179:
+    case 0x150 ... 0x177:
     case 0x17c ... 0x17f:
     case 0x1c2:
     case 0x1c4 ... 0x1c6:
     case 0x1d0 ... 0x1fe:
         gen_sse(env, s, b, pc_start, rex_r);
+        break;
+    case 0x178: /* vmread */
+    case 0x179: /* vmwrite */
+        gen_vmx(env, s, b, pc_start, rex_r);
         break;
     default:
         goto illegal_op;

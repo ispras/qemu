@@ -338,8 +338,8 @@ target_ulong helper_read_eflags(CPUX86State *env)
 
 void helper_clts(CPUX86State *env)
 {
-    env->cr[0] &= ~CR0_TS_MASK;
-    env->hflags &= ~HF_TS_MASK;
+    cpu_vmx_set_exit_reason(env, VMX_EXIT_CLTS);
+    cpu_x86_update_cr0(env, env->cr[0] & ~CR0_TS_MASK);
 }
 
 void helper_reset_rf(CPUX86State *env)
@@ -383,12 +383,14 @@ void helper_sti_vm(CPUX86State *env)
 }
 #endif
 
-void helper_set_inhibit_irq(CPUX86State *env)
+void helper_set_inhibit_irq(CPUX86State *env, uint32_t reason)
 {
     env->hflags |= HF_INHIBIT_IRQ_MASK;
+    env->hflags2 |= reason;
 }
 
 void helper_reset_inhibit_irq(CPUX86State *env)
 {
     env->hflags &= ~HF_INHIBIT_IRQ_MASK;
+    env->hflags2 &= ~(HF2_STI_BLOCKING_MASK | HF2_MOV_SS_BLOCKING_MASK);
 }

@@ -543,7 +543,7 @@ static bool apic_check_pic(APICCommonState *s)
     return true;
 }
 
-int apic_get_interrupt(DeviceState *dev)
+int apic_get_interrupt(DeviceState *dev, int int_ack)
 {
     APICCommonState *s = APIC_COMMON(dev);
     int intno;
@@ -568,6 +568,10 @@ int apic_get_interrupt(DeviceState *dev)
         apic_sync_vapic(s, SYNC_TO_VAPIC);
         return s->spurious_vec & 0xff;
     }
+    
+    if (!int_ack)
+        return intno;
+
     apic_reset_bit(s->irr, intno);
     apic_set_bit(s->isr, intno);
     apic_sync_vapic(s, SYNC_TO_VAPIC);

@@ -594,6 +594,17 @@ void cpu_x86_update_cr0(CPUX86State *env, uint32_t new_cr0)
     X86CPU *cpu = x86_env_get_cpu(env);
     int pe_state;
 
+    /* VMX handling */
+    if (IN_VMX) {
+        if (VMX_NON_ROOT) {
+            new_cr0 = cpu_vmx_get_masked_new_cr(env, new_cr0, 0);
+        }
+
+        if ((new_cr0 & (~VMX_MSR_VMX_CR0_FIXED0 & ~VMX_MSR_VMX_CR0_FIXED1)) || (~new_cr0 & (VMX_MSR_VMX_CR0_FIXED0 & VMX_MSR_VMX_CR0_FIXED1))) {
+            raise_exception(env, EXCP0D_GPF);
+        }
+    }
+
     qemu_log_mask(CPU_LOG_MMU, "CR0 update: CR0=0x%08x\n", new_cr0);
     if ((new_cr0 & (CR0_PG_MASK | CR0_WP_MASK | CR0_PE_MASK)) !=
         (env->cr[0] & (CR0_PG_MASK | CR0_WP_MASK | CR0_PE_MASK))) {
@@ -647,6 +658,17 @@ void cpu_x86_update_cr4(CPUX86State *env, uint32_t new_cr4)
 {
     X86CPU *cpu = x86_env_get_cpu(env);
 
+    /* VMX handling */
+    if (IN_VMX) {
+        if (VMX_NON_ROOT) {
+            new_cr4 = cpu_vmx_get_masked_new_cr(env, new_cr4, 4);
+        }
+
+        if ((new_cr4 & (~VMX_MSR_VMX_CR4_FIXED0 & ~VMX_MSR_VMX_CR4_FIXED1)) || (~new_cr4 & (VMX_MSR_VMX_CR4_FIXED0 & VMX_MSR_VMX_CR4_FIXED1))) {
+            raise_exception(env, EXCP0D_GPF);
+        }
+    }
+
 #if defined(DEBUG_MMU)
     printf("CR4 update: CR4=%08x\n", (uint32_t)env->cr[4]);
 #endif
@@ -670,6 +692,16 @@ void cpu_x86_update_cr4(CPUX86State *env, uint32_t new_cr4)
     env->hflags &= ~HF_SMAP_MASK;
     if (new_cr4 & CR4_SMAP_MASK) {
         env->hflags |= HF_SMAP_MASK;
+    }
+
+    /* VMX handling */
+    if (IN_VMX && ((new_cr4 & ~(VMX_MSR_VMX_CR4_FIXED0 | VMX_MSR_VMX_CR4_FIXED1)) || !(new_cr4 & (VMX_MSR_VMX_CR4_FIXED0 & VMX_MSR_VMX_CR4_FIXED1)))) {
+        raise_exception(env, EXCP0D_GPF);
+    }
+
+    env->hflags &= ~HF_VMXE_MASK;
+    if (new_cr4 & CR4_VMXE_MASK) {
+        env->hflags |= HF_VMXE_MASK;
     }
 
     env->cr[4] = new_cr4;
