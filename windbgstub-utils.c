@@ -1,13 +1,14 @@
 #include "exec/windbgstub-utils.h"
 
 static CPU_CTRL_ADDRS pca;
+static LOAD_SYMBOLS_STATE_CHANGE lssc;
 static EXCEPTION_STATE_CHANGE esc;
 static CPU_CONTEXT c;
 static CPU_KSPECIAL_REGISTERS kr;
 
 PCPU_CTRL_ADDRS get_KPCRAddress(int index)
 {
-    CPUState *cpu = find_cpu(index);
+    CPUState *cpu = qemu_get_cpu(index);
     CPUArchState *env = CPU_ARCH_STATE(cpu);
 
     pca.KPCR = env->segs[R_FS].base;
@@ -22,7 +23,7 @@ PCPU_CTRL_ADDRS get_KPCRAddress(int index)
 
 PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
 {
-    CPUState *cpu = find_cpu(index);
+    CPUState *cpu = qemu_get_cpu(index);
     CPUArchState *env = CPU_ARCH_STATE(cpu);
 
     memset(&esc, 0, sizeof(esc));
@@ -88,9 +89,21 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
     return &esc;
 }
 
+PLOAD_SYMBOLS_STATE_CHANGE get_LoadSymbolsStateChange(int index)
+{
+    memcpy(&lssc, get_ExceptionStateChange(0), sizeof(DBGKD_ANY_WAIT_STATE_CHANGE));
+    esc.StateChange.NewState = DbgKdLoadSymbolsStateChange;
+    //TODO: Get it
+    lssc.StateChange.u.Exception.ExceptionRecord.ExceptionCode = 0x22;
+    strcpy(lssc.NtKernelPathName, "\\SystemRoot\\system32\\ntoskrnl.exe");
+    //
+    
+    return &lssc;
+}
+
 PCPU_CONTEXT get_Context(int index)
 {
-    CPUState *cpu = find_cpu(index);
+    CPUState *cpu = qemu_get_cpu(index);
     CPUArchState *env = CPU_ARCH_STATE(cpu);
     int i;
 
@@ -171,7 +184,7 @@ PCPU_CONTEXT get_Context(int index)
 
 void set_Context(uint8_t *data, int len, int index)
 {
-    CPUState *cpu = find_cpu(index);
+    CPUState *cpu = qemu_get_cpu(index);
     CPUArchState *env = CPU_ARCH_STATE(cpu);
     int i;
 
@@ -241,7 +254,7 @@ void set_Context(uint8_t *data, int len, int index)
 
 PCPU_KSPECIAL_REGISTERS get_KSpecialRegisters(int index)
 {
-    CPUState *cpu = find_cpu(index);
+    CPUState *cpu = qemu_get_cpu(index);
     CPUArchState *env = CPU_ARCH_STATE(cpu);
 
     memset(&kr, 0, sizeof(kr));
@@ -274,7 +287,7 @@ PCPU_KSPECIAL_REGISTERS get_KSpecialRegisters(int index)
 
 void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index)
 {
-    CPUState *cpu = find_cpu(index);
+    CPUState *cpu = qemu_get_cpu(index);
     CPUArchState *env = CPU_ARCH_STATE(cpu);
 
     memcpy(PTR(kr) + offset, data, ROUND(len, sizeof(kr) - offset));
@@ -301,19 +314,6 @@ void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index)
     env->ldt.selector = kr.Ldtr;
 
     // kr.Reserved[6];
-}
-
-CPUState *find_cpu(int index)
-{
-    CPUState *cpu;
-
-    CPU_FOREACH(cpu) {
-        if (cpu->cpu_index == index) {
-            return cpu;
-        }
-    }
-
-    return NULL;
 }
 
 uint8_t cpu_amount(void)

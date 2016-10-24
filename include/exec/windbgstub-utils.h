@@ -69,6 +69,16 @@ typedef struct _EXCEPTION_STATE_CHANGE {
 } EXCEPTION_STATE_CHANGE, *PEXCEPTION_STATE_CHANGE;
 #pragma pack(pop)
 
+//
+// Structure for DbgKdLoadSumbolsStateChange
+//
+#pragma pack(push, 1)
+typedef struct _LOAD_SYMBOLS_STATE_CHANGE {
+    DBGKD_ANY_WAIT_STATE_CHANGE StateChange;
+    char NtKernelPathName[34];
+} LOAD_SYMBOLS_STATE_CHANGE, *PLOAD_SYMBOLS_STATE_CHANGE;
+#pragma pack(pop)
+
 typedef struct _CPU_CTRL_ADDRS {
     uint32_t KPCR;
     uint32_t KPRCB;
@@ -274,15 +284,15 @@ typedef struct _CPU_CONTEXT {
 #error Unsupported Architecture
 #endif
 
-PCPU_CTRL_ADDRS         get_KPCRAddress(int index);
-PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index);
-PCPU_CONTEXT            get_Context(int index);
-PCPU_KSPECIAL_REGISTERS get_KSpecialRegisters(int index);
+PCPU_CTRL_ADDRS            get_KPCRAddress(int index);
+PEXCEPTION_STATE_CHANGE    get_ExceptionStateChange(int index);
+PLOAD_SYMBOLS_STATE_CHANGE get_LoadSymbolsStateChange(int index);
+PCPU_CONTEXT               get_Context(int index);
+PCPU_KSPECIAL_REGISTERS    get_KSpecialRegisters(int index);
 
 void set_Context(uint8_t *data, int len, int index);
 void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index);
 
-CPUState *find_cpu(int index);
 uint8_t cpu_amount(void);
 uint32_t data_checksum_compute(uint8_t *data, uint16_t length);
 

@@ -2,7 +2,7 @@
 #include "cpu.h"
 //#include "qemu-common.h"
 #include "sysemu/char.h"
-//#include "sysemu/sysemu.h"
+#include "sysemu/sysemu.h"
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
@@ -36,6 +36,7 @@ static FILE *dump_file;
 
 //TODO: Remove it
 static uint32_t cntrl_packet_id = RESET_PACKET_ID;
+static uint32_t data_packet_id = INITIAL_PACKET_ID | SYNC_PACKET_ID;
 static uint8_t lock = 0;
 //////////////////////////////////////////////////
 
@@ -56,7 +57,7 @@ static void windbg_dump(const char *fmt, ...)
 static void windbg_send_data_packet(uint8_t *data, uint16_t byte_count,
                                     uint16_t type)
 {
-    static uint32_t data_packet_id = INITIAL_PACKET_ID;
+    //static uint32_t data_packet_id = INITIAL_PACKET_ID;
     static uint8_t trailing_byte = PACKET_TRAILING_BYTE;
 
     KD_PACKET packet = {
@@ -107,7 +108,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     bool send_only_m64 = false;
     DBGKD_MANIPULATE_STATE64 m64;
 
-    CPUState *cpu = find_cpu(0);
+    CPUState *cpu = qemu_get_cpu(0);
 
     memset(packet, 0, PACKET_MAX_SIZE);
     memcpy(&m64, ctx->data, m64_size);
@@ -168,7 +169,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         m64.u.ReadMemory.ActualBytesRead = count;
         //TODO: For all processors
-        memcpy(M64_OFFSET(packet), get_KSpecialRegisters(0) + addr, count);
+        memcpy(M64_OFFSET(packet), ((uint8_t *) get_KSpecialRegisters(0)) + addr, count);
         packet_size = m64_size + count;
 
         break;
@@ -330,12 +331,11 @@ static void windbg_process_control_packet(Context *ctx)
 
         break;
     case PACKET_TYPE_KD_RESET:
-        windbg_send_control_packet(ctx->packet.PacketType);
         //TODO: For all processors
-        windbg_send_data_packet((uint8_t *)get_ExceptionStateChange(0),
-                                sizeof(EXCEPTION_STATE_CHANGE),
+        windbg_send_data_packet((uint8_t *)get_LoadSymbolsStateChange(0),
+                                sizeof(LOAD_SYMBOLS_STATE_CHANGE),
                                 PACKET_TYPE_KD_STATE_CHANGE64);
-        cntrl_packet_id = INITIAL_PACKET_ID;
+        windbg_send_control_packet(ctx->packet.PacketType);
 
         break;
     case PACKET_TYPE_KD_STATE_CHANGE64:
@@ -371,8 +371,27 @@ static int windbg_chr_can_receive(void *opaque)
   return PACKET_MAX_SIZE;
 }
 
+static void windbg_set_breakpoint(int index)
+{
+    //CPUState *cpu = qemu_get_cpu(index);
+    //CPUArchState *env = CPU_ARCH_STATE(cpu);
+    
+    cntrl_packet_id = INITIAL_PACKET_ID;
+    data_packet_id = INITIAL_PACKET_ID;
+    windbg_send_data_packet((uint8_t *)get_ExceptionStateChange(0),
+                            sizeof(EXCEPTION_STATE_CHANGE),
+                            PACKET_TYPE_KD_STATE_CHANGE64);
+    vm_stop(RUN_STATE_PAUSED);
+    //TODO: breakpoint
+    //cpu_single_step(qemu_get_cpu(0), SSTEP_ENABLE);
+    //cpu_breakpoint_insert(cpu, env->eip, BP_CPU, NULL);
+ 
+}
+
 static void windbg_read_byte(Context *ctx, uint8_t byte)
 {
+    
+    
     switch (ctx->state) {
     case STATE_LEADER:
         if (byte == PACKET_LEADER_BYTE || byte == CONTROL_PACKET_LEADER_BYTE) {
@@ -387,9 +406,7 @@ static void windbg_read_byte(Context *ctx, uint8_t byte)
             }
         } else if (byte == BREAKIN_PACKET_BYTE) {
             //TODO: For all processors
-            //TODO: breakpoint
-            cpu_single_step(find_cpu(0), SSTEP_ENABLE);
-            //TODO: data_packet_id = INITIAL_PACKET_ID;
+            windbg_set_breakpoint(0);
             ctx->index = 0;
         } else {
             // skip the byte, restart waiting for the leader
