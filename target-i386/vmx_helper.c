@@ -1,30 +1,15 @@
 /*
  *  x86 VMX helpers
- *
- *  Copyright (c) 2003 Fabrice Bellard
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "cpu.h"
 #include "exec/cpu-all.h"
 #include "exec/helper-proto.h"
 #include "exec/cpu_ldst.h"
+ #include "qemu/error-report.h"
 
 static uint32_t exit_reason;
 static int nested_exception;
-static uint32_t latest_int_reason;
 
 #define MAX_EXIT_PARAM 10
 static uint64_t exit_params[MAX_EXIT_PARAM];
@@ -189,16 +174,17 @@ static void vm_fail(CPUX86State *env, uint32_t error_number)
 
 /*** LOADING GUEST MSRS ***/
 /*** LOADING HOST MSRS ***/
-int load_msrs(CPUX86State *env, uint64_t addr, int msr_count)
+static int load_msrs(CPUX86State *env, uint64_t addr, int msr_count)
 {
     if (msr_count) {
         error_report("WARNING: load_msrs have msrs to load (%i)\n", msr_count);
         exit(1);
     }
+    return 0;
 }
 
 /*** SAVING GUEST MSRS ***/
-void save_msrs(CPUX86State *env, uint64_t addr, int msr_count)
+static void save_msrs(CPUX86State *env, uint64_t addr, int msr_count)
 {
     if (msr_count) {
         error_report("WARNING: save_msrs have msrs to save (%i)\n", msr_count);
@@ -329,9 +315,9 @@ static inline void save_guest_state(CPUX86State *env, uint32_t exit_reason)
 static inline void load_host_state(CPUX86State *env)
 {
 /*** Loading Host Control Registers, Debug Registers, MSRs ***/
-    cpu_x86_update_cr0(env, env->curr_vmcs.host_state.cr0 & 0xFFFFFFFF7FF8FFD0ULL | env->cr[0] & ~0xFFFFFFFF7FF8FFD0ULL); //FIXIT: do not modify bits fixed in VMX
-    cpu_x86_update_cr3(env, env->curr_vmcs.host_state.cr3 & 0xFFFFFFFFFFULL | env->cr[3] & ~0xFFFFFFFFFFULL);
-    cpu_x86_update_cr4(env, env->curr_vmcs.host_state.cr4); //FIXIT: do not modify bits fixed in VMX
+    cpu_x86_update_cr0(env, (env->curr_vmcs.host_state.cr0 & 0xFFFFFFFF7FF8FFD0ULL) | (env->cr[0] & ~0xFFFFFFFF7FF8FFD0ULL));
+    cpu_x86_update_cr3(env, (env->curr_vmcs.host_state.cr3 & 0xFFFFFFFFFFULL) | (env->cr[3] & ~0xFFFFFFFFFFULL));
+    cpu_x86_update_cr4(env, env->curr_vmcs.host_state.cr4);
     env->dr[7] = 0x400;
     env->sysenter_cs = env->curr_vmcs.host_state.msr_sysenter_cs;
     env->sysenter_esp = env->curr_vmcs.host_state.msr_sysenter_esp;
@@ -373,13 +359,12 @@ static inline void load_host_state(CPUX86State *env)
     load_msrs(env, env->curr_vmcs.exit_control.msr_load_address, env->curr_vmcs.exit_control.msr_load_count);
 }
 
-void VMentry_failure(CPUX86State *env)
+static void VMentry_failure(CPUX86State *env)
 {
     //exit reason & qualification is set in appropriate places
     env->curr_vmcs.exit_info.exit_reason = env->curr_vmcs.exit_info.exit_reason | (1 << 31); // VMX_ENTRY_FAIL_INVALID_GUEST / VMX_ENTRY_FAIL_MSR_LOADING
     load_host_state(env);
     load_msrs(env, env->curr_vmcs.exit_control.msr_load_address, env->curr_vmcs.exit_control.msr_load_count);
-    //may be it's needed to set flags about failure, but likely no
 }
 
 static int need_compute_instruction_length(CPUX86State *env)
@@ -484,7 +469,7 @@ void helper_vmclear(CPUX86State *env, target_ulong addr)
     }
 }
 
-void load_guest_crs_drs_msrs(CPUX86State *env)
+static void load_guest_crs_drs_msrs(CPUX86State *env)
 {
     cpu_x86_update_cr0(env, (env->curr_vmcs.guest_state.cr0 & 0x8005002F) | (env->cr[0] & 0x7FFAFFD0));
     cpu_x86_update_cr3(env, env->curr_vmcs.guest_state.cr3);
@@ -498,7 +483,7 @@ void load_guest_crs_drs_msrs(CPUX86State *env)
     env->efer = (env->efer & ~0x100) | ((IA32E_MODE_GUEST ? 1 : 0) << 8);
 }
 
-void load_guest_segments_and_dt_regs(CPUX86State *env)
+static void load_guest_segments_and_dt_regs(CPUX86State *env)
 {
     cpu_x86_load_seg_cache(env, R_CS, env->curr_vmcs.guest_state.cs.selector, env->curr_vmcs.guest_state.cs.base, env->curr_vmcs.guest_state.cs.limit, env->curr_vmcs.guest_state.cs.flags << 8);
     cpu_x86_load_seg_cache(env, R_SS, env->curr_vmcs.guest_state.ss.selector, env->curr_vmcs.guest_state.ss.base, env->curr_vmcs.guest_state.ss.limit, env->curr_vmcs.guest_state.ss.flags << 8);
@@ -520,14 +505,14 @@ void load_guest_segments_and_dt_regs(CPUX86State *env)
     env->idt.limit = env->curr_vmcs.guest_state.idtr.limit;
 }
 
-void load_guest_rip_rsp_rflags(CPUX86State *env)
+static void load_guest_rip_rsp_rflags(CPUX86State *env)
 {
     env->eip = env->curr_vmcs.guest_state.rip;
     env->regs[R_ESP] = env->curr_vmcs.guest_state.rsp;
     cpu_load_eflags(env, env->curr_vmcs.guest_state.rflags, ~0);
 }
 
-int check_and_load_guest_state(CPUX86State *env)
+static int check_and_load_guest_state(CPUX86State *env)
 {
     
     load_guest_crs_drs_msrs(env);
@@ -548,11 +533,8 @@ int check_and_load_guest_state(CPUX86State *env)
     return 0;
 }
 
-void event_injection(CPUX86State *env)
+static void event_injection(CPUX86State *env)
 {
-    int vector = env->curr_vmcs.entry_control.interruption_information & 0xFF;
-    int interuption_type = env->curr_vmcs.entry_control.interruption_information & (7 << 8);
-    int deliver_error_code = env->curr_vmcs.entry_control.interruption_information & (1 << 11);
     int valid = env->curr_vmcs.entry_control.interruption_information & (1 << 31);
     if (!valid) {
         if (env->curr_vmcs.guest_state.interuptibility_state & 3) {
@@ -639,7 +621,6 @@ void helper_vmptrld(CPUX86State *env, target_ulong addr)
 void helper_vmptrst(CPUX86State *env, target_ulong addr)
 {
     CPUState *cs = CPU(x86_env_get_cpu(env));
-    uint32_t rev_id = 0;
 
     if (VMX_NON_ROOT) {
         vm_exit(env, 0);
@@ -1559,7 +1540,7 @@ static int exception_has_error_code(int intno)
 }
 
 // get_int_info do not set valid bit
-uint32_t static get_int_info(CPUX86State *env, uint32_t type, int intno)
+static uint32_t get_int_info(CPUX86State *env, uint32_t type, int intno)
 {
     uint32_t int_info = intno;
     switch (type) {
@@ -1600,7 +1581,6 @@ void cpu_vmx_check_intercept_vectored(CPUX86State *env, uint32_t type, int intno
                 //fill idt fields, but do not set valid bit
                 env->curr_vmcs.exit_info.idt_vectoring_information = get_int_info(env, type, intno);
                 env->curr_vmcs.exit_info.idt_vectoring_error_code = error_code;
-                latest_int_reason = type;
             }
 
             if (!((env->curr_vmcs.exec_control.exception_bitmap >> intno) & 1) && (intno != EXCP0E_PAGE)) {
@@ -1742,7 +1722,7 @@ uint32_t cpu_vmx_get_masked_new_cr(CPUX86State *env, uint32_t new_cr, int cr_num
         current_cr = (uint32_t) env->cr[4];
     }
     if ((new_cr & mask) != (shadow_cr & mask)) {
-        if ((cr_number == 0) && (exit_reason != VMX_EXIT_CLTS && exit_reason != VMX_EXIT_LMSW)) {
+        if ((cr_number == 0) && ((exit_reason != VMX_EXIT_CLTS) && (exit_reason != VMX_EXIT_LMSW))) {
             exit_reason = VMX_EXIT_MOV_TO_CR0;
         } else if (cr_number == 4) {
             exit_reason = VMX_EXIT_MOV_TO_CR4;
@@ -1899,7 +1879,7 @@ void helper_vmx_need_exit(CPUX86State *env, uint32_t type)
 void cpu_vmx_set_nested_exception(CPUX86State *env, int val)
 {
     if (val) {
-        if (latest_int_reason == VMX_EXIT_EXCEPTION && env->old_exception == -1) {
+        if (env->old_exception == -1) {
             return;
         }
         nested_exception = 1;

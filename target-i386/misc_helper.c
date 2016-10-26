@@ -135,7 +135,7 @@ void helper_movl_drN_T0(CPUX86State *env, int reg, target_ulong t0)
 #else
 target_ulong helper_read_crN(CPUX86State *env, int reg)
 {
-    target_ulong val;
+    target_ulong val = 0;
 
     cpu_svm_check_intercept_param(env, SVM_EXIT_READ_CR0 + reg, 0);
     switch (reg) {
