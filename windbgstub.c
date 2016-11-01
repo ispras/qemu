@@ -415,8 +415,7 @@ static int windbg_chr_can_receive(void *opaque)
 
 static void windbg_set_breakpoint(int index)
 {
-    //CPUState *cpu = qemu_get_cpu(index);
-    //CPUArchState *env = CPU_ARCH_STATE(cpu);
+    CPUState *cpu = qemu_get_cpu(index);
     
     cntrl_packet_id = INITIAL_PACKET_ID;
     data_packet_id = INITIAL_PACKET_ID;
@@ -424,9 +423,7 @@ static void windbg_set_breakpoint(int index)
                             sizeof(EXCEPTION_STATE_CHANGE),
                             PACKET_TYPE_KD_STATE_CHANGE64);
     vm_stop(RUN_STATE_PAUSED);
-    //TODO: breakpoint
-    //cpu_single_step(cpu, SSTEP_ENABLE);
-    //cpu_breakpoint_insert(cpu, env->eip, BP_CPU, NULL);
+    cpu_single_step(cpu, SSTEP_ENABLE);
  
 }
 
