@@ -57,7 +57,6 @@ static void windbg_dump(const char *fmt, ...)
 static void windbg_send_data_packet(uint8_t *data, uint16_t byte_count,
                                     uint16_t type)
 {
-    //static uint32_t data_packet_id = INITIAL_PACKET_ID;
     static uint8_t trailing_byte = PACKET_TRAILING_BYTE;
 
     KD_PACKET packet = {
@@ -105,10 +104,10 @@ static void windbg_process_manipulate_packet(Context *ctx)
            extra_data_size = 0,
            m64_size = sizeof(DBGKD_MANIPULATE_STATE64);
     uint32_t count, addr;
-    bool send_only_m64 = false;
-    DBGKD_MANIPULATE_STATE64 m64;
     static uint8_t flag = 0, continue2_flag = 0;
     static uint32_t continue2_tf = 0, continue2_dr7 = 0;
+    bool send_only_m64 = false;
+    DBGKD_MANIPULATE_STATE64 m64;
     CPUState *cpu = qemu_get_cpu(0);
 
     memset(packet, 0, PACKET_MAX_SIZE);
@@ -137,9 +136,11 @@ static void windbg_process_manipulate_packet(Context *ctx)
         cpu_memory_rw_debug(cpu, addr, M64_OFFSET(ctx->data), count, 1);
 
         send_only_m64 = true;
+        
         break;
     case DbgKdGetContextApi:
     {
+        //TODO: For all processors
         PCPU_CONTEXT cpuctx = get_Context(0);
         
         packet_size = sizeof(CPU_CONTEXT);
@@ -153,11 +154,9 @@ static void windbg_process_manipulate_packet(Context *ctx)
                 /* Remove it */
                 cpuctx->EFlags &= ~CPU_EFLAGS_TF;
             }
-            printf("continue2");
             continue2_flag--;
         }
-        //TODO: For all processors
-        memcpy(M64_OFFSET(packet), get_Context(0), packet_size);        
+        memcpy(M64_OFFSET(packet), cpuctx, packet_size);        
         packet_size += m64_size;
 
         break;
@@ -168,6 +167,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         send_only_m64 = true;
         flag = 1;
+        
         break;
     case DbgKdWriteBreakPointApi:
 
@@ -176,13 +176,15 @@ static void windbg_process_manipulate_packet(Context *ctx)
         m64.ReturnStatus = 0xc0000001;
 
         send_only_m64 = true;
+        
         break;
     case DbgKdContinueApi:
-
         send_only_m64 = true;
+        
         break;
     case DbgKdReadControlSpaceApi:
     {
+        //TODO: For all processors
         PCPU_KSPECIAL_REGISTERS ksreg = get_KSpecialRegisters(0);
          
         count = m64.u.ReadMemory.TransferCount;
@@ -197,10 +199,9 @@ static void windbg_process_manipulate_packet(Context *ctx)
             ksreg->KernelDr6 = 0;
             continue2_flag--;
         }   
-        //TODO: For all processors
         memcpy(M64_OFFSET(packet), ((uint8_t *) ksreg) + addr, count);
         packet_size = m64_size + count;
-
+        
         break;
     }
     case DbgKdWriteControlSpaceApi:
@@ -216,6 +217,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
             cpu_exec(cpu);
             flag = 0;
         }
+        
         break;
     case DbgKdReadIoSpaceApi:
 
@@ -233,7 +235,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
             continue2_dr7 = m64.u.Continue2.ControlSet.Dr7;
             continue2_flag = 2;
         }
-
+        
         return;
     case DbgKdReadPhysicalMemoryApi:
 
@@ -267,6 +269,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
             m64_size - 0x10, 0);
 
         send_only_m64 = true;
+        
         break;
     case DbgKdWriteBreakPointExApi:
 
