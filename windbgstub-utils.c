@@ -1,6 +1,6 @@
 #include "exec/windbgstub-utils.h"
 
-static CPU_CTRL_ADDRS pca;
+static CPU_CTRL_ADDRS cca;
 static LOAD_SYMBOLS_STATE_CHANGE lssc;
 static EXCEPTION_STATE_CHANGE esc;
 static CPU_CONTEXT c;
@@ -11,14 +11,15 @@ PCPU_CTRL_ADDRS get_KPCRAddress(int index)
     CPUState *cpu = qemu_get_cpu(index);
     CPUArchState *env = CPU_ARCH_STATE(cpu);
 
-    pca.KPCR = env->segs[R_FS].base;
+    cca.KPCR = env->segs[R_FS].base;
 
-    cpu_memory_rw_debug(cpu, pca.KPCR + OFFSET_KPRCB,
-                        PTR(pca.KPRCB), sizeof(pca.KPRCB), 0);
+    cpu_memory_rw_debug(cpu, cca.KPCR + OFFSET_KPRCB, PTR(cca.KPRCB),
+        sizeof(cca.KPRCB), 0);
 
-    cpu_memory_rw_debug(cpu, pca.KPCR + OFFSET_VERSION,
-                        PTR(pca.Version), sizeof(pca.Version), 0);
-    return &pca;
+    cpu_memory_rw_debug(cpu, cca.KPCR + OFFSET_VERSION, PTR(cca.Version),
+        sizeof(cca.Version), 0);
+    
+    return &cca;
 }
 
 PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
@@ -35,9 +36,8 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
     esc.StateChange.Processor = index;
     esc.StateChange.NumberProcessors = cpu_amount();
     //TODO: + 0xffffffff00000000
-    cpu_memory_rw_debug(cpu, pca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
-                        PTR(esc.StateChange.Thread),
-                        sizeof(esc.StateChange.Thread), 0);
+    cpu_memory_rw_debug(cpu, cca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
+        PTR(esc.StateChange.Thread), sizeof(esc.StateChange.Thread), 0);
     esc.StateChange.ProgramCounter = env->eip;
     //
     //TODO: Get it
@@ -76,8 +76,8 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
     //esc.StateChange.ControlReport.ReportFlags = 0x3;
     //
     cpu_memory_rw_debug(cpu, env->eip,
-                        (uint8_t *)esc.StateChange.ControlReport.InstructionStream,
-                        sizeof(esc.StateChange.ControlReport.InstructionStream), 0);
+        (uint8_t *)esc.StateChange.ControlReport.InstructionStream,
+        sizeof(esc.StateChange.ControlReport.InstructionStream), 0);
     esc.StateChange.ControlReport.SegCs = env->segs[R_CS].selector;;
     esc.StateChange.ControlReport.SegDs = env->segs[R_DS].selector;
     esc.StateChange.ControlReport.SegEs = env->segs[R_ES].selector;
@@ -91,7 +91,8 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
 
 PLOAD_SYMBOLS_STATE_CHANGE get_LoadSymbolsStateChange(int index)
 {
-    memcpy(&lssc, get_ExceptionStateChange(0), sizeof(DBGKD_ANY_WAIT_STATE_CHANGE));
+    memcpy(&lssc, get_ExceptionStateChange(0), 
+        sizeof(DBGKD_ANY_WAIT_STATE_CHANGE));
     esc.StateChange.NewState = DbgKdLoadSymbolsStateChange;
     //TODO: Get it
     lssc.StateChange.u.Exception.ExceptionRecord.ExceptionCode = 0x22;
@@ -111,11 +112,7 @@ PCPU_CONTEXT get_Context(int index)
 
 #if defined(TARGET_I386)
 
-    c.ContextFlags = CPU_CONTEXT_FULL
-                   | CPU_CONTEXT_FLOATING_POINT
-                // | CPU_CONTEXT_DEBUG_REGISTERS
-                   | CPU_CONTEXT_EXTENDED_REGISTERS
-                   ;
+    c.ContextFlags = CPU_CONTEXT_ALL;
 
     if (c.ContextFlags & CPU_CONTEXT_FULL) {
         c.Dr0    = env->dr[0];
@@ -157,7 +154,7 @@ PCPU_CONTEXT get_Context(int index)
 
         for (i = 0; i < 8; ++i) {
             memcpy(PTR(c.FloatSave.RegisterArea[i * 10]),
-                   PTR(env->fpregs[i].mmx), sizeof(MMXReg));
+                PTR(env->fpregs[i].mmx), sizeof(MMXReg));
         }
     }
 
@@ -167,7 +164,8 @@ PCPU_CONTEXT get_Context(int index)
 
     if (c.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
         for (i = 0; i < 8; ++i) {
-            memcpy(PTR(c.ExtendedRegisters[(10 + i) * 16]), PTR(env->xmm_regs[i]), sizeof(ZMMReg));
+            memcpy(PTR(c.ExtendedRegisters[(10 + i) * 16]), 
+                PTR(env->xmm_regs[i]), sizeof(ZMMReg));
         }
         // offset 24
         LONG(c.ExtendedRegisters, 6) = env->mxcsr;
@@ -232,7 +230,7 @@ void set_Context(uint8_t *data, int len, int index)
 
         for (i = 0; i < 8; ++i) {
             memcpy(PTR(env->fpregs[i].mmx),
-                   PTR(c.FloatSave.RegisterArea[i * 10]), sizeof(MMXReg));
+                PTR(c.FloatSave.RegisterArea[i * 10]), sizeof(MMXReg));
         }
     }
 
@@ -242,7 +240,8 @@ void set_Context(uint8_t *data, int len, int index)
 
     if (c.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
         for (i = 0; i < 8; ++i) {
-            memcpy(PTR(env->xmm_regs[i]), PTR(c.ExtendedRegisters[(10 + i) * 16]), sizeof(ZMMReg));
+            memcpy(PTR(env->xmm_regs[i]), 
+                PTR(c.ExtendedRegisters[(10 + i) * 16]), sizeof(ZMMReg));
         }
         env->mxcsr = LONG(c.ExtendedRegisters, 6);
     }

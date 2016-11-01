@@ -40,7 +40,7 @@ static uint32_t data_packet_id = INITIAL_PACKET_ID | SYNC_PACKET_ID;
 static uint8_t lock = 0;
 //////////////////////////////////////////////////
 
-static PCPU_CTRL_ADDRS pc_addrs;
+static PCPU_CTRL_ADDRS cc_addrs;
 
 static void windbg_dump(const char *fmt, ...)
 {
@@ -69,10 +69,10 @@ static void windbg_send_data_packet(uint8_t *data, uint16_t byte_count,
     };
 
     qemu_chr_fe_write(windbg_chr, (uint8_t *)&packet,
-                      sizeof(packet));
+        sizeof(packet));
     qemu_chr_fe_write(windbg_chr, data, byte_count);
     qemu_chr_fe_write(windbg_chr, &trailing_byte,
-                      sizeof(trailing_byte));
+        sizeof(trailing_byte));
 
     data_packet_id ^= 1;
 
@@ -107,7 +107,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
     uint32_t count, addr;
     bool send_only_m64 = false;
     DBGKD_MANIPULATE_STATE64 m64;
-
+    static uint8_t flag = 0, continue2_flag = 0;//
+    static uint32_t continue2_tf = 0, continue2_dr7 = 0;
     CPUState *cpu = qemu_get_cpu(0);
 
     memset(packet, 0, PACKET_MAX_SIZE);
@@ -125,9 +126,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         m64.u.ReadMemory.ActualBytesRead = count;
         cpu_memory_rw_debug(cpu, addr, M64_OFFSET(packet), count, 0);
-
         packet_size = m64_size + count;
-
+        
         break;
     case DbgKdWriteVirtualMemoryApi:
         count = ROUND(extra_data_size, m64.u.WriteMemory.TransferCount);
@@ -139,17 +139,35 @@ static void windbg_process_manipulate_packet(Context *ctx)
         send_only_m64 = true;
         break;
     case DbgKdGetContextApi:
+    {
+        PCPU_CONTEXT cpuctx = get_Context(0);
+        
         packet_size = sizeof(CPU_CONTEXT);
+        
+        if (continue2_flag) {
+            if (continue2_tf) {
+                /* Enable TF */
+                cpuctx->EFlags |= CPU_EFLAGS_TF;
+            }
+            else {
+                /* Remove it */
+                cpuctx->EFlags &= ~CPU_EFLAGS_TF;
+            }
+            printf("continue2");
+            continue2_flag--;
+        }
         //TODO: For all processors
-        memcpy(M64_OFFSET(packet), get_Context(0), packet_size);
+        memcpy(M64_OFFSET(packet), cpuctx, packet_size);        
         packet_size += m64_size;
 
         break;
+    }
     case DbgKdSetContextApi:
         set_Context(M64_OFFSET(ctx->data), ROUND(extra_data_size,
-                    sizeof(CPU_CONTEXT)), 0);
+            sizeof(CPU_CONTEXT)), 0);
 
         send_only_m64 = true;
+        flag = 1;
         break;
     case DbgKdWriteBreakPointApi:
 
@@ -164,15 +182,27 @@ static void windbg_process_manipulate_packet(Context *ctx)
         send_only_m64 = true;
         break;
     case DbgKdReadControlSpaceApi:
+    {
+        PCPU_KSPECIAL_REGISTERS ksreg = get_KSpecialRegisters(0);
+         
         count = m64.u.ReadMemory.TransferCount;
         addr = m64.u.ReadMemory.TargetBaseAddress - sizeof(CPU_CONTEXT);
 
         m64.u.ReadMemory.ActualBytesRead = count;
+            
+        if (continue2_flag) {
+            //TODO: For all processors
+            /* Update DR7 and DR6 */
+            ksreg->KernelDr7 = continue2_dr7;
+            ksreg->KernelDr6 = 0;
+            continue2_flag--;
+        }   
         //TODO: For all processors
-        memcpy(M64_OFFSET(packet), ((uint8_t *) get_KSpecialRegisters(0)) + addr, count);
+        memcpy(M64_OFFSET(packet), ((uint8_t *) ksreg) + addr, count);
         packet_size = m64_size + count;
 
         break;
+    }
     case DbgKdWriteControlSpaceApi:
         count = ROUND(extra_data_size, m64.u.WriteMemory.TransferCount);
         addr = m64.u.WriteMemory.TargetBaseAddress - sizeof(CPU_CONTEXT);
@@ -181,6 +211,11 @@ static void windbg_process_manipulate_packet(Context *ctx)
         set_KSpecialRegisters(M64_OFFSET(ctx->data), count, addr, 0);
 
         send_only_m64 = true;
+        //TODO: For all processors
+        if (flag) {
+            cpu_exec(qemu_get_cpu(0));
+            flag = 0;
+        }
         break;
     case DbgKdReadIoSpaceApi:
 
@@ -192,8 +227,14 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         break;
     case DbgKdContinueApi2:
-
-        send_only_m64 = true;
+        if (m64.u.Continue2.ContinueStatus >= 0)
+        {
+            continue2_tf = m64.u.Continue2.ControlSet.TraceFlag;
+            continue2_dr7 = m64.u.Continue2.ControlSet.Dr7;
+            continue2_flag = 2;
+        }
+        
+        //send_only_m64 = true;
         break;
     case DbgKdReadPhysicalMemoryApi:
 
@@ -223,8 +264,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         break;
     case DbgKdGetVersionApi:
-        cpu_memory_rw_debug(cpu, pc_addrs->Version, PTR(m64) + 0x10,
-                            m64_size - 0x10, 0);
+        cpu_memory_rw_debug(cpu, cc_addrs->Version, PTR(m64) + 0x10,
+            m64_size - 0x10, 0);
 
         send_only_m64 = true;
         break;
@@ -333,8 +374,7 @@ static void windbg_process_control_packet(Context *ctx)
     case PACKET_TYPE_KD_RESET:
         //TODO: For all processors
         windbg_send_data_packet((uint8_t *)get_LoadSymbolsStateChange(0),
-                                sizeof(LOAD_SYMBOLS_STATE_CHANGE),
-                                PACKET_TYPE_KD_STATE_CHANGE64);
+            sizeof(LOAD_SYMBOLS_STATE_CHANGE), PACKET_TYPE_KD_STATE_CHANGE64);
         windbg_send_control_packet(ctx->packet.PacketType);
 
         break;
@@ -374,7 +414,7 @@ static int windbg_chr_can_receive(void *opaque)
 static void windbg_set_breakpoint(int index)
 {
     //CPUState *cpu = qemu_get_cpu(index);
-    //CPUArchState *env = CPU_ARCH_STATE(cpu);
+    //CPUArchState *env = NT_ARCH_STATE(cpu);
     
     cntrl_packet_id = INITIAL_PACKET_ID;
     data_packet_id = INITIAL_PACKET_ID;
@@ -383,7 +423,7 @@ static void windbg_set_breakpoint(int index)
                             PACKET_TYPE_KD_STATE_CHANGE64);
     vm_stop(RUN_STATE_PAUSED);
     //TODO: breakpoint
-    //cpu_single_step(qemu_get_cpu(0), SSTEP_ENABLE);
+    //cpu_single_step(cpu, SSTEP_ENABLE);
     //cpu_breakpoint_insert(cpu, env->eip, BP_CPU, NULL);
  
 }
@@ -492,7 +532,7 @@ static void windbg_in_chr_receive(void *opaque, const uint8_t *buf, int size)
         for (i = 0; i < size; i++) {
             uint8_t tmp = buf[i];
             windbg_read_byte(&input_context, tmp);
-            DUMP_VAR(tmp);
+            //DUMP_VAR(tmp);
         }
     }
 }
@@ -507,7 +547,7 @@ static void windbg_close(void)
 
 void windbg_start_sync(void)
 {
-    pc_addrs = get_KPCRAddress(0);
+    cc_addrs = get_KPCRAddress(0);
 
     lock = 1;
 }
@@ -527,7 +567,7 @@ int windbgserver_start(const char *device)
 
     qemu_chr_fe_claim_no_fail(windbg_chr);
     qemu_chr_add_handlers(windbg_chr, windbg_chr_can_receive,
-                          windbg_in_chr_receive, NULL, NULL);
+        windbg_in_chr_receive, NULL, NULL);
 
     // open dump file
     dump_file = fopen("windbg.dump", "wb");

@@ -18,7 +18,7 @@
 #define COUT_ARRAY(var, count) _COUT_STRUCT(var, sizeof(*(var)), count)
 #define _COUT_STRUCT(var, size, count) {          \
     COUT("%s: ", #var);                           \
-    COUT("[size: %d, count: %d]\n", size, count); \
+    COUT("[size: %lld, count: %d]\n", size, count); \
     int di;                                       \
     for (di = 0; di < size * count; ++di) {       \
         if (di % 16 == 0 && di != 0) {            \
@@ -59,6 +59,7 @@
 #define OFFSET_VERSION          0x34
 #define OFFSET_CONTEXT          0x18
 
+#define CPU_EFLAGS_TF 0x0100
 //
 // Structure for DbgKdExceptionStateChange
 //
@@ -135,8 +136,11 @@ typedef struct _CPU_FLOATING_SAVE_AREA {
 #define CPU_CONTEXT_DEBUG_REGISTERS (CPU_CONTEXT_i386 | 0x10)
 #define CPU_CONTEXT_EXTENDED_REGISTERS (CPU_CONTEXT_i386 | 0x20)
 
-#define CPU_CONTEXT_FULL (CPU_CONTEXT_CONTROL | CPU_CONTEXT_INTEGER | CPU_CONTEXT_SEGMENTS)
-#define CPU_CONTEXT_ALL (CPU_CONTEXT_FULL | CPU_CONTEXT_FLOATING_POINT | CPU_CONTEXT_DEBUG_REGISTERS | CPU_CONTEXT_EXTENDED_REGISTERS)
+#define CPU_CONTEXT_FULL \
+    (CPU_CONTEXT_CONTROL | CPU_CONTEXT_INTEGER | CPU_CONTEXT_SEGMENTS)
+#define CPU_CONTEXT_ALL \
+    (CPU_CONTEXT_FULL | CPU_CONTEXT_FLOATING_POINT | \
+    CPU_CONTEXT_DEBUG_REGISTERS | CPU_CONTEXT_EXTENDED_REGISTERS)
 
 typedef struct _CPU_CONTEXT {
     uint32_t ContextFlags;
@@ -203,8 +207,10 @@ typedef struct _CPU_XMM_SAVE_AREA32 {
 #define CPU_CONTEXT_FLOATING_POINT (CPU_CONTEXT_AMD64 | 0x8)
 #define CPU_CONTEXT_DEBUG_REGISTERS (CPU_CONTEXT_AMD64 | 0x10)
 
-#define CPU_CONTEXT_FULL (CPU_CONTEXT_CONTROL | CPU_CONTEXT_INTEGER | CPU_CONTEXT_FLOATING_POINT)
-#define CPU_CONTEXT_ALL (CPU_CONTEXT_FULL | CPU_CONTEXT_SEGMENTS | CPU_CONTEXT_DEBUG_REGISTERS)
+#define CPU_CONTEXT_FULL \
+    (CPU_CONTEXT_CONTROL | CPU_CONTEXT_INTEGER | CPU_CONTEXT_FLOATING_POINT)
+#define CPU_CONTEXT_ALL \
+    (CPU_CONTEXT_FULL | CPU_CONTEXT_SEGMENTS | CPU_CONTEXT_DEBUG_REGISTERS)
 
 #pragma pack(push, 2)
 typedef struct _CPU_CONTEXT {
