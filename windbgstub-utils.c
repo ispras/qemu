@@ -18,7 +18,7 @@ PCPU_CTRL_ADDRS get_KPCRAddress(int index)
 
     cpu_memory_rw_debug(cpu, cca.KPCR + OFFSET_VERSION, PTR(cca.Version),
         sizeof(cca.Version), 0);
-    
+        
     return &cca;
 }
 
@@ -84,20 +84,29 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
     esc.StateChange.ControlReport.SegFs = env->segs[R_FS].selector;
     esc.StateChange.ControlReport.EFlags = env->eflags;
     //TODO: Get it
-    //esc.value = 0x1;
+    esc.value = 0x1;
 
     return &esc;
 }
 
 PLOAD_SYMBOLS_STATE_CHANGE get_LoadSymbolsStateChange(int index)
 {
+    int i; 
+    uint8_t path_name[68]; 
+    size_t count = sizeof(path_name);
+    CPUState *cpu = qemu_get_cpu(index);
+    
     memcpy(&lssc, get_ExceptionStateChange(0), 
         sizeof(DBGKD_ANY_WAIT_STATE_CHANGE));
     esc.StateChange.NewState = DbgKdLoadSymbolsStateChange;
     //TODO: Get it
     lssc.StateChange.u.Exception.ExceptionRecord.ExceptionCode = 0x22;
-    strcpy(lssc.NtKernelPathName, "\\SystemRoot\\system32\\ntoskrnl.exe");
     //
+    cpu_memory_rw_debug(cpu, 0x89000FB8, path_name, count, 0);
+    for (i = 0; i < count; i++) {
+        lssc.NtKernelPathName[i / 2] = path_name[i];
+        i++;
+    }
     
     return &lssc;
 }

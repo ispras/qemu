@@ -107,7 +107,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     uint32_t count, addr;
     bool send_only_m64 = false;
     DBGKD_MANIPULATE_STATE64 m64;
-    static uint8_t flag = 0, continue2_flag = 0;//
+    static uint8_t flag = 0, continue2_flag = 0;
     static uint32_t continue2_tf = 0, continue2_dr7 = 0;
     CPUState *cpu = qemu_get_cpu(0);
 
@@ -157,7 +157,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
             continue2_flag--;
         }
         //TODO: For all processors
-        memcpy(M64_OFFSET(packet), cpuctx, packet_size);        
+        memcpy(M64_OFFSET(packet), get_Context(0), packet_size);        
         packet_size += m64_size;
 
         break;
@@ -213,7 +213,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
         send_only_m64 = true;
         //TODO: For all processors
         if (flag) {
-            cpu_exec(qemu_get_cpu(0));
+            cpu_exec(cpu);
             flag = 0;
         }
         break;
@@ -233,9 +233,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
             continue2_dr7 = m64.u.Continue2.ControlSet.Dr7;
             continue2_flag = 2;
         }
-        
-        //send_only_m64 = true;
-        break;
+
+        return;
     case DbgKdReadPhysicalMemoryApi:
 
         break;
@@ -414,7 +413,7 @@ static int windbg_chr_can_receive(void *opaque)
 static void windbg_set_breakpoint(int index)
 {
     //CPUState *cpu = qemu_get_cpu(index);
-    //CPUArchState *env = NT_ARCH_STATE(cpu);
+    //CPUArchState *env = CPU_ARCH_STATE(cpu);
     
     cntrl_packet_id = INITIAL_PACKET_ID;
     data_packet_id = INITIAL_PACKET_ID;
