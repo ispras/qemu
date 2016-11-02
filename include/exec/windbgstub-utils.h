@@ -59,7 +59,10 @@
 #define OFFSET_VERSION          0x34
 #define OFFSET_CONTEXT          0x18
 
+#define NT_KRNL_PNAME_ADDR 0x89000FB8 //For Win7
+
 #define CPU_EFLAGS_TF 0x0100
+
 //
 // Structure for DbgKdExceptionStateChange
 //
@@ -68,16 +71,6 @@ typedef struct _EXCEPTION_STATE_CHANGE {
     DBGKD_ANY_WAIT_STATE_CHANGE StateChange;
     uint32_t value;
 } EXCEPTION_STATE_CHANGE, *PEXCEPTION_STATE_CHANGE;
-#pragma pack(pop)
-
-//
-// Structure for DbgKdLoadSumbolsStateChange
-//
-#pragma pack(push, 1)
-typedef struct _LOAD_SYMBOLS_STATE_CHANGE {
-    DBGKD_ANY_WAIT_STATE_CHANGE StateChange;
-    char NtKernelPathName[34];
-} LOAD_SYMBOLS_STATE_CHANGE, *PLOAD_SYMBOLS_STATE_CHANGE;
 #pragma pack(pop)
 
 typedef struct _CPU_CTRL_ADDRS {
@@ -292,13 +285,17 @@ typedef struct _CPU_CONTEXT {
 
 PCPU_CTRL_ADDRS            get_KPCRAddress(int index);
 PEXCEPTION_STATE_CHANGE    get_ExceptionStateChange(int index);
-PLOAD_SYMBOLS_STATE_CHANGE get_LoadSymbolsStateChange(int index);
+uint8_t                   *get_LoadSymbolsStateChange(int index);
 PCPU_CONTEXT               get_Context(int index);
 PCPU_KSPECIAL_REGISTERS    get_KSpecialRegisters(int index);
 
 void set_Context(uint8_t *data, int len, int index);
 void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index);
 
+size_t get_lssc_size(void);
+
+void get_init(void);
+void get_free(void);
 uint8_t cpu_amount(void);
 uint32_t data_checksum_compute(uint8_t *data, uint16_t length);
 

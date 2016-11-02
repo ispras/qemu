@@ -374,12 +374,16 @@ static void windbg_process_control_packet(Context *ctx)
 
         break;
     case PACKET_TYPE_KD_RESET:
+    {
         //TODO: For all processors
-        windbg_send_data_packet((uint8_t *)get_LoadSymbolsStateChange(0),
-            sizeof(LOAD_SYMBOLS_STATE_CHANGE), PACKET_TYPE_KD_STATE_CHANGE64);
+        uint8_t *data = get_LoadSymbolsStateChange(0);
+        
+        windbg_send_data_packet(data, get_lssc_size(), 
+            PACKET_TYPE_KD_STATE_CHANGE64);
         windbg_send_control_packet(ctx->packet.PacketType);
-
+        
         break;
+    }
     case PACKET_TYPE_KD_STATE_CHANGE64:
 
         break;
@@ -536,6 +540,14 @@ static void windbg_in_chr_receive(void *opaque, const uint8_t *buf, int size)
     }
 }
 
+void windbg_start_sync(void)
+{
+    get_init();
+    cc_addrs = get_KPCRAddress(0);
+    
+    lock = 1;
+}
+
 static void windbg_close(void)
 {
     if (dump_file) {
@@ -544,11 +556,10 @@ static void windbg_close(void)
     dump_file = NULL;
 }
 
-void windbg_start_sync(void)
+static void windbg_exit(void)
 {
-    cc_addrs = get_KPCRAddress(0);
-
-    lock = 1;
+    get_free();
+    windbg_close();
 }
 
 int windbgserver_start(const char *device)
@@ -571,7 +582,7 @@ int windbgserver_start(const char *device)
     // open dump file
     dump_file = fopen("windbg.dump", "wb");
 
-    atexit(windbg_close);
+    atexit(windbg_exit);
 
     return 0;
 }

@@ -1,10 +1,12 @@
 #include "exec/windbgstub-utils.h"
 
 static CPU_CTRL_ADDRS cca;
-static LOAD_SYMBOLS_STATE_CHANGE lssc;
+static uint8_t *lssc;
 static EXCEPTION_STATE_CHANGE esc;
 static CPU_CONTEXT c;
 static CPU_KSPECIAL_REGISTERS kr;
+
+static size_t lssc_size = 0;
 
 PCPU_CTRL_ADDRS get_KPCRAddress(int index)
 {
@@ -89,26 +91,42 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
     return &esc;
 }
 
-PLOAD_SYMBOLS_STATE_CHANGE get_LoadSymbolsStateChange(int index)
+size_t get_lssc_size(void)
+{
+    return lssc_size;
+}
+
+uint8_t *get_LoadSymbolsStateChange(int index)
 {
     int i; 
-    uint8_t path_name[68]; 
-    size_t count = sizeof(path_name);
+    uint8_t path_name[128]; //For Win7
+    size_t size = sizeof(DBGKD_ANY_WAIT_STATE_CHANGE), 
+           count = sizeof(path_name);
     CPUState *cpu = qemu_get_cpu(index);
+    DBGKD_ANY_WAIT_STATE_CHANGE StateChange;
     
-    memcpy(&lssc, get_ExceptionStateChange(0), 
-        sizeof(DBGKD_ANY_WAIT_STATE_CHANGE));
-    esc.StateChange.NewState = DbgKdLoadSymbolsStateChange;
+    memcpy(&StateChange, get_ExceptionStateChange(0), size);
+        
+    StateChange.NewState = DbgKdLoadSymbolsStateChange;
     //TODO: Get it
-    lssc.StateChange.u.Exception.ExceptionRecord.ExceptionCode = 0x22;
+    StateChange.u.Exception.ExceptionRecord.ExceptionCode = 0x22;
     //
-    cpu_memory_rw_debug(cpu, 0x89000FB8, path_name, count, 0);
+    cpu_memory_rw_debug(cpu, NT_KRNL_PNAME_ADDR, path_name, count, 0);
     for (i = 0; i < count; i++) {
-        lssc.NtKernelPathName[i / 2] = path_name[i];
+        if((path_name[i / 2] = path_name[i]) == '\0') {
+            break;
+        }
         i++;
     }
+    count = i / 2 + 1;
+    lssc_size = size + count;
     
-    return &lssc;
+    get_free();
+    lssc = g_malloc0(lssc_size);
+    memcpy(lssc, &StateChange, size);
+    memcpy(lssc + size, path_name, count);
+    
+    return lssc;
 }
 
 PCPU_CONTEXT get_Context(int index)
@@ -322,6 +340,19 @@ void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index)
     env->ldt.selector = kr.Ldtr;
 
     // kr.Reserved[6];
+}
+
+void get_init(void)
+{
+    lssc = NULL;
+}
+
+void get_free(void)
+{
+    if (lssc) {
+        g_free(lssc);
+    }
+    lssc = NULL;
 }
 
 uint8_t cpu_amount(void)
