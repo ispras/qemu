@@ -20,7 +20,10 @@ PCPU_CTRL_ADDRS get_KPCRAddress(int index)
 
     cpu_memory_rw_debug(cpu, cca.KPCR + OFFSET_VERSION, PTR(cca.Version),
         sizeof(cca.Version), 0);
-        
+    
+    cpu_memory_rw_debug(cpu, cca.Version + OFFSET_KRNL_BASE, PTR(cca.KernelBase),
+        sizeof(cca.KernelBase), 0);
+    
     return &cca;
 }
 
@@ -39,7 +42,7 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
     esc.StateChange.NumberProcessors = cpu_amount();
     //TODO: + 0xffffffff00000000
     cpu_memory_rw_debug(cpu, cca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
-        PTR(esc.StateChange.Thread), sizeof(esc.StateChange.Thread), 0);
+        PTR(esc.StateChange.Thread), sizeof(esc.StateChange.Thread), 0);  
     esc.StateChange.ProgramCounter = env->eip;
     //
     //TODO: Get it
@@ -106,11 +109,7 @@ uint8_t *get_LoadSymbolsStateChange(int index)
     DBGKD_ANY_WAIT_STATE_CHANGE StateChange;
     
     memcpy(&StateChange, get_ExceptionStateChange(0), size);
-        
-    StateChange.NewState = DbgKdLoadSymbolsStateChange;
-    //TODO: Get it
-    StateChange.u.Exception.ExceptionRecord.ExceptionCode = 0x22;
-    //
+
     cpu_memory_rw_debug(cpu, NT_KRNL_PNAME_ADDR, path_name, count, 0);
     for (i = 0; i < count; i++) {
         if((path_name[i / 2] = path_name[i]) == '\0') {
@@ -120,6 +119,16 @@ uint8_t *get_LoadSymbolsStateChange(int index)
     }
     count = i / 2 + 1;
     lssc_size = size + count;
+    
+    StateChange.NewState = DbgKdLoadSymbolsStateChange;
+    StateChange.u.LoadSymbols.PathNameLength = count;
+    ////TODO: Get it
+    //StateChange.u.LoadSymbols.BaseOfDll = cca.KernelBase << 8 | ;
+    //StateChange.u.LoadSymbols.ProcessId = -1;
+    //StateChange.u.LoadSymbols.CheckSum = ;
+    //StateChange.u.LoadSymbols.SizeOfImage = ;
+    //StateChange.u.LoadSymbols.UnloadSymbols = false;
+    ////
     
     get_free();
     lssc = g_malloc0(lssc_size);

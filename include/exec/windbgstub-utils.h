@@ -57,9 +57,10 @@
 #define OFFSET_KPRCB            0x20
 #define OFFSET_KPRCB_CURRTHREAD 0x4
 #define OFFSET_VERSION          0x34
+#define OFFSET_KRNL_BASE        0x10
 #define OFFSET_CONTEXT          0x18
 
-#define NT_KRNL_PNAME_ADDR 0x89000FB8 //For Win7
+#define NT_KRNL_PNAME_ADDR 0x89000fb8 //For Win7
 
 #define CPU_EFLAGS_TF 0x0100
 
@@ -77,6 +78,7 @@ typedef struct _CPU_CTRL_ADDRS {
     uint32_t KPCR;
     uint32_t KPRCB;
     uint32_t Version;
+    uint32_t KernelBase;
 } CPU_CTRL_ADDRS, *PCPU_CTRL_ADDRS;
 
 #if defined(TARGET_I386)

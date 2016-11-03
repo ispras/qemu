@@ -14,7 +14,7 @@
 #define INITIAL_PACKET_ID                   0x80800000
 //TODO: 0x80800000?
 #define SYNC_PACKET_ID                      0x00000800
-#define RESET_PACKET_ID                     0x0018359B
+#define RESET_PACKET_ID                     0x0018359b
 
 //
 // Magic Packet bytes
@@ -25,7 +25,7 @@
 #define PACKET_LEADER_BYTE                  0x30
 #define CONTROL_PACKET_LEADER               0x69696969
 #define CONTROL_PACKET_LEADER_BYTE          0x69
-#define PACKET_TRAILING_BYTE                0xAA
+#define PACKET_TRAILING_BYTE                0xaa
 
 //
 // Packet Types
@@ -73,12 +73,12 @@
 #define DbgKdReadControlSpaceApi            0x00003137
 #define DbgKdWriteControlSpaceApi           0x00003138
 #define DbgKdReadIoSpaceApi                 0x00003139
-#define DbgKdWriteIoSpaceApi                0x0000313A
-#define DbgKdRebootApi                      0x0000313B
-#define DbgKdContinueApi2                   0x0000313C
-#define DbgKdReadPhysicalMemoryApi          0x0000313D
-#define DbgKdWritePhysicalMemoryApi         0x0000313E
-#define DbgKdQuerySpecialCallsApi           0x0000313F
+#define DbgKdWriteIoSpaceApi                0x0000313a
+#define DbgKdRebootApi                      0x0000313b
+#define DbgKdContinueApi2                   0x0000313c
+#define DbgKdReadPhysicalMemoryApi          0x0000313d
+#define DbgKdWritePhysicalMemoryApi         0x0000313e
+#define DbgKdQuerySpecialCallsApi           0x0000313f
 #define DbgKdSetSpecialCallApi              0x00003140
 #define DbgKdClearSpecialCallsApi           0x00003141
 #define DbgKdSetInternalBreakPointApi       0x00003142
@@ -99,11 +99,11 @@
 #define DbgKdGetBusDataApi                  0x00003157
 #define DbgKdSetBusDataApi                  0x00003158
 #define DbgKdCheckLowMemoryApi              0x00003159
-#define DbgKdClearAllInternalBreakpointsApi 0x0000315A
-#define DbgKdFillMemoryApi                  0x0000315B
-#define DbgKdQueryMemoryApi                 0x0000315C
-#define DbgKdSwitchPartition                0x0000315D
-#define DbgKdMaximumManipulate              0x0000315E
+#define DbgKdClearAllInternalBreakpointsApi 0x0000315a
+#define DbgKdFillMemoryApi                  0x0000315b
+#define DbgKdQueryMemoryApi                 0x0000315c
+#define DbgKdSwitchPartition                0x0000315d
+#define DbgKdMaximumManipulate              0x0000315e
 
 //
 // Debug I/O Types
