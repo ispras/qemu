@@ -1,24 +1,30 @@
 #include "exec/windbgstub-utils.h"
 
-static CPU_CTRL_ADDRS pca;
-static LOAD_SYMBOLS_STATE_CHANGE lssc;
+static CPU_CTRL_ADDRS cca;
+static uint8_t *lssc;
 static EXCEPTION_STATE_CHANGE esc;
 static CPU_CONTEXT c;
 static CPU_KSPECIAL_REGISTERS kr;
+
+static size_t lssc_size = 0;
 
 PCPU_CTRL_ADDRS get_KPCRAddress(int index)
 {
     CPUState *cpu = qemu_get_cpu(index);
     CPUArchState *env = CPU_ARCH_STATE(cpu);
 
-    pca.KPCR = env->segs[R_FS].base;
+    cca.KPCR = env->segs[R_FS].base;
 
-    cpu_memory_rw_debug(cpu, pca.KPCR + OFFSET_KPRCB,
-                        PTR(pca.KPRCB), sizeof(pca.KPRCB), 0);
+    cpu_memory_rw_debug(cpu, cca.KPCR + OFFSET_KPRCB, PTR(cca.KPRCB),
+        sizeof(cca.KPRCB), 0);
 
-    cpu_memory_rw_debug(cpu, pca.KPCR + OFFSET_VERSION,
-                        PTR(pca.Version), sizeof(pca.Version), 0);
-    return &pca;
+    cpu_memory_rw_debug(cpu, cca.KPCR + OFFSET_VERSION, PTR(cca.Version),
+        sizeof(cca.Version), 0);
+
+    cpu_memory_rw_debug(cpu, cca.Version + OFFSET_KRNL_BASE, PTR(cca.KernelBase),
+        sizeof(cca.KernelBase), 0);
+
+    return &cca;
 }
 
 PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
@@ -35,9 +41,8 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
     esc.StateChange.Processor = index;
     esc.StateChange.NumberProcessors = cpu_amount();
     //TODO: + 0xffffffff00000000
-    cpu_memory_rw_debug(cpu, pca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
-                        PTR(esc.StateChange.Thread),
-                        sizeof(esc.StateChange.Thread), 0);
+    cpu_memory_rw_debug(cpu, cca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
+        PTR(esc.StateChange.Thread), sizeof(esc.StateChange.Thread), 0);
     esc.StateChange.ProgramCounter = env->eip;
     //
     //TODO: Get it
@@ -76,29 +81,61 @@ PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
     //esc.StateChange.ControlReport.ReportFlags = 0x3;
     //
     cpu_memory_rw_debug(cpu, env->eip,
-                        (uint8_t *)esc.StateChange.ControlReport.InstructionStream,
-                        sizeof(esc.StateChange.ControlReport.InstructionStream), 0);
+        (uint8_t *)esc.StateChange.ControlReport.InstructionStream,
+        sizeof(esc.StateChange.ControlReport.InstructionStream), 0);
     esc.StateChange.ControlReport.SegCs = env->segs[R_CS].selector;;
     esc.StateChange.ControlReport.SegDs = env->segs[R_DS].selector;
     esc.StateChange.ControlReport.SegEs = env->segs[R_ES].selector;
     esc.StateChange.ControlReport.SegFs = env->segs[R_FS].selector;
     esc.StateChange.ControlReport.EFlags = env->eflags;
     //TODO: Get it
-    //esc.value = 0x1;
+    esc.value = 0x1;
 
     return &esc;
 }
 
-PLOAD_SYMBOLS_STATE_CHANGE get_LoadSymbolsStateChange(int index)
+size_t get_lssc_size(void)
 {
-    memcpy(&lssc, get_ExceptionStateChange(0), sizeof(DBGKD_ANY_WAIT_STATE_CHANGE));
-    esc.StateChange.NewState = DbgKdLoadSymbolsStateChange;
-    //TODO: Get it
-    lssc.StateChange.u.Exception.ExceptionRecord.ExceptionCode = 0x22;
-    strcpy(lssc.NtKernelPathName, "\\SystemRoot\\system32\\ntoskrnl.exe");
-    //
+    return lssc_size;
+}
 
-    return &lssc;
+uint8_t *get_LoadSymbolsStateChange(int index)
+{
+    int i;
+    uint8_t path_name[128]; //For Win7
+    size_t size = sizeof(DBGKD_ANY_WAIT_STATE_CHANGE),
+           count = sizeof(path_name);
+    CPUState *cpu = qemu_get_cpu(index);
+    DBGKD_ANY_WAIT_STATE_CHANGE StateChange;
+
+    memcpy(&StateChange, get_ExceptionStateChange(0), size);
+
+    cpu_memory_rw_debug(cpu, NT_KRNL_PNAME_ADDR, path_name, count, 0);
+    for (i = 0; i < count; i++) {
+        if((path_name[i / 2] = path_name[i]) == '\0') {
+            break;
+        }
+        i++;
+    }
+    count = i / 2 + 1;
+    lssc_size = size + count;
+
+    StateChange.NewState = DbgKdLoadSymbolsStateChange;
+    StateChange.u.LoadSymbols.PathNameLength = count;
+    ////TODO: Get it
+    //StateChange.u.LoadSymbols.BaseOfDll = cca.KernelBase << 8 | ;
+    //StateChange.u.LoadSymbols.ProcessId = -1;
+    //StateChange.u.LoadSymbols.CheckSum = ;
+    //StateChange.u.LoadSymbols.SizeOfImage = ;
+    //StateChange.u.LoadSymbols.UnloadSymbols = false;
+    ////
+
+    get_free();
+    lssc = g_malloc0(lssc_size);
+    memcpy(lssc, &StateChange, size);
+    memcpy(lssc + size, path_name, count);
+
+    return lssc;
 }
 
 PCPU_CONTEXT get_Context(int index)
@@ -111,11 +148,7 @@ PCPU_CONTEXT get_Context(int index)
 
   #if defined(TARGET_I386)
 
-    c.ContextFlags = CPU_CONTEXT_FULL
-                   | CPU_CONTEXT_FLOATING_POINT
-                // | CPU_CONTEXT_DEBUG_REGISTERS
-                   | CPU_CONTEXT_EXTENDED_REGISTERS
-                   ;
+    c.ContextFlags = CPU_CONTEXT_ALL;
 
     if (c.ContextFlags & CPU_CONTEXT_FULL) {
         c.Dr0    = env->dr[0];
@@ -157,7 +190,7 @@ PCPU_CONTEXT get_Context(int index)
 
         for (i = 0; i < 8; ++i) {
             memcpy(PTR(c.FloatSave.RegisterArea[i * 10]),
-                   PTR(env->fpregs[i].mmx), sizeof(MMXReg));
+                PTR(env->fpregs[i].mmx), sizeof(MMXReg));
         }
     }
 
@@ -167,7 +200,8 @@ PCPU_CONTEXT get_Context(int index)
 
     if (c.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
         for (i = 0; i < 8; ++i) {
-            memcpy(PTR(c.ExtendedRegisters[(10 + i) * 16]), PTR(env->xmm_regs[i]), sizeof(ZMMReg));
+            memcpy(PTR(c.ExtendedRegisters[(10 + i) * 16]), 
+                PTR(env->xmm_regs[i]), sizeof(ZMMReg));
         }
         // offset 24
         LONG(c.ExtendedRegisters, 6) = env->mxcsr;
@@ -232,7 +266,7 @@ void set_Context(uint8_t *data, int len, int index)
 
         for (i = 0; i < 8; ++i) {
             memcpy(PTR(env->fpregs[i].mmx),
-                   PTR(c.FloatSave.RegisterArea[i * 10]), sizeof(MMXReg));
+                PTR(c.FloatSave.RegisterArea[i * 10]), sizeof(MMXReg));
         }
     }
 
@@ -242,7 +276,8 @@ void set_Context(uint8_t *data, int len, int index)
 
     if (c.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
         for (i = 0; i < 8; ++i) {
-            memcpy(PTR(env->xmm_regs[i]), PTR(c.ExtendedRegisters[(10 + i) * 16]), sizeof(ZMMReg));
+            memcpy(PTR(env->xmm_regs[i]), 
+                PTR(c.ExtendedRegisters[(10 + i) * 16]), sizeof(ZMMReg));
         }
         env->mxcsr = LONG(c.ExtendedRegisters, 6);
     }
@@ -314,6 +349,19 @@ void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index)
     env->ldt.selector = kr.Ldtr;
 
     // kr.Reserved[6];
+}
+
+void get_init(void)
+{
+    lssc = NULL;
+}
+
+void get_free(void)
+{
+    if (lssc) {
+        g_free(lssc);
+    }
+    lssc = NULL;
 }
 
 uint8_t cpu_amount(void)
