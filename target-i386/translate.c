@@ -31,6 +31,7 @@
 #include "trace-tcg.h"
 #include "exec/log.h"
 
+#include "sysemu/sysemu.h" // For WinDbg
 #include "exec/windbgstub.h"
 
 #define PREFIX_REPZ   0x01
@@ -8317,6 +8318,11 @@ void gen_intermediate_code(CPUX86State *env, TranslationBlock *tb)
         }
 
         pc_ptr = disas_insn(env, dc, pc_ptr);
+        if (windbg_check_bp()) {
+            //TODO: Breakpoint? 
+            //cpu_breakpoint_insert(cs, pc_ptr, BP_GDB, NULL);
+            vm_stop(RUN_STATE_PAUSED);
+        }
         /* stop translation if indicated */
         if (dc->is_jmp)
             break;
