@@ -3,6 +3,7 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "exec/windbgkd.h"
+#include "qemu/cutils.h"
 
 // FOR DEBUG
 
@@ -11,22 +12,22 @@
 #define COUT_HEX(var) COUT_COMMON("0x%x", var)
 #define COUT_STRING(var) COUT_COMMON("%s", var)
 #define COUT_SIZEOF(var) COUT_COMMON("%lld", sizeof(var))
-#define COUT_COMMON(fmt, var) COUT(#var ": " fmt "\n", var);
+#define COUT_COMMON(fmt, var) COUT(#var " = [" fmt "]\n", var);
 
 #define COUT_STRUCT(var) COUT_ARRAY(&var, 1)
 #define COUT_PSTRUCT(var) COUT_ARRAY(var, 1)
 #define COUT_ARRAY(var, count) _COUT_STRUCT(var, sizeof(*(var)), count)
-#define _COUT_STRUCT(var, size, count) {          \
-    COUT("%s: ", #var);                           \
-    COUT("[size: %d, count: %d]\n", size, count); \
-    int di;                                       \
-    for (di = 0; di < size * count; ++di) {       \
-        if (di % 16 == 0 && di != 0) {            \
-            COUT("\n");                           \
-        }                                         \
-        COUT("%02x ", ((uint8_t *) (var))[di]);   \
-    }                                             \
-    COUT("\n");                                   \
+#define _COUT_STRUCT(var, size, count) {            \
+    COUT("%s ", #var);                              \
+    COUT("[size: %lld, count: %d]\n", size, count); \
+    int _i, _s = (size) * (count);                  \
+    for (_i = 0; _i < _s; ++_i) {                   \
+        if (!(_i % 16) && _i) {                     \
+            COUT("\n");                             \
+        }                                           \
+        COUT("%02x ", ((uint8_t *) (var))[_i]);     \
+    }                                               \
+    COUT("\n");                                     \
 }
 
 // FOR DEBUG END
@@ -36,19 +37,19 @@
 #define DUMP_PSTRUCT(var) DUMP_ARRAY(var, 1)
 #define DUMP_ARRAY(var, count) _DUMP_STRUCT(var, sizeof(*(var)), count)
 #define _DUMP_STRUCT(var, size, count) {    \
-    int di;                                 \
-    for (di = 0; di < size * count; ++di) { \
-       DUMP_VAR(((uint8_t *) (var))[di]);   \
+    int _i;                                 \
+    for (_i = 0; _i < size * count; ++_i) { \
+       DUMP_VAR(((uint8_t *) (var))[_i]);   \
     }                                       \
 }
 
 #define ROUND(value, max) (value > max ? max : value)
 
-#define BYTE(var, index) (COMMON_PTR(uint8_t, var)[index])
-#define LONG(var, index) (COMMON_PTR(uint32_t, var)[index])
+#define BYTE(var, index) (CAST_PTR(uint8_t, var)[index])
+#define LONG(var, index) (CAST_PTR(uint32_t, var)[index])
 
-#define COMMON_PTR(ptr, var) ((ptr *) &(var))
-#define PTR(var) COMMON_PTR(uint8_t, var)
+#define CAST_PTR(ptr, var) ((ptr *) &(var))
+#define PTR(var) CAST_PTR(uint8_t, var)
 
 #define M64_OFFSET(data) (data + sizeof(DBGKD_MANIPULATE_STATE64))
 

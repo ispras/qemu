@@ -97,7 +97,7 @@ PLOAD_SYMBOLS_STATE_CHANGE get_LoadSymbolsStateChange(int index)
     lssc.StateChange.u.Exception.ExceptionRecord.ExceptionCode = 0x22;
     strcpy(lssc.NtKernelPathName, "\\SystemRoot\\system32\\ntoskrnl.exe");
     //
-    
+
     return &lssc;
 }
 
@@ -109,7 +109,7 @@ PCPU_CONTEXT get_Context(int index)
 
     memset(&c, 0, sizeof(c));
 
-#if defined(TARGET_I386)
+  #if defined(TARGET_I386)
 
     c.ContextFlags = CPU_CONTEXT_FULL
                    | CPU_CONTEXT_FLOATING_POINT
@@ -175,9 +175,9 @@ PCPU_CONTEXT get_Context(int index)
 
     c.ExtendedRegisters[0] = 0xaa;
 
-#elif defined(TARGET_X86_64)
+  #elif defined(TARGET_X86_64)
 
-#endif
+  #endif
 
     return &c;
 }
@@ -190,7 +190,7 @@ void set_Context(uint8_t *data, int len, int index)
 
     memcpy(PTR(c), data, ROUND(len, sizeof(c)));
 
-#if defined(TARGET_I386)
+  #if defined(TARGET_I386)
 
     if (c.ContextFlags & CPU_CONTEXT_FULL) {
         env->dr[0] = c.Dr0;
@@ -247,9 +247,9 @@ void set_Context(uint8_t *data, int len, int index)
         env->mxcsr = LONG(c.ExtendedRegisters, 6);
     }
 
-#elif defined(TARGET_X86_64)
+  #elif defined(TARGET_X86_64)
 
-#endif
+  #endif
 }
 
 PCPU_KSPECIAL_REGISTERS get_KSpecialRegisters(int index)
