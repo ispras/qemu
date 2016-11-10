@@ -572,6 +572,7 @@ typedef struct _DBGKD_CONTINUE
     ntstatus_t ContinueStatus;
 } DBGKD_CONTINUE, *PDBGKD_CONTINUE;
 
+#pragma pack(push, 4)
 typedef struct _DBGKD_CONTINUE2
 {
     ntstatus_t ContinueStatus;
@@ -581,6 +582,7 @@ typedef struct _DBGKD_CONTINUE2
         DBGKD_ANY_CONTROL_SET AnyControlSet;
     };
 } DBGKD_CONTINUE2, *PDBGKD_CONTINUE2;
+#pragma pack(pop)
 
 typedef struct _DBGKD_READ_WRITE_IO32
 {

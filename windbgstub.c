@@ -226,14 +226,16 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         break;
     case DbgKdContinueApi2:
-        if (m64.u.Continue2.ContinueStatus >= 0)
-        {
-            continue2_tf = m64.u.Continue2.ControlSet.TraceFlag;
-            continue2_dr7 = m64.u.Continue2.ControlSet.Dr7;
-            continue2_flag = 2;
+        continue2_tf = m64.u.Continue2.ControlSet.TraceFlag;
+        continue2_dr7 = m64.u.Continue2.ControlSet.Dr7;
+        continue2_flag = 2;
 
-            vm_start();
+        if(!continue2_tf) {
+            bp = 0;
+        }
+        vm_start();
 
+        if(continue2_tf) {
             windbg_send_data_packet((uint8_t *)get_ExceptionStateChange(0),
                 sizeof(EXCEPTION_STATE_CHANGE),
                 PACKET_TYPE_KD_STATE_CHANGE64);
@@ -384,6 +386,9 @@ static void windbg_process_control_packet(Context *ctx)
         windbg_send_data_packet(data, get_lssc_size(),
             PACKET_TYPE_KD_STATE_CHANGE64);
         windbg_send_control_packet(ctx->packet.PacketType);
+        if (data_packet_id & SYNC_PACKET_ID) {
+            data_packet_id = INITIAL_PACKET_ID;
+        }
 
         break;
     }
@@ -423,7 +428,6 @@ static int windbg_chr_can_receive(void *opaque)
 static void windbg_set_breakpoint(int index)
 {
     cntrl_packet_id = INITIAL_PACKET_ID;
-    data_packet_id = INITIAL_PACKET_ID;
     windbg_send_data_packet((uint8_t *)get_ExceptionStateChange(0),
                             sizeof(EXCEPTION_STATE_CHANGE),
                             PACKET_TYPE_KD_STATE_CHANGE64);
@@ -538,8 +542,6 @@ static void windbg_receive_from_windbg(void *opaque, const uint8_t *buf, int siz
         }
     }
     else {
-        COUT_STRING("windbg");
-
         uint8_t *tmp = g_malloc(size);
         memcpy(tmp, buf, size);
         qemu_chr_be_write(serial_chr, tmp, size);
@@ -550,8 +552,6 @@ static void windbg_receive_from_windbg(void *opaque, const uint8_t *buf, int siz
 static int windbg_receive_from_kernel(struct CharDriverState *chr, const uint8_t *buf, int size)
 {
     if (is_debug) {
-        COUT_STRING("kernel");
-        DUMP_ARRAY(buf, size);
         qemu_chr_fe_write(windbg_chr, buf, size);
     }
     return size;
