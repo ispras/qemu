@@ -62,8 +62,6 @@
 
 #define NT_KRNL_PNAME_ADDR 0x89000fb8 //For Win7
 
-#define CPU_EFLAGS_TF 0x0100
-
 //
 // Structure for DbgKdExceptionStateChange
 //
