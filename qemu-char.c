@@ -3495,7 +3495,6 @@ QemuOpts *qemu_chr_parse_compat(const char *label, const char *filename)
         strcmp(filename, "msmouse") == 0 ||
         strcmp(filename, "braille") == 0 ||
         strcmp(filename, "testdev") == 0 ||
-        strcmp(filename, "windbg") == 0 ||
         strcmp(filename, "stdio")   == 0) {
         qemu_opt_set(opts, "backend", filename, &error_abort);
         return opts;

@@ -182,10 +182,10 @@ PCPU_CONTEXT get_Context(int index)
         c.FloatSave.ControlWord    = env->fpuc;
         c.FloatSave.StatusWord     = env->fpus;
         c.FloatSave.TagWord        = env->fpstt;
-        c.FloatSave.ErrorOffset    = LONG(env->fpip, 0);
-        c.FloatSave.ErrorSelector  = LONG(env->fpip, 1);
-        c.FloatSave.DataOffset     = LONG(env->fpdp, 0);
-        c.FloatSave.DataSelector   = LONG(env->fpdp, 1);
+        c.FloatSave.ErrorOffset    = DWORD(env->fpip, 0);
+        c.FloatSave.ErrorSelector  = DWORD(env->fpip, 1);
+        c.FloatSave.DataOffset     = DWORD(env->fpdp, 0);
+        c.FloatSave.DataSelector   = DWORD(env->fpdp, 1);
         c.FloatSave.Cr0NpxState    = env->cr[0];
 
         for (i = 0; i < 8; ++i) {
@@ -204,7 +204,7 @@ PCPU_CONTEXT get_Context(int index)
                 PTR(env->xmm_regs[i]), sizeof(ZMMReg));
         }
         // offset 24
-        LONG(c.ExtendedRegisters, 6) = env->mxcsr;
+        DWORD(c.ExtendedRegisters, 6) = env->mxcsr;
     }
 
     c.ExtendedRegisters[0] = 0xaa;
@@ -258,10 +258,10 @@ void set_Context(uint8_t *data, int len, int index)
         env->fpuc  = c.FloatSave.ControlWord;
         env->fpus  = c.FloatSave.StatusWord;
         env->fpstt = c.FloatSave.TagWord;
-        LONG(env->fpip, 0) = c.FloatSave.ErrorOffset;
-        LONG(env->fpip, 1) = c.FloatSave.ErrorSelector;
-        LONG(env->fpdp, 0) = c.FloatSave.DataOffset;
-        LONG(env->fpdp, 1) = c.FloatSave.DataSelector;
+        DWORD(env->fpip, 0) = c.FloatSave.ErrorOffset;
+        DWORD(env->fpip, 1) = c.FloatSave.ErrorSelector;
+        DWORD(env->fpdp, 0) = c.FloatSave.DataOffset;
+        DWORD(env->fpdp, 1) = c.FloatSave.DataSelector;
         env->cr[0] = c.FloatSave.Cr0NpxState;
 
         for (i = 0; i < 8; ++i) {
@@ -279,7 +279,7 @@ void set_Context(uint8_t *data, int len, int index)
             memcpy(PTR(env->xmm_regs[i]), 
                 PTR(c.ExtendedRegisters[(10 + i) * 16]), sizeof(ZMMReg));
         }
-        env->mxcsr = LONG(c.ExtendedRegisters, 6);
+        env->mxcsr = DWORD(c.ExtendedRegisters, 6);
     }
 
   #elif defined(TARGET_X86_64)

@@ -30,16 +30,14 @@ typedef struct Context {
     uint8_t data[PACKET_MAX_SIZE];
 } Context;
 
-static bool is_debug = false;
 static uint32_t cntrl_packet_id = RESET_PACKET_ID;
 static uint32_t data_packet_id = INITIAL_PACKET_ID;
 static uint8_t lock = 0;
 static bool bp = false;
 
-static Context input_context = { .state = STATE_LEADER };
+static Context chr_ctx = { .state = STATE_LEADER };
 
 static CharDriverState *windbg_chr = NULL;
-static CharDriverState *serial_chr = NULL;
 
 static FILE *dump_file;
 
@@ -160,12 +158,12 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     case DbgKdWriteBreakPointApi:
         bp_addr = m64.u.WriteBreakPoint.BreakPointAddress & 0xffffffff;
-        
+
         m64.u.WriteBreakPoint.BreakPointHandle = 0x1;
         cpu_breakpoint_insert(cpu, bp_addr, BP_GDB, NULL);
-        
-        send_only_m64 = true;   
-    
+
+        send_only_m64 = true;
+
         break;
     case DbgKdRestoreBreakPointApi:
         m64.ReturnStatus = 0xc0000001;
@@ -173,7 +171,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
             cpu_breakpoint_remove(cpu, bp_addr, BP_GDB);
             bp_addr = 0;
         }
-        
+
         send_only_m64 = true;
 
         break;
@@ -516,31 +514,14 @@ static void windbg_read_byte(Context *ctx, uint8_t byte)
     }
 }
 
-static void windbg_receive_from_windbg(void *opaque, const uint8_t *buf, int size)
+static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 {
-    DUMP_ARRAY(buf, size);
-    if (!is_debug) {
-        if (lock) {
-            int i;
-            for (i = 0; i < size; i++) {
-                windbg_read_byte(&input_context, buf[i]);
-            }
+    if (lock) {
+        int i;
+        for (i = 0; i < size; i++) {
+            windbg_read_byte(&chr_ctx, buf[i]);
         }
     }
-    else {
-        uint8_t *tmp = g_malloc(size);
-        memcpy(tmp, buf, size);
-        qemu_chr_be_write(serial_chr, tmp, size);
-        g_free(tmp);
-    }
-}
-
-static int windbg_receive_from_kernel(struct CharDriverState *chr, const uint8_t *buf, int size)
-{
-    if (is_debug) {
-        qemu_chr_fe_write(windbg_chr, buf, size);
-    }
-    return size;
 }
 
 bool windbg_check_bp(void)
@@ -570,50 +551,12 @@ static void windbg_exit(void)
     windbg_close();
 }
 
-static void windbg_serial_parse(QemuOpts *opts, ChardevBackend *backend,
-                                  Error **errp)
-{
-    ChardevHostdev *serial;
-    serial = backend->u.serial.data = g_new0(ChardevHostdev, 1);
-    qemu_chr_parse_common(opts, qapi_ChardevHostdev_base(serial));
-    serial->device = g_strdup(WINDBG);
-}
-
-static CharDriverState *windbg_serial_open(const char *id, ChardevBackend *backend, ChardevReturn *ret, Error **errp)
-{
-    if (serial_chr) {
-        error_report("WinDbg: Multiple instances are not supported yet");
-        return NULL;
-    }
-
-    ChardevHostdev *opts = backend->u.windbg.data;
-    ChardevCommon *common = qapi_ChardevHostdev_base(opts);
-
-    serial_chr = qemu_chr_alloc(common, errp);
-    if (!serial_chr) {
-        error_report("WinDbg: problem with allocation serial chr");
-        return NULL;
-    }
-
-    serial_chr->chr_write = windbg_receive_from_kernel;
-    return serial_chr;
-}
-
 int windbgserver_start(const char *device)
 {
     if (windbg_chr) {
         error_report("WinDbg: Multiple instances are not supported yet");
         exit(1);
     }
-
-    const char *p;
-    is_debug = strstart(device, "debug,", &p);
-    if (is_debug) {
-        device = p;
-    }
-
-    register_char_driver(WINDBG, CHARDEV_BACKEND_KIND_WINDBG,
-                            windbg_serial_parse, windbg_serial_open);
 
     // open external pipe for listening to windbg
     windbg_chr = qemu_chr_new(WINDBG, device, NULL);
@@ -623,7 +566,7 @@ int windbgserver_start(const char *device)
 
     qemu_chr_fe_claim_no_fail(windbg_chr);
     qemu_chr_add_handlers(windbg_chr, windbg_chr_can_receive,
-                          windbg_receive_from_windbg, NULL, NULL);
+                          windbg_chr_receive, NULL, NULL);
 
     // open dump file
     dump_file = fopen(WINDBG ".dump", "wb");

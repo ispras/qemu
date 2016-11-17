@@ -1,5 +1,6 @@
 #ifndef WINDBGSTUB_UTILS_H
 #define WINDBGSTUB_UTILS_H
+
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "exec/windbgkd.h"
@@ -42,13 +43,13 @@
     }                                       \
 }
 
-#define ROUND(value, max) (value > max ? max : value)
-
-#define BYTE(var, index) (CAST_PTR(uint8_t, var)[index])
-#define LONG(var, index) (CAST_PTR(uint32_t, var)[index])
+#define ROUND(value, max) ((value) > (max) ? (max) : (value))
 
 #define CAST_PTR(ptr, var) ((ptr *) &(var))
 #define PTR(var) CAST_PTR(uint8_t, var)
+
+#define BYTE(var, index) (CAST_PTR(uint8_t, var)[index])
+#define DWORD(var, index) (CAST_PTR(uint32_t, var)[index])
 
 #define M64_OFFSET(data) (data + sizeof(DBGKD_MANIPULATE_STATE64))
 
