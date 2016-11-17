@@ -19,14 +19,19 @@
 #define COUT_PSTRUCT(var) COUT_ARRAY(var, 1)
 #define COUT_ARRAY(var, count) _COUT_STRUCT(var, sizeof(*(var)), count)
 #define _COUT_STRUCT(var, size, count) {            \
+    uint8_t *_var = (uint8_t *) (var);              \
+    uint32_t _size = (uint32_t) (size);             \
+    uint32_t _count = (uint32_t) (count);           \
+                                                    \
     COUT("%s ", #var);                              \
-    COUT("[size: %lld, count: %d]\n", size, count); \
-    int _i, _s = (size) * (count);                  \
-    for (_i = 0; _i < _s; ++_i) {                   \
+    COUT("[size: %d, count: %d]\n", _size, _count); \
+                                                    \
+    int _i = 0;                                     \
+    for (_size *= _count; _i < _size; ++_i) {       \
         if (!(_i % 16) && _i) {                     \
             COUT("\n");                             \
         }                                           \
-        COUT("%02x ", ((uint8_t *) (var))[_i]);     \
+        COUT("%02x ", _var[_i]);                    \
     }                                               \
     COUT("\n");                                     \
 }
@@ -36,11 +41,12 @@
 #define DUMP_STRUCT(var) DUMP_ARRAY(&var, 1)
 #define DUMP_PSTRUCT(var) DUMP_ARRAY(var, 1)
 #define DUMP_ARRAY(var, count) _DUMP_STRUCT(var, sizeof(*(var)), count)
-#define _DUMP_STRUCT(var, size, count) {    \
-    int _i;                                 \
-    for (_i = 0; _i < size * count; ++_i) { \
-       DUMP_VAR(((uint8_t *) (var))[_i]);   \
-    }                                       \
+#define _DUMP_STRUCT(var, size, count) { \
+    uint8_t *_var = (uint8_t *) (var);   \
+    int _i, _s = (size) * (count);       \
+    for (_i = 0; _i < _s; ++_i) {        \
+       DUMP_VAR(_var[_i]);               \
+    }                                    \
 }
 
 #define ROUND(value, max) ((value) > (max) ? (max) : (value))
