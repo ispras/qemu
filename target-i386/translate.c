@@ -30,8 +30,6 @@
 
 #include "trace-tcg.h"
 #include "exec/log.h"
-
-#include "sysemu/sysemu.h" // For WinDbg
 #include "exec/windbgstub.h"
 
 #define PREFIX_REPZ   0x01
@@ -8310,7 +8308,7 @@ void gen_intermediate_code(CPUX86State *env, TranslationBlock *tb)
                [tb->pc, tb->pc + tb->size) in order to for it to be
                properly cleared -- thus we increment the PC here so that
                the logic setting tb->size below does the right thing.  */
-            windbg_set_bp(0); //For WinDbg
+            windbg_vm_stop();
             pc_ptr += 1;
             goto done_generating;
         }
@@ -8319,11 +8317,6 @@ void gen_intermediate_code(CPUX86State *env, TranslationBlock *tb)
         }
 
         pc_ptr = disas_insn(env, dc, pc_ptr);
-        if (windbg_check_bp()) {
-            //TODO: Breakpoint? 
-            //cpu_breakpoint_insert(cs, pc_ptr, BP_GDB, NULL);
-            vm_stop(RUN_STATE_PAUSED);
-        }
         /* stop translation if indicated */
         if (dc->is_jmp)
             break;
@@ -8365,6 +8358,9 @@ void gen_intermediate_code(CPUX86State *env, TranslationBlock *tb)
             gen_eob(dc);
             break;
         }
+    }
+    if (windbg_check_single_step()) {
+        windbg_vm_stop();
     }
     if (tb->cflags & CF_LAST_IO)
         gen_io_end();

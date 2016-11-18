@@ -33,7 +33,7 @@ typedef struct Context {
 static uint32_t cntrl_packet_id = RESET_PACKET_ID;
 static uint32_t data_packet_id = INITIAL_PACKET_ID;
 static uint8_t lock = 0;
-static bool bp = false;
+static bool sstep = false;
 
 static Context chr_ctx = { .state = STATE_LEADER };
 
@@ -156,10 +156,10 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     case DbgKdWriteBreakPointApi:
         bp_addr = m64.u.WriteBreakPoint.BreakPointAddress & 0xffffffff;
-
+        
         m64.u.WriteBreakPoint.BreakPointHandle = 0x1;
         cpu_breakpoint_insert(cpu, bp_addr, BP_GDB, NULL);
-
+        
         send_only_m64 = true;
 
         break;
@@ -215,15 +215,9 @@ static void windbg_process_manipulate_packet(Context *ctx)
         uint32_t tf = m64.u.Continue2.ControlSet.TraceFlag;
 
         if (!tf) {
-            bp = false;
+            sstep = false;
         }
         vm_start();
-
-        if (tf) {
-            windbg_send_data_packet((uint8_t *)get_ExceptionStateChange(0),
-                sizeof(EXCEPTION_STATE_CHANGE),
-                PACKET_TYPE_KD_STATE_CHANGE64);
-        }
 
         return;
     }
@@ -381,13 +375,13 @@ static int windbg_chr_can_receive(void *opaque)
     return PACKET_MAX_SIZE;
 }
 
-void windbg_set_bp(int index)
+void windbg_vm_stop(void)
 {
+    vm_stop(RUN_STATE_PAUSED);
     windbg_send_data_packet((uint8_t *) get_ExceptionStateChange(0),
                             sizeof(EXCEPTION_STATE_CHANGE),
                             PACKET_TYPE_KD_STATE_CHANGE64);
-    vm_stop(RUN_STATE_PAUSED);
-    bp = true;
+    sstep = true;
 }
 
 static void windbg_read_byte(Context *ctx, uint8_t byte)
@@ -407,7 +401,7 @@ static void windbg_read_byte(Context *ctx, uint8_t byte)
         }
         else if (byte == BREAKIN_PACKET_BYTE) {
             //TODO: For all processors
-            windbg_set_bp(0);
+            windbg_vm_stop();
             ctx->index = 0;
         }
         else {
@@ -495,9 +489,9 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
     }
 }
 
-bool windbg_check_bp(void)
+bool windbg_check_single_step(void)
 {
-    return bp;
+    return sstep;
 }
 
 void windbg_start_sync(void)
