@@ -8,6 +8,8 @@
 
 #define WINDBG "windbg"
 
+#define WINDBG_ERROR(...) error_report("\nWinDbg: " __VA_ARGS__)
+
 //windbg.exe -b -k com:pipe,baud=115200,port=\\.\pipe\windbg,resets=0
 //qemu.exe -windbg pipe:windbg
 
@@ -127,7 +129,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         break;
     case DbgKdWriteVirtualMemoryApi:
-        count = ROUND(extra_data_size, m64.u.WriteMemory.TransferCount);
+        count = MIN(extra_data_size, m64.u.WriteMemory.TransferCount);
         addr = m64.u.WriteMemory.TargetBaseAddress;
 
         m64.u.WriteMemory.ActualBytesWritten = count;
@@ -148,7 +150,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     }
     case DbgKdSetContextApi:
-        set_Context(M64_OFFSET(ctx->data), ROUND(extra_data_size,
+        set_Context(M64_OFFSET(ctx->data), MIN(extra_data_size,
             sizeof(CPU_CONTEXT)), 0);
 
         send_only_m64 = true;
@@ -156,10 +158,10 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     case DbgKdWriteBreakPointApi:
         bp_addr = m64.u.WriteBreakPoint.BreakPointAddress & 0xffffffff;
-        
+
         m64.u.WriteBreakPoint.BreakPointHandle = 0x1;
         cpu_breakpoint_insert(cpu, bp_addr, BP_GDB, NULL);
-        
+
         send_only_m64 = true;
 
         break;
@@ -173,10 +175,10 @@ static void windbg_process_manipulate_packet(Context *ctx)
         send_only_m64 = true;
 
         break;
-    case DbgKdContinueApi:
-        send_only_m64 = true;
+    // case DbgKdContinueApi:
+    //     send_only_m64 = true;
 
-        break;
+    //     break;
     case DbgKdReadControlSpaceApi:
     {
         //TODO: For all processors
@@ -192,22 +194,13 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     }
     case DbgKdWriteControlSpaceApi:
-        count = ROUND(extra_data_size, m64.u.WriteMemory.TransferCount);
+        count = MIN(extra_data_size, m64.u.WriteMemory.TransferCount);
         addr = m64.u.WriteMemory.TargetBaseAddress - sizeof(CPU_CONTEXT);
 
         m64.u.WriteMemory.ActualBytesWritten = count;
         set_KSpecialRegisters(M64_OFFSET(ctx->data), count, addr, 0);
 
         send_only_m64 = true;
-
-        break;
-    case DbgKdReadIoSpaceApi:
-
-        break;
-    case DbgKdWriteIoSpaceApi:
-
-        break;
-    case DbgKdRebootApi:
 
         break;
     case DbgKdContinueApi2:
@@ -221,33 +214,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         return;
     }
-    case DbgKdReadPhysicalMemoryApi:
-
-        break;
-    case DbgKdWritePhysicalMemoryApi:
-
-        break;
-    case DbgKdQuerySpecialCallsApi:
-
-        break;
-    case DbgKdSetSpecialCallApi:
-
-        break;
-    case DbgKdClearSpecialCallsApi:
-
-        break;
-    case DbgKdSetInternalBreakPointApi:
-
-        break;
-    case DbgKdGetInternalBreakPointApi:
-
-        break;
-    case DbgKdReadIoSpaceExtendedApi:
-
-        break;
-    case DbgKdWriteIoSpaceExtendedApi:
-
-        break;
     case DbgKdGetVersionApi:
         cpu_memory_rw_debug(cpu, cc_addrs->Version, PTR(m64) + 0x10,
             m64_size - 0x10, 0);
@@ -255,58 +221,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
         send_only_m64 = true;
 
         break;
-    case DbgKdWriteBreakPointExApi:
-
-        break;
-    case DbgKdRestoreBreakPointExApi:
-
-        break;
-    case DbgKdCauseBugCheckApi:
-
-        break;
-    case DbgKdSwitchProcessor:
-
-        break;
-    case DbgKdPageInApi:
-
-        break;
-    case DbgKdReadMachineSpecificRegister:
-
-        break;
-    case DbgKdWriteMachineSpecificRegister:
-
-        break;
-    case OldVlm1:
-
-        break;
-    case OldVlm2:
-
-        break;
-    case DbgKdSearchMemoryApi:
-
-        break;
-    case DbgKdGetBusDataApi:
-
-        break;
-    case DbgKdSetBusDataApi:
-
-        break;
-    case DbgKdCheckLowMemoryApi:
-
-        break;
-    case DbgKdClearAllInternalBreakpointsApi:
-
-        return;
-    case DbgKdFillMemoryApi:
-
-        break;
-    case DbgKdQueryMemoryApi:
-
-        break;
-    case DbgKdSwitchPartition:
-
-        break;
     default:
+        WINDBG_ERROR("Catch unsupported api (0x%x)", m64.ApiNumber);
 
         break;
     }
@@ -329,7 +245,7 @@ static void windbg_process_data_packet(Context *ctx)
 
         break;
     default:
-        error_report("WinDbg: Catch unsupported data packet (0x%x)",
+        WINDBG_ERROR("Catch unsupported data packet (0x%x)",
                      ctx->packet.PacketType);
 
         cntrl_packet_id = 0;
@@ -358,7 +274,7 @@ static void windbg_process_control_packet(Context *ctx)
         break;
     }
     default:
-        error_report("WinDbg: Catch unsupported control packet (0x%x)",
+        WINDBG_ERROR("Catch unsupported control packet (0x%x)",
                      ctx->packet.PacketType);
 
         cntrl_packet_id = 0;
@@ -515,7 +431,7 @@ static void windbg_exit(void)
 int windbgserver_start(const char *device)
 {
     if (windbg_chr) {
-        error_report("WinDbg: Multiple instances are not supported yet");
+        WINDBG_ERROR("Multiple instances are not supported yet");
         exit(1);
     }
 

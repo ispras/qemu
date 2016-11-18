@@ -222,7 +222,7 @@ void set_Context(uint8_t *data, int len, int index)
     CPUArchState *env = CPU_ARCH_STATE(cpu);
     int i;
 
-    memcpy(PTR(c), data, ROUND(len, sizeof(c)));
+    memcpy(PTR(c), data, MIN(len, sizeof(c)));
 
   #if defined(TARGET_I386)
 
@@ -325,7 +325,7 @@ void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index)
     CPUState *cpu = qemu_get_cpu(index);
     CPUArchState *env = CPU_ARCH_STATE(cpu);
 
-    memcpy(PTR(kr) + offset, data, ROUND(len, sizeof(kr) - offset));
+    memcpy(PTR(kr) + offset, data, MIN(len, sizeof(kr) - offset));
 
     env->cr[0] = kr.Cr0;
     env->cr[2] = kr.Cr2;

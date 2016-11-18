@@ -49,8 +49,6 @@
     }                                    \
 }
 
-#define ROUND(value, max) ((value) > (max) ? (max) : (value))
-
 #define CAST_PTR(ptr, var) ((ptr *) &(var))
 #define PTR(var) CAST_PTR(uint8_t, var)
 
