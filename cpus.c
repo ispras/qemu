@@ -81,6 +81,23 @@ static unsigned int throttle_percentage;
 #define CPU_THROTTLE_PCT_MAX 99
 #define CPU_THROTTLE_TIMESLICE_NS 10000000
 
+void (*excp_debug_handler)(CPUState *cpu);
+
+bool register_excp_debug_handler(void (*new_excp_debug_handler)(CPUState *cpu))
+{
+    if (excp_debug_handler == NULL) {
+        excp_debug_handler = new_excp_debug_handler;
+        return true;
+    }
+    else if (excp_debug_handler == new_excp_debug_handler) {
+        return true;
+    }
+    else {
+        error_report("ERROR: Something debugger already using");
+        return false;
+    }
+}
+
 bool cpu_is_stopped(CPUState *cpu)
 {
     return cpu->stopped || !runstate_is_running();
@@ -769,7 +786,10 @@ static bool cpu_can_run(CPUState *cpu)
 
 static void cpu_handle_guest_debug(CPUState *cpu)
 {
-    gdb_set_stop_cpu(cpu);
+    if (excp_debug_handler != NULL) {
+        excp_debug_handler(cpu);
+    }
+    // gdb_set_stop_cpu(cpu);
     qemu_system_debug_request();
     cpu->stopped = true;
 }

@@ -2,7 +2,9 @@
 #include "cpu.h"
 #include "sysemu/char.h"
 #include "sysemu/sysemu.h"
+#include "sysemu/cpus.h"
 #include "qemu/error-report.h"
+#include "exec/exec-all.h"
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
@@ -35,7 +37,6 @@ typedef struct Context {
 static uint32_t cntrl_packet_id = RESET_PACKET_ID;
 static uint32_t data_packet_id = INITIAL_PACKET_ID;
 static uint8_t lock = 0;
-static bool sstep = false;
 
 static Context chr_ctx = { .state = STATE_LEADER };
 
@@ -161,6 +162,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         m64.u.WriteBreakPoint.BreakPointHandle = 0x1;
         cpu_breakpoint_insert(cpu, bp_addr, BP_GDB, NULL);
+        tb_flush(cpu);
 
         send_only_m64 = true;
 
@@ -207,10 +209,12 @@ static void windbg_process_manipulate_packet(Context *ctx)
     {
         uint32_t tf = m64.u.Continue2.ControlSet.TraceFlag;
 
-        if (!tf) {
-            sstep = false;
+        cpu_single_step(qemu_get_cpu(0),
+                        tf ? SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0);
+
+        if (!runstate_needs_reset()) {
+            vm_start();
         }
-        vm_start();
 
         return;
     }
@@ -221,6 +225,29 @@ static void windbg_process_manipulate_packet(Context *ctx)
         send_only_m64 = true;
 
         break;
+    case DbgKdClearAllInternalBreakpointsApi:
+        // Usupported yet!!!
+        send_only_m64 = true;
+
+        break;
+    case DbgKdQueryMemoryApi:
+    {
+        DBGKD_QUERY_MEMORY *mem = &m64.u.QueryMemory;
+        if (mem->AddressSpace == DBGKD_QUERY_MEMORY_VIRTUAL) {
+           mem->AddressSpace = DBGKD_QUERY_MEMORY_PROCESS;
+
+           mem->Flags = DBGKD_QUERY_MEMORY_READ |
+                       DBGKD_QUERY_MEMORY_WRITE |
+                       DBGKD_QUERY_MEMORY_EXECUTE;
+        }
+        else {
+            WINDBG_ERROR("qweqwe");
+        }
+
+        send_only_m64 = true;
+
+        break;
+    }
     default:
         WINDBG_ERROR("Catch unsupported api (0x%x)", m64.ApiNumber);
 
@@ -291,13 +318,17 @@ static int windbg_chr_can_receive(void *opaque)
     return PACKET_MAX_SIZE;
 }
 
-void windbg_vm_stop(void)
+static void windbg_bp_handler(CPUState *cpu)
 {
-    vm_stop(RUN_STATE_PAUSED);
     windbg_send_data_packet((uint8_t *) get_ExceptionStateChange(0),
                             sizeof(EXCEPTION_STATE_CHANGE),
                             PACKET_TYPE_KD_STATE_CHANGE64);
-    sstep = true;
+}
+
+static void windbg_vm_stop(void)
+{
+    vm_stop(RUN_STATE_PAUSED);
+    windbg_bp_handler(qemu_get_cpu(0));
 }
 
 static void windbg_read_byte(Context *ctx, uint8_t byte)
@@ -316,7 +347,6 @@ static void windbg_read_byte(Context *ctx, uint8_t byte)
             }
         }
         else if (byte == BREAKIN_PACKET_BYTE) {
-            //TODO: For all processors
             windbg_vm_stop();
             ctx->index = 0;
         }
@@ -405,11 +435,6 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
     }
 }
 
-bool windbg_check_single_step(void)
-{
-    return sstep;
-}
-
 void windbg_start_sync(void)
 {
     get_init();
@@ -432,6 +457,10 @@ int windbgserver_start(const char *device)
 {
     if (windbg_chr) {
         WINDBG_ERROR("Multiple instances are not supported yet");
+        exit(1);
+    }
+
+    if (!register_excp_debug_handler(windbg_bp_handler)) {
         exit(1);
     }
 

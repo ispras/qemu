@@ -1778,6 +1778,10 @@ int gdbserver_start(const char *device)
     s->mon_chr = mon_chr;
     s->current_syscall_cb = NULL;
 
+    if (!register_excp_debug_handler(gdb_set_stop_cpu)) {
+        exit(1);
+    }
+
     return 0;
 }
 #endif

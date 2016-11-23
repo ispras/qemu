@@ -9,6 +9,8 @@ void pause_all_vcpus(void);
 void cpu_stop_current(void);
 void cpu_ticks_init(void);
 
+bool register_excp_debug_handler(void (*new_excp_debug_handler)(CPUState *cpu));
+
 void configure_icount(QemuOpts *opts, Error **errp);
 extern int use_icount;
 extern int icount_align_option;

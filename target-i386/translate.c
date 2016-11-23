@@ -8308,7 +8308,6 @@ void gen_intermediate_code(CPUX86State *env, TranslationBlock *tb)
                [tb->pc, tb->pc + tb->size) in order to for it to be
                properly cleared -- thus we increment the PC here so that
                the logic setting tb->size below does the right thing.  */
-            windbg_vm_stop();
             pc_ptr += 1;
             goto done_generating;
         }
@@ -8359,9 +8358,7 @@ void gen_intermediate_code(CPUX86State *env, TranslationBlock *tb)
             break;
         }
     }
-    if (windbg_check_single_step()) {
-        windbg_vm_stop();
-    }
+
     if (tb->cflags & CF_LAST_IO)
         gen_io_end();
 done_generating:

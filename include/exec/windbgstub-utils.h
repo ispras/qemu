@@ -3,8 +3,8 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
-#include "exec/windbgkd.h"
 #include "qemu/cutils.h"
+#include "exec/windbgkd.h"
 
 // FOR DEBUG
 
