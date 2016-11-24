@@ -3,6 +3,7 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
+#include "exec/exec-all.h"
 #include "qemu/cutils.h"
 #include "exec/windbgkd.h"
 
@@ -296,8 +297,12 @@ void set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index);
 
 size_t sizeof_lssc(void);
 
+uint8_t windbg_write_breakpoint(CPUState *cpu, uint32_t addr);
+void windbg_restore_breakpoint(CPUState *cpu, uint8_t bp_index);
+
 void on_init(void);
 void on_exit(void);
+
 uint8_t cpu_amount(void);
 uint32_t compute_checksum(uint8_t *data, uint16_t length);
 

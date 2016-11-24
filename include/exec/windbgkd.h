@@ -194,6 +194,11 @@
 #define AMD64_DEBUG_CONTROL_SPACE_KSPECIAL  2
 #define AMD64_DEBUG_CONTROL_SPACE_KTHREAD   3
 
+//
+// Maximum supported number of breakpoints
+//
+#define KD_BREAKPOINT_MAX 32
+
 //TODO: Use bool
 typedef uint8_t boolean_t;
 typedef int32_t ntstatus_t;

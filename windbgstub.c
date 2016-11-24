@@ -4,7 +4,6 @@
 #include "sysemu/sysemu.h"
 #include "sysemu/cpus.h"
 #include "qemu/error-report.h"
-#include "exec/exec-all.h"
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
@@ -108,8 +107,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
     uint32_t count, addr;
 
-    static uint64_t prev_bp_addr = 0;
-
     bool send_only_m64 = false;
 
     DBGKD_MANIPULATE_STATE64 m64;
@@ -157,25 +154,25 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         break;
     case DbgKdWriteBreakPointApi:
-        prev_bp_addr = m64.u.WriteBreakPoint.BreakPointAddress & 0xffffffff;
+    {
+        DBGKD_WRITE_BREAKPOINT64 *bp = &m64.u.WriteBreakPoint;
 
-        m64.u.WriteBreakPoint.BreakPointHandle = 0x1;
-        cpu_breakpoint_insert(cpu, prev_bp_addr, BP_GDB, NULL);
-        tb_flush(cpu);
+        bp->BreakPointHandle = windbg_write_breakpoint(cpu, bp->BreakPointAddress);
 
         send_only_m64 = true;
 
         break;
+    }
     case DbgKdRestoreBreakPointApi:
-        m64.ReturnStatus = 0xc0000001;
-        if (prev_bp_addr) {
-            cpu_breakpoint_remove(cpu, prev_bp_addr, BP_GDB);
-            prev_bp_addr = 0;
-        }
+    {
+        DBGKD_RESTORE_BREAKPOINT *bp = &m64.u.RestoreBreakPoint;
+
+        windbg_restore_breakpoint(cpu, bp->BreakPointHandle);
 
         send_only_m64 = true;
 
         break;
+    }
     case DbgKdReadControlSpaceApi:
         count = m64.u.ReadMemory.TransferCount;
         addr = m64.u.ReadMemory.TargetBaseAddress - sizeof(CPU_CONTEXT);
@@ -221,12 +218,12 @@ static void windbg_process_manipulate_packet(Context *ctx)
     case DbgKdQueryMemoryApi:
     {
         DBGKD_QUERY_MEMORY *mem = &m64.u.QueryMemory;
-        if (mem->AddressSpace == DBGKD_QUERY_MEMORY_VIRTUAL) {
-           mem->AddressSpace = DBGKD_QUERY_MEMORY_PROCESS;
 
-           mem->Flags = DBGKD_QUERY_MEMORY_READ |
-                        DBGKD_QUERY_MEMORY_WRITE |
-                        DBGKD_QUERY_MEMORY_EXECUTE;
+        if (mem->AddressSpace == DBGKD_QUERY_MEMORY_VIRTUAL) {
+            mem->AddressSpace = DBGKD_QUERY_MEMORY_PROCESS;
+            mem->Flags = DBGKD_QUERY_MEMORY_READ |
+                         DBGKD_QUERY_MEMORY_WRITE |
+                         DBGKD_QUERY_MEMORY_EXECUTE;
         }
 
         send_only_m64 = true;
@@ -305,6 +302,8 @@ static int windbg_chr_can_receive(void *opaque)
 
 static void windbg_bp_handler(CPUState *cpu)
 {
+    CPUArchState *env = cpu->env_ptr;
+    printf("exc 0x%x \n", env->eip);
     windbg_send_data_packet((uint8_t *) get_exception_sc(0),
                             sizeof(EXCEPTION_STATE_CHANGE),
                             PACKET_TYPE_KD_STATE_CHANGE64);

@@ -8,6 +8,8 @@ static CPU_KSPECIAL_REGISTERS ckr;
 
 static size_t lssc_size = 0;
 
+static uint32_t bps[KD_BREAKPOINT_MAX];
+
 PCPU_CTRL_ADDRS get_cpu_ctrl_addrs(int cpu_index)
 {
     CPUState *cpu = qemu_get_cpu(cpu_index);
@@ -354,6 +356,30 @@ void set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index)
     env->ldt.selector = ckr.Ldtr;
 
     // ckr.Reserved[6];
+}
+
+uint8_t windbg_write_breakpoint(CPUState *cpu, uint32_t addr)
+{
+    int i = 0, s = ARRAY_SIZE(bps);
+    for (; i < s; ++i) {
+        if (!bps[i]) {
+            bps[i] = addr;
+            cpu_breakpoint_insert(cpu, bps[i], BP_GDB, NULL);
+            tb_flush(cpu);
+            return i + 1;
+        }
+    }
+    return 0;
+}
+
+void windbg_restore_breakpoint(CPUState *cpu, uint8_t bp_index)
+{
+    bp_index -= 1;
+
+    if (bps[bp_index]) {
+        cpu_breakpoint_remove(cpu, bps[bp_index], BP_GDB);
+        bps[bp_index] = 0;
+    }
 }
 
 void on_init(void)
