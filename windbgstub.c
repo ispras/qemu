@@ -105,9 +105,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
            extra_data_size = 0,
            m64_size = sizeof(DBGKD_MANIPULATE_STATE64);
 
-    uint32_t count, addr;
-
-    bool send_only_m64 = false;
+    bool send_only_m64;
 
     DBGKD_MANIPULATE_STATE64 m64;
     memset(packet, 0, PACKET_MAX_SIZE);
@@ -122,37 +120,49 @@ static void windbg_process_manipulate_packet(Context *ctx)
     switch(m64.ApiNumber) {
 
     case DbgKdReadVirtualMemoryApi:
-        count = m64.u.ReadMemory.TransferCount;
-        addr = m64.u.ReadMemory.TargetBaseAddress;
+    {
+        DBGKD_READ_MEMORY64 *mem = &m64.u.ReadMemory;
 
-        m64.u.ReadMemory.ActualBytesRead = count;
-        cpu_memory_rw_debug(cpu, addr, M64_OFFSET(packet), count, 0);
-        packet_size = m64_size + count;
+        mem->ActualBytesRead = mem->TransferCount;
+        cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
+                            M64_OFFSET(packet), mem->TransferCount, 0);
+        packet_size = m64_size + mem->ActualBytesRead;
+
+        send_only_m64 = false;
 
         break;
+    }
     case DbgKdWriteVirtualMemoryApi:
-        count = MIN(extra_data_size, m64.u.WriteMemory.TransferCount);
-        addr = m64.u.WriteMemory.TargetBaseAddress;
+    {
+        DBGKD_WRITE_MEMORY64 *mem = &m64.u.WriteMemory;
 
-        m64.u.WriteMemory.ActualBytesWritten = count;
-        cpu_memory_rw_debug(cpu, addr, M64_OFFSET(ctx->data), count, 1);
+        mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
+        cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
+                            M64_OFFSET(ctx->data), mem->ActualBytesWritten, 1);
 
         send_only_m64 = true;
 
         break;
+    }
     case DbgKdGetContextApi:
+    {
         packet_size = sizeof(CPU_CONTEXT);
         memcpy(M64_OFFSET(packet), get_context(m64.Processor), packet_size);
         packet_size += m64_size;
 
+        send_only_m64 = false;
+
         break;
+    }
     case DbgKdSetContextApi:
+    {
         set_context(M64_OFFSET(ctx->data), MIN(extra_data_size,
                     sizeof(CPU_CONTEXT)), m64.Processor);
 
         send_only_m64 = true;
 
         break;
+    }
     case DbgKdWriteBreakPointApi:
     {
         DBGKD_WRITE_BREAKPOINT64 *bp = &m64.u.WriteBreakPoint;
@@ -174,26 +184,35 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     }
     case DbgKdReadControlSpaceApi:
-        count = m64.u.ReadMemory.TransferCount;
-        addr = m64.u.ReadMemory.TargetBaseAddress - sizeof(CPU_CONTEXT);
+    {
+        DBGKD_READ_MEMORY64 *mem = &m64.u.ReadMemory;
 
-        m64.u.ReadMemory.ActualBytesRead = count;
+        mem->ActualBytesRead = mem->TransferCount;
+        uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
         memcpy(M64_OFFSET(packet),
-               ((uint8_t *) get_kspecial_registers(m64.Processor)) + addr, count);
-        packet_size = m64_size + count;
+               ((uint8_t *) get_kspecial_registers(m64.Processor)) + offset,
+               mem->ActualBytesRead);
+        packet_size = m64_size + mem->ActualBytesRead;
+
+        send_only_m64 = false;
 
         break;
+    }
     case DbgKdWriteControlSpaceApi:
-        count = MIN(extra_data_size, m64.u.WriteMemory.TransferCount);
-        addr = m64.u.WriteMemory.TargetBaseAddress - sizeof(CPU_CONTEXT);
+    {
+        DBGKD_WRITE_MEMORY64 *mem = &m64.u.WriteMemory;
 
-        m64.u.WriteMemory.ActualBytesWritten = count;
-        set_kspecial_registers(M64_OFFSET(ctx->data), count, addr, m64.Processor);
+        mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
+        uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
+        set_kspecial_registers(M64_OFFSET(ctx->data), mem->ActualBytesWritten,
+                               offset, m64.Processor);
 
         send_only_m64 = true;
 
         break;
+    }
     case DbgKdContinueApi2:
+    {
         cpu_single_step(qemu_get_cpu(m64.Processor),
                         m64.u.Continue2.ControlSet.TraceFlag ?
                         SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0);
@@ -203,18 +222,23 @@ static void windbg_process_manipulate_packet(Context *ctx)
         }
 
         return;
+    }
     case DbgKdGetVersionApi:
+    {
         cpu_memory_rw_debug(cpu, cc_addrs->Version, PTR(m64) + 0x10,
                             m64_size - 0x10, m64.Processor);
 
         send_only_m64 = true;
 
         break;
+    }
     case DbgKdClearAllInternalBreakpointsApi:
-        // Usupported yet!!!
+    {
+
         send_only_m64 = true;
 
         break;
+    }
     case DbgKdQueryMemoryApi:
     {
         DBGKD_QUERY_MEMORY *mem = &m64.u.QueryMemory;
@@ -233,7 +257,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     default:
         WINDBG_ERROR("Catch unsupported api (0x%x)", m64.ApiNumber);
 
-        break;
+        return;
     }
 
     if (send_only_m64) {
