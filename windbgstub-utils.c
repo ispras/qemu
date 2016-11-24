@@ -3,112 +3,115 @@
 static CPU_CTRL_ADDRS cca;
 static uint8_t *lssc;
 static EXCEPTION_STATE_CHANGE esc;
-static CPU_CONTEXT c;
-static CPU_KSPECIAL_REGISTERS kr;
+static CPU_CONTEXT cc;
+static CPU_KSPECIAL_REGISTERS ckr;
 
 static size_t lssc_size = 0;
 
-PCPU_CTRL_ADDRS get_KPCRAddress(int index)
+PCPU_CTRL_ADDRS get_cpu_ctrl_addrs(int cpu_index)
 {
-    CPUState *cpu = qemu_get_cpu(index);
-    CPUArchState *env = CPU_ARCH_STATE(cpu);
+    CPUState *cpu = qemu_get_cpu(cpu_index);
+    CPUArchState *env = cpu->env_ptr;
 
     cca.KPCR = env->segs[R_FS].base;
 
     cpu_memory_rw_debug(cpu, cca.KPCR + OFFSET_KPRCB, PTR(cca.KPRCB),
-        sizeof(cca.KPRCB), 0);
+                        sizeof(cca.KPRCB), 0);
 
     cpu_memory_rw_debug(cpu, cca.KPCR + OFFSET_VERSION, PTR(cca.Version),
-        sizeof(cca.Version), 0);
+                        sizeof(cca.Version), 0);
 
     cpu_memory_rw_debug(cpu, cca.Version + OFFSET_KRNL_BASE, PTR(cca.KernelBase),
-        sizeof(cca.KernelBase), 0);
+                        sizeof(cca.KernelBase), 0);
 
     return &cca;
 }
 
-PEXCEPTION_STATE_CHANGE get_ExceptionStateChange(int index)
+PEXCEPTION_STATE_CHANGE get_exception_sc(int cpu_index)
 {
-    CPUState *cpu = qemu_get_cpu(index);
-    CPUArchState *env = CPU_ARCH_STATE(cpu);
+    CPUState *cpu = qemu_get_cpu(cpu_index);
+    CPUArchState *env = cpu->env_ptr;
 
     memset(&esc, 0, sizeof(esc));
 
-    esc.StateChange.NewState = DbgKdExceptionStateChange;
+    DBGKD_ANY_WAIT_STATE_CHANGE *sc = &esc.StateChange;
+
+    sc->NewState = DbgKdExceptionStateChange;
     //TODO: Get it
-    esc.StateChange.ProcessorLevel = 0x6; //Pentium 4
+    sc->ProcessorLevel = 0x6; //Pentium 4
     //
-    esc.StateChange.Processor = index;
-    esc.StateChange.NumberProcessors = cpu_amount();
+    sc->Processor = cpu_index;
+    sc->NumberProcessors = cpu_amount();
     //TODO: + 0xffffffff00000000
     cpu_memory_rw_debug(cpu, cca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
-        PTR(esc.StateChange.Thread), sizeof(esc.StateChange.Thread), 0);
-    esc.StateChange.ProgramCounter = env->eip;
+                        PTR(sc->Thread), sizeof(sc->Thread), 0);
+    sc->ProgramCounter = env->eip;
     //
     //TODO: Get it
-    esc.StateChange.u.Exception.ExceptionRecord.ExceptionCode = 0x80000003;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionFlags = 0x0;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionRecord = 0x0;
+    sc->u.Exception.ExceptionRecord.ExceptionCode = 0x80000003;
+    //sc->u.Exception.ExceptionRecord.ExceptionFlags = 0x0;
+    //sc->u.Exception.ExceptionRecord.ExceptionRecord = 0x0;
     //
     //TODO: + 0xffffffff00000000
-    esc.StateChange.u.Exception.ExceptionRecord.ExceptionAddress = env->eip;
+    sc->u.Exception.ExceptionRecord.ExceptionAddress = env->eip;
     //
     //TODO: Get it
-    //esc.StateChange.u.Exception.ExceptionRecord.NumberParameters = 0x3;
-    //esc.StateChange.u.Exception.ExceptionRecord.__unusedAligment = 0x80;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[1] = 0xffffffff82966340;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[2] = 0xffffffff82959adc;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[3] = 0xc0;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[4] = 0xffffffffc020360c;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[5] = 0x80;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[6] = 0x0;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[7] = 0x0;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[8] = 0xffffffff82870d08;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[9] = 0xffffffff82959aec;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[10] = 0xffffffff82853508;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[11] = 0xffffffffbadb0d00;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[12] = 0xffffffff82959adc;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[13] = 0xffffffff82959aa4;
-    //esc.StateChange.u.Exception.ExceptionRecord.ExceptionInformation[14] = 0xffffffff828d9d15;
+    //sc->u.Exception.ExceptionRecord.NumberParameters = 0x3;
+    //sc->u.Exception.ExceptionRecord.__unusedAligment = 0x80;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[1] = 0xffffffff82966340;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[2] = 0xffffffff82959adc;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[3] = 0xc0;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[4] = 0xffffffffc020360c;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[5] = 0x80;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[6] = 0x0;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[7] = 0x0;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[8] = 0xffffffff82870d08;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[9] = 0xffffffff82959aec;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[10] = 0xffffffff82853508;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[11] = 0xffffffffbadb0d00;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[12] = 0xffffffff82959adc;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[13] = 0xffffffff82959aa4;
+    //sc->u.Exception.ExceptionRecord.ExceptionInformation[14] = 0xffffffff828d9d15;
     //
     //TODO: Get it
-    esc.StateChange.u.Exception.FirstChance = 0x1;
+    sc->u.Exception.FirstChance = 0x1;
     //
-    esc.StateChange.ControlReport.Dr6 = env->dr[6];
-    esc.StateChange.ControlReport.Dr7 = env->dr[7];
+    sc->ControlReport.Dr6 = env->dr[6];
+    sc->ControlReport.Dr7 = env->dr[7];
     //TODO: Get it
-    //esc.StateChange.ControlReport.InstructionCount = 0x10;
-    //esc.StateChange.ControlReport.ReportFlags = 0x3;
+    //sc->ControlReport.InstructionCount = 0x10;
+    //sc->ControlReport.ReportFlags = 0x3;
     //
     cpu_memory_rw_debug(cpu, env->eip,
-        (uint8_t *)esc.StateChange.ControlReport.InstructionStream,
-        sizeof(esc.StateChange.ControlReport.InstructionStream), 0);
-    esc.StateChange.ControlReport.SegCs = env->segs[R_CS].selector;;
-    esc.StateChange.ControlReport.SegDs = env->segs[R_DS].selector;
-    esc.StateChange.ControlReport.SegEs = env->segs[R_ES].selector;
-    esc.StateChange.ControlReport.SegFs = env->segs[R_FS].selector;
-    esc.StateChange.ControlReport.EFlags = env->eflags;
+                        (uint8_t *) sc->ControlReport.InstructionStream,
+                        sizeof(sc->ControlReport.InstructionStream), 0);
+    sc->ControlReport.SegCs = env->segs[R_CS].selector;;
+    sc->ControlReport.SegDs = env->segs[R_DS].selector;
+    sc->ControlReport.SegEs = env->segs[R_ES].selector;
+    sc->ControlReport.SegFs = env->segs[R_FS].selector;
+    sc->ControlReport.EFlags = env->eflags;
     //TODO: Get it
     esc.value = 0x1;
 
     return &esc;
 }
 
-size_t get_lssc_size(void)
+size_t sizeof_lssc(void)
 {
     return lssc_size;
 }
 
-uint8_t *get_LoadSymbolsStateChange(int index)
+uint8_t *get_load_symbols_sc(int cpu_index)
 {
     int i;
     uint8_t path_name[128]; //For Win7
     size_t size = sizeof(DBGKD_ANY_WAIT_STATE_CHANGE),
            count = sizeof(path_name);
-    CPUState *cpu = qemu_get_cpu(index);
-    DBGKD_ANY_WAIT_STATE_CHANGE StateChange;
 
-    memcpy(&StateChange, get_ExceptionStateChange(0), size);
+    CPUState *cpu = qemu_get_cpu(cpu_index);
+    DBGKD_ANY_WAIT_STATE_CHANGE sc;
+
+    memcpy(&sc, get_exception_sc(0), size);
 
     cpu_memory_rw_debug(cpu, NT_KRNL_PNAME_ADDR, path_name, count, 0);
     for (i = 0; i < count; i++) {
@@ -120,166 +123,168 @@ uint8_t *get_LoadSymbolsStateChange(int index)
     count = i / 2 + 1;
     lssc_size = size + count;
 
-    StateChange.NewState = DbgKdLoadSymbolsStateChange;
-    StateChange.u.LoadSymbols.PathNameLength = count;
+    sc.NewState = DbgKdLoadSymbolsStateChange;
+    sc.u.LoadSymbols.PathNameLength = count;
     ////TODO: Get it
-    //StateChange.u.LoadSymbols.BaseOfDll = cca.KernelBase << 8 | ;
-    //StateChange.u.LoadSymbols.ProcessId = -1;
-    //StateChange.u.LoadSymbols.CheckSum = ;
-    //StateChange.u.LoadSymbols.SizeOfImage = ;
-    //StateChange.u.LoadSymbols.UnloadSymbols = false;
+    //sc.u.LoadSymbols.BaseOfDll = cca.KernelBase << 8 | ;
+    //sc.u.LoadSymbols.ProcessId = -1;
+    //sc.u.LoadSymbols.CheckSum = ;
+    //sc.u.LoadSymbols.SizeOfImage = ;
+    //sc.u.LoadSymbols.UnloadSymbols = false;
     ////
 
-    get_free();
+    if (lssc) {
+        g_free(lssc);
+    }
     lssc = g_malloc0(lssc_size);
-    memcpy(lssc, &StateChange, size);
+    memcpy(lssc, &sc, size);
     memcpy(lssc + size, path_name, count);
 
     return lssc;
 }
 
-PCPU_CONTEXT get_Context(int index)
+PCPU_CONTEXT get_context(int cpu_index)
 {
-    CPUState *cpu = qemu_get_cpu(index);
-    CPUArchState *env = CPU_ARCH_STATE(cpu);
+    CPUState *cpu = qemu_get_cpu(cpu_index);
+    CPUArchState *env = cpu->env_ptr;
     int i;
 
-    memset(&c, 0, sizeof(c));
+    memset(&cc, 0, sizeof(cc));
 
   #if defined(TARGET_I386)
 
-    c.ContextFlags = CPU_CONTEXT_ALL;
+    cc.ContextFlags = CPU_CONTEXT_ALL;
 
-    if (c.ContextFlags & CPU_CONTEXT_FULL) {
-        c.Dr0    = env->dr[0];
-        c.Dr1    = env->dr[1];
-        c.Dr2    = env->dr[2];
-        c.Dr3    = env->dr[3];
-        c.Dr6    = env->dr[6];
-        c.Dr7    = env->dr[7];
+    if (cc.ContextFlags & CPU_CONTEXT_FULL) {
+        cc.Dr0    = env->dr[0];
+        cc.Dr1    = env->dr[1];
+        cc.Dr2    = env->dr[2];
+        cc.Dr3    = env->dr[3];
+        cc.Dr6    = env->dr[6];
+        cc.Dr7    = env->dr[7];
 
-        c.Edi    = env->regs[R_EDI];
-        c.Esi    = env->regs[R_ESI];
-        c.Ebx    = env->regs[R_EBX];
-        c.Edx    = env->regs[R_EDX];
-        c.Ecx    = env->regs[R_ECX];
-        c.Eax    = env->regs[R_EAX];
-        c.Ebp    = env->regs[R_EBP];
-        c.Esp    = env->regs[R_ESP];
+        cc.Edi    = env->regs[R_EDI];
+        cc.Esi    = env->regs[R_ESI];
+        cc.Ebx    = env->regs[R_EBX];
+        cc.Edx    = env->regs[R_EDX];
+        cc.Ecx    = env->regs[R_ECX];
+        cc.Eax    = env->regs[R_EAX];
+        cc.Ebp    = env->regs[R_EBP];
+        cc.Esp    = env->regs[R_ESP];
 
-        c.Eip    = env->eip;
-        c.EFlags = env->eflags;
+        cc.Eip    = env->eip;
+        cc.EFlags = env->eflags;
 
-        c.SegGs  = env->segs[R_GS].selector;
-        c.SegFs  = env->segs[R_FS].selector;
-        c.SegEs  = env->segs[R_ES].selector;
-        c.SegDs  = env->segs[R_DS].selector;
-        c.SegCs  = env->segs[R_CS].selector;
-        c.SegSs  = env->segs[R_SS].selector;
+        cc.SegGs  = env->segs[R_GS].selector;
+        cc.SegFs  = env->segs[R_FS].selector;
+        cc.SegEs  = env->segs[R_ES].selector;
+        cc.SegDs  = env->segs[R_DS].selector;
+        cc.SegCs  = env->segs[R_CS].selector;
+        cc.SegSs  = env->segs[R_SS].selector;
     }
 
-    if (c.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
-        c.FloatSave.ControlWord    = env->fpuc;
-        c.FloatSave.StatusWord     = env->fpus;
-        c.FloatSave.TagWord        = env->fpstt;
-        c.FloatSave.ErrorOffset    = DWORD(env->fpip, 0);
-        c.FloatSave.ErrorSelector  = DWORD(env->fpip, 1);
-        c.FloatSave.DataOffset     = DWORD(env->fpdp, 0);
-        c.FloatSave.DataSelector   = DWORD(env->fpdp, 1);
-        c.FloatSave.Cr0NpxState    = env->cr[0];
+    if (cc.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
+        cc.FloatSave.ControlWord    = env->fpuc;
+        cc.FloatSave.StatusWord     = env->fpus;
+        cc.FloatSave.TagWord        = env->fpstt;
+        cc.FloatSave.ErrorOffset    = DWORD(env->fpip, 0);
+        cc.FloatSave.ErrorSelector  = DWORD(env->fpip, 1);
+        cc.FloatSave.DataOffset     = DWORD(env->fpdp, 0);
+        cc.FloatSave.DataSelector   = DWORD(env->fpdp, 1);
+        cc.FloatSave.Cr0NpxState    = env->cr[0];
 
         for (i = 0; i < 8; ++i) {
-            memcpy(PTR(c.FloatSave.RegisterArea[i * 10]),
-                PTR(env->fpregs[i].mmx), sizeof(MMXReg));
+            memcpy(PTR(cc.FloatSave.RegisterArea[i * 10]),
+                   PTR(env->fpregs[i].mmx), sizeof(MMXReg));
         }
     }
 
-    if (c.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
+    if (cc.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
 
     }
 
-    if (c.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
+    if (cc.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
         for (i = 0; i < 8; ++i) {
-            memcpy(PTR(c.ExtendedRegisters[(10 + i) * 16]), 
-                PTR(env->xmm_regs[i]), sizeof(ZMMReg));
+            memcpy(PTR(cc.ExtendedRegisters[(10 + i) * 16]),
+                   PTR(env->xmm_regs[i]), sizeof(ZMMReg));
         }
         // offset 24
-        DWORD(c.ExtendedRegisters, 6) = env->mxcsr;
+        DWORD(cc.ExtendedRegisters, 6) = env->mxcsr;
     }
 
-    c.ExtendedRegisters[0] = 0xaa;
+    cc.ExtendedRegisters[0] = 0xaa;
 
   #elif defined(TARGET_X86_64)
 
   #endif
 
-    return &c;
+    return &cc;
 }
 
-void set_Context(uint8_t *data, int len, int index)
+void set_context(uint8_t *data, int len, int cpu_index)
 {
-    CPUState *cpu = qemu_get_cpu(index);
-    CPUArchState *env = CPU_ARCH_STATE(cpu);
+    CPUState *cpu = qemu_get_cpu(cpu_index);
+    CPUArchState *env = cpu->env_ptr;
     int i;
 
-    memcpy(PTR(c), data, MIN(len, sizeof(c)));
+    memcpy(PTR(cc), data, MIN(len, sizeof(cc)));
 
   #if defined(TARGET_I386)
 
-    if (c.ContextFlags & CPU_CONTEXT_FULL) {
-        env->dr[0] = c.Dr0;
-        env->dr[1] = c.Dr1;
-        env->dr[2] = c.Dr2;
-        env->dr[3] = c.Dr3;
-        env->dr[6] = c.Dr6;
-        env->dr[7] = c.Dr7;
+    if (cc.ContextFlags & CPU_CONTEXT_FULL) {
+        env->dr[0] = cc.Dr0;
+        env->dr[1] = cc.Dr1;
+        env->dr[2] = cc.Dr2;
+        env->dr[3] = cc.Dr3;
+        env->dr[6] = cc.Dr6;
+        env->dr[7] = cc.Dr7;
 
-        env->regs[R_EDI] = c.Edi;
-        env->regs[R_ESI] = c.Esi;
-        env->regs[R_EBX] = c.Ebx;
-        env->regs[R_EDX] = c.Edx;
-        env->regs[R_ECX] = c.Ecx;
-        env->regs[R_EAX] = c.Eax;
-        env->regs[R_EBP] = c.Ebp;
-        env->regs[R_ESP] = c.Esp;
+        env->regs[R_EDI] = cc.Edi;
+        env->regs[R_ESI] = cc.Esi;
+        env->regs[R_EBX] = cc.Ebx;
+        env->regs[R_EDX] = cc.Edx;
+        env->regs[R_ECX] = cc.Ecx;
+        env->regs[R_EAX] = cc.Eax;
+        env->regs[R_EBP] = cc.Ebp;
+        env->regs[R_ESP] = cc.Esp;
 
-        env->eip    = c.Eip;
-        env->eflags = c.EFlags;
+        env->eip    = cc.Eip;
+        env->eflags = cc.EFlags;
 
-        env->segs[R_GS].selector = c.SegGs;
-        env->segs[R_FS].selector = c.SegFs;
-        env->segs[R_ES].selector = c.SegEs;
-        env->segs[R_DS].selector = c.SegDs;
-        env->segs[R_CS].selector = c.SegCs;
-        env->segs[R_SS].selector = c.SegSs;
+        env->segs[R_GS].selector = cc.SegGs;
+        env->segs[R_FS].selector = cc.SegFs;
+        env->segs[R_ES].selector = cc.SegEs;
+        env->segs[R_DS].selector = cc.SegDs;
+        env->segs[R_CS].selector = cc.SegCs;
+        env->segs[R_SS].selector = cc.SegSs;
     }
 
-    if (c.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
-        env->fpuc  = c.FloatSave.ControlWord;
-        env->fpus  = c.FloatSave.StatusWord;
-        env->fpstt = c.FloatSave.TagWord;
-        DWORD(env->fpip, 0) = c.FloatSave.ErrorOffset;
-        DWORD(env->fpip, 1) = c.FloatSave.ErrorSelector;
-        DWORD(env->fpdp, 0) = c.FloatSave.DataOffset;
-        DWORD(env->fpdp, 1) = c.FloatSave.DataSelector;
-        env->cr[0] = c.FloatSave.Cr0NpxState;
+    if (cc.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
+        env->fpuc  = cc.FloatSave.ControlWord;
+        env->fpus  = cc.FloatSave.StatusWord;
+        env->fpstt = cc.FloatSave.TagWord;
+        DWORD(env->fpip, 0) = cc.FloatSave.ErrorOffset;
+        DWORD(env->fpip, 1) = cc.FloatSave.ErrorSelector;
+        DWORD(env->fpdp, 0) = cc.FloatSave.DataOffset;
+        DWORD(env->fpdp, 1) = cc.FloatSave.DataSelector;
+        env->cr[0] = cc.FloatSave.Cr0NpxState;
 
         for (i = 0; i < 8; ++i) {
             memcpy(PTR(env->fpregs[i].mmx),
-                PTR(c.FloatSave.RegisterArea[i * 10]), sizeof(MMXReg));
+                   PTR(cc.FloatSave.RegisterArea[i * 10]), sizeof(MMXReg));
         }
     }
 
-    if (c.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
+    if (cc.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
 
     }
 
-    if (c.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
+    if (cc.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
         for (i = 0; i < 8; ++i) {
-            memcpy(PTR(env->xmm_regs[i]), 
-                PTR(c.ExtendedRegisters[(10 + i) * 16]), sizeof(ZMMReg));
+            memcpy(PTR(env->xmm_regs[i]),
+                   PTR(cc.ExtendedRegisters[(10 + i) * 16]), sizeof(ZMMReg));
         }
-        env->mxcsr = DWORD(c.ExtendedRegisters, 6);
+        env->mxcsr = DWORD(cc.ExtendedRegisters, 6);
     }
 
   #elif defined(TARGET_X86_64)
@@ -287,76 +292,76 @@ void set_Context(uint8_t *data, int len, int index)
   #endif
 }
 
-PCPU_KSPECIAL_REGISTERS get_KSpecialRegisters(int index)
+PCPU_KSPECIAL_REGISTERS get_kspecial_registers(int cpu_index)
 {
-    CPUState *cpu = qemu_get_cpu(index);
-    CPUArchState *env = CPU_ARCH_STATE(cpu);
+    CPUState *cpu = qemu_get_cpu(cpu_index);
+    CPUArchState *env = cpu->env_ptr;
 
-    memset(&kr, 0, sizeof(kr));
+    memset(&ckr, 0, sizeof(ckr));
 
-    kr.Cr0 = env->cr[0];
-    kr.Cr2 = env->cr[2];
-    kr.Cr3 = env->cr[3];
-    kr.Cr4 = env->cr[4];
+    ckr.Cr0 = env->cr[0];
+    ckr.Cr2 = env->cr[2];
+    ckr.Cr3 = env->cr[3];
+    ckr.Cr4 = env->cr[4];
 
-    kr.KernelDr0 = env->dr[0];
-    kr.KernelDr1 = env->dr[1];
-    kr.KernelDr2 = env->dr[2];
-    kr.KernelDr3 = env->dr[3];
-    kr.KernelDr6 = env->dr[6];
-    kr.KernelDr7 = env->dr[7];
+    ckr.KernelDr0 = env->dr[0];
+    ckr.KernelDr1 = env->dr[1];
+    ckr.KernelDr2 = env->dr[2];
+    ckr.KernelDr3 = env->dr[3];
+    ckr.KernelDr6 = env->dr[6];
+    ckr.KernelDr7 = env->dr[7];
 
-    kr.Gdtr.Pad   = env->gdt.selector;
-    kr.Gdtr.Limit = env->gdt.limit;
-    kr.Gdtr.Base  = env->gdt.base;
-    kr.Idtr.Pad   = env->idt.selector;
-    kr.Idtr.Limit = env->idt.limit;
-    kr.Idtr.Base  = env->idt.base;
-    kr.Tr         = env->tr.selector;
-    kr.Ldtr       = env->ldt.selector;
+    ckr.Gdtr.Pad   = env->gdt.selector;
+    ckr.Gdtr.Limit = env->gdt.limit;
+    ckr.Gdtr.Base  = env->gdt.base;
+    ckr.Idtr.Pad   = env->idt.selector;
+    ckr.Idtr.Limit = env->idt.limit;
+    ckr.Idtr.Base  = env->idt.base;
+    ckr.Tr         = env->tr.selector;
+    ckr.Ldtr       = env->ldt.selector;
 
-    // kr.Reserved[6];
+    // ckr.Reserved[6];
 
-    return &kr;
+    return &ckr;
 }
 
-void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index)
+void set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index)
 {
-    CPUState *cpu = qemu_get_cpu(index);
-    CPUArchState *env = CPU_ARCH_STATE(cpu);
+    CPUState *cpu = qemu_get_cpu(cpu_index);
+    CPUArchState *env = cpu->env_ptr;
 
-    memcpy(PTR(kr) + offset, data, MIN(len, sizeof(kr) - offset));
+    memcpy(PTR(ckr) + offset, data, MIN(len, sizeof(ckr) - offset));
 
-    env->cr[0] = kr.Cr0;
-    env->cr[2] = kr.Cr2;
-    env->cr[3] = kr.Cr3;
-    env->cr[4] = kr.Cr4;
+    env->cr[0] = ckr.Cr0;
+    env->cr[2] = ckr.Cr2;
+    env->cr[3] = ckr.Cr3;
+    env->cr[4] = ckr.Cr4;
 
-    env->dr[0] = kr.KernelDr0;
-    env->dr[1] = kr.KernelDr1;
-    env->dr[2] = kr.KernelDr2;
-    env->dr[3] = kr.KernelDr3;
-    env->dr[6] = kr.KernelDr6;
-    env->dr[7] = kr.KernelDr7;
+    env->dr[0] = ckr.KernelDr0;
+    env->dr[1] = ckr.KernelDr1;
+    env->dr[2] = ckr.KernelDr2;
+    env->dr[3] = ckr.KernelDr3;
+    env->dr[6] = ckr.KernelDr6;
+    env->dr[7] = ckr.KernelDr7;
 
-    env->gdt.selector = kr.Gdtr.Pad;
-    env->gdt.limit    = kr.Gdtr.Limit;
-    env->gdt.base     = kr.Gdtr.Base;
-    env->idt.selector = kr.Idtr.Pad;
-    env->idt.limit    = kr.Idtr.Limit;
-    env->idt.base     = kr.Idtr.Base;
-    env->tr.selector  = kr.Tr;
-    env->ldt.selector = kr.Ldtr;
+    env->gdt.selector = ckr.Gdtr.Pad;
+    env->gdt.limit    = ckr.Gdtr.Limit;
+    env->gdt.base     = ckr.Gdtr.Base;
+    env->idt.selector = ckr.Idtr.Pad;
+    env->idt.limit    = ckr.Idtr.Limit;
+    env->idt.base     = ckr.Idtr.Base;
+    env->tr.selector  = ckr.Tr;
+    env->ldt.selector = ckr.Ldtr;
 
-    // kr.Reserved[6];
+    // ckr.Reserved[6];
 }
 
-void get_init(void)
+void on_init(void)
 {
     lssc = NULL;
 }
 
-void get_free(void)
+void on_exit(void)
 {
     if (lssc) {
         g_free(lssc);
@@ -376,7 +381,7 @@ uint8_t cpu_amount(void)
     return amount;
 }
 
-uint32_t data_checksum_compute(uint8_t *data, uint16_t length)
+uint32_t compute_checksum(uint8_t *data, uint16_t length)
 {
     uint32_t checksum = 0;
     for(; length; --length) {

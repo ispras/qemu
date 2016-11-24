@@ -8,12 +8,12 @@
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
+// windbg.exe -b -k com:pipe,baud=115200,port=\\.\pipe\windbg,resets=0
+// qemu.exe -windbg pipe:windbg
+
 #define WINDBG "windbg"
 
 #define WINDBG_ERROR(...) error_report("\nWinDbg: " __VA_ARGS__)
-
-//windbg.exe -b -k com:pipe,baud=115200,port=\\.\pipe\windbg,resets=0
-//qemu.exe -windbg pipe:windbg
 
 typedef enum ParsingState {
     STATE_LEADER,
@@ -68,7 +68,7 @@ static void windbg_send_data_packet(uint8_t *data, uint16_t byte_count,
         .PacketType = type,
         .ByteCount = byte_count,
         .PacketId = data_packet_id,
-        .Checksum = data_checksum_compute(data, byte_count)
+        .Checksum = compute_checksum(data, byte_count)
     };
 
     qemu_chr_fe_write(windbg_chr, PTR(packet), sizeof(packet));
@@ -105,14 +105,18 @@ static void windbg_process_manipulate_packet(Context *ctx)
     size_t packet_size = 0,
            extra_data_size = 0,
            m64_size = sizeof(DBGKD_MANIPULATE_STATE64);
-    uint32_t count, addr;
-    static uint64_t bp_addr = 0;
-    bool send_only_m64 = false;
-    DBGKD_MANIPULATE_STATE64 m64;
-    CPUState *cpu = qemu_get_cpu(0);
 
+    uint32_t count, addr;
+
+    static uint64_t prev_bp_addr = 0;
+
+    bool send_only_m64 = false;
+
+    DBGKD_MANIPULATE_STATE64 m64;
     memset(packet, 0, PACKET_MAX_SIZE);
     memcpy(&m64, ctx->data, m64_size);
+
+    CPUState *cpu = qemu_get_cpu(m64.Processor);
 
     extra_data_size = ctx->packet.ByteCount - m64_size;
 
@@ -140,28 +144,23 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         break;
     case DbgKdGetContextApi:
-    {
-        //TODO: For all processors
-        PCPU_CONTEXT cpuctx = get_Context(0);
-
         packet_size = sizeof(CPU_CONTEXT);
-        memcpy(M64_OFFSET(packet), cpuctx, packet_size);
+        memcpy(M64_OFFSET(packet), get_context(m64.Processor), packet_size);
         packet_size += m64_size;
 
         break;
-    }
     case DbgKdSetContextApi:
-        set_Context(M64_OFFSET(ctx->data), MIN(extra_data_size,
-            sizeof(CPU_CONTEXT)), 0);
+        set_context(M64_OFFSET(ctx->data), MIN(extra_data_size,
+                    sizeof(CPU_CONTEXT)), m64.Processor);
 
         send_only_m64 = true;
 
         break;
     case DbgKdWriteBreakPointApi:
-        bp_addr = m64.u.WriteBreakPoint.BreakPointAddress & 0xffffffff;
+        prev_bp_addr = m64.u.WriteBreakPoint.BreakPointAddress & 0xffffffff;
 
         m64.u.WriteBreakPoint.BreakPointHandle = 0x1;
-        cpu_breakpoint_insert(cpu, bp_addr, BP_GDB, NULL);
+        cpu_breakpoint_insert(cpu, prev_bp_addr, BP_GDB, NULL);
         tb_flush(cpu);
 
         send_only_m64 = true;
@@ -169,58 +168,47 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     case DbgKdRestoreBreakPointApi:
         m64.ReturnStatus = 0xc0000001;
-        if (bp_addr) {
-            cpu_breakpoint_remove(cpu, bp_addr, BP_GDB);
-            bp_addr = 0;
+        if (prev_bp_addr) {
+            cpu_breakpoint_remove(cpu, prev_bp_addr, BP_GDB);
+            prev_bp_addr = 0;
         }
 
         send_only_m64 = true;
 
         break;
-    // case DbgKdContinueApi:
-    //     send_only_m64 = true;
-
-    //     break;
     case DbgKdReadControlSpaceApi:
-    {
-        //TODO: For all processors
-        PCPU_KSPECIAL_REGISTERS ksreg = get_KSpecialRegisters(0);
-
         count = m64.u.ReadMemory.TransferCount;
         addr = m64.u.ReadMemory.TargetBaseAddress - sizeof(CPU_CONTEXT);
 
         m64.u.ReadMemory.ActualBytesRead = count;
-        memcpy(M64_OFFSET(packet), ((uint8_t *) ksreg) + addr, count);
+        memcpy(M64_OFFSET(packet),
+               ((uint8_t *) get_kspecial_registers(m64.Processor)) + addr, count);
         packet_size = m64_size + count;
 
         break;
-    }
     case DbgKdWriteControlSpaceApi:
         count = MIN(extra_data_size, m64.u.WriteMemory.TransferCount);
         addr = m64.u.WriteMemory.TargetBaseAddress - sizeof(CPU_CONTEXT);
 
         m64.u.WriteMemory.ActualBytesWritten = count;
-        set_KSpecialRegisters(M64_OFFSET(ctx->data), count, addr, 0);
+        set_kspecial_registers(M64_OFFSET(ctx->data), count, addr, m64.Processor);
 
         send_only_m64 = true;
 
         break;
     case DbgKdContinueApi2:
-    {
-        uint32_t tf = m64.u.Continue2.ControlSet.TraceFlag;
-
-        cpu_single_step(qemu_get_cpu(0),
-                        tf ? SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0);
+        cpu_single_step(qemu_get_cpu(m64.Processor),
+                        m64.u.Continue2.ControlSet.TraceFlag ?
+                        SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0);
 
         if (!runstate_needs_reset()) {
             vm_start();
         }
 
         return;
-    }
     case DbgKdGetVersionApi:
         cpu_memory_rw_debug(cpu, cc_addrs->Version, PTR(m64) + 0x10,
-            m64_size - 0x10, 0);
+                            m64_size - 0x10, m64.Processor);
 
         send_only_m64 = true;
 
@@ -237,11 +225,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
            mem->AddressSpace = DBGKD_QUERY_MEMORY_PROCESS;
 
            mem->Flags = DBGKD_QUERY_MEMORY_READ |
-                       DBGKD_QUERY_MEMORY_WRITE |
-                       DBGKD_QUERY_MEMORY_EXECUTE;
-        }
-        else {
-            WINDBG_ERROR("qweqwe");
+                        DBGKD_QUERY_MEMORY_WRITE |
+                        DBGKD_QUERY_MEMORY_EXECUTE;
         }
 
         send_only_m64 = true;
@@ -291,10 +276,10 @@ static void windbg_process_control_packet(Context *ctx)
     case PACKET_TYPE_KD_RESET:
     {
         //TODO: For all processors
-        uint8_t *data = get_LoadSymbolsStateChange(0);
+        uint8_t *data = get_load_symbols_sc(0);
 
-        windbg_send_data_packet(data, get_lssc_size(),
-            PACKET_TYPE_KD_STATE_CHANGE64);
+        windbg_send_data_packet(data, sizeof_lssc(),
+                                PACKET_TYPE_KD_STATE_CHANGE64);
         windbg_send_control_packet(ctx->packet.PacketType);
         cntrl_packet_id = INITIAL_PACKET_ID;
 
@@ -320,7 +305,7 @@ static int windbg_chr_can_receive(void *opaque)
 
 static void windbg_bp_handler(CPUState *cpu)
 {
-    windbg_send_data_packet((uint8_t *) get_ExceptionStateChange(0),
+    windbg_send_data_packet((uint8_t *) get_exception_sc(0),
                             sizeof(EXCEPTION_STATE_CHANGE),
                             PACKET_TYPE_KD_STATE_CHANGE64);
 }
@@ -437,15 +422,15 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 
 void windbg_start_sync(void)
 {
-    get_init();
-    cc_addrs = get_KPCRAddress(0);
+    on_init();
+    cc_addrs = get_cpu_ctrl_addrs(0);
 
     lock = 1;
 }
 
 static void windbg_exit(void)
 {
-    get_free();
+    on_exit();
 
     if (dump_file) {
         fclose(dump_file);
@@ -461,6 +446,7 @@ int windbgserver_start(const char *device)
     }
 
     if (!register_excp_debug_handler(windbg_bp_handler)) {
+        WINDBG_ERROR("Another debugger stub has already been registered");
         exit(1);
     }
 

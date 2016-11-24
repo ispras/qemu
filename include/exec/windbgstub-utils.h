@@ -49,21 +49,18 @@
     }                                    \
 }
 
-#define CAST_PTR(ptr, var) ((ptr *) &(var))
-#define PTR(var) CAST_PTR(uint8_t, var)
+#define CAST_TO_PTR(type, var) ((type *) &(var))
+#define PTR(var) CAST_TO_PTR(uint8_t, var)
 
-#define BYTE(var, index) (CAST_PTR(uint8_t, var)[index])
-#define DWORD(var, index) (CAST_PTR(uint32_t, var)[index])
+#define BYTE(var, cpu_index) (CAST_TO_PTR(uint8_t, var)[cpu_index])
+#define DWORD(var, cpu_index) (CAST_TO_PTR(uint32_t, var)[cpu_index])
 
 #define M64_OFFSET(data) (data + sizeof(DBGKD_MANIPULATE_STATE64))
-
-#define CPU_ARCH_STATE(cpu) ((CPUArchState *) (cpu)->env_ptr)
 
 #define OFFSET_KPRCB            0x20
 #define OFFSET_KPRCB_CURRTHREAD 0x4
 #define OFFSET_VERSION          0x34
 #define OFFSET_KRNL_BASE        0x10
-#define OFFSET_CONTEXT          0x18
 
 #define NT_KRNL_PNAME_ADDR 0x89000fb8 //For Win7
 
@@ -288,20 +285,20 @@ typedef struct _CPU_CONTEXT {
 #error Unsupported Architecture
 #endif
 
-PCPU_CTRL_ADDRS            get_KPCRAddress(int index);
-PEXCEPTION_STATE_CHANGE    get_ExceptionStateChange(int index);
-uint8_t                   *get_LoadSymbolsStateChange(int index);
-PCPU_CONTEXT               get_Context(int index);
-PCPU_KSPECIAL_REGISTERS    get_KSpecialRegisters(int index);
+PCPU_CTRL_ADDRS          get_cpu_ctrl_addrs(int cpu_index);
+PEXCEPTION_STATE_CHANGE  get_exception_sc(int cpu_index);
+uint8_t                 *get_load_symbols_sc(int cpu_index);
+PCPU_CONTEXT             get_context(int cpu_index);
+PCPU_KSPECIAL_REGISTERS  get_kspecial_registers(int cpu_index);
 
-void set_Context(uint8_t *data, int len, int index);
-void set_KSpecialRegisters(uint8_t *data, int len, int offset, int index);
+void set_context(uint8_t *data, int len, int cpu_index);
+void set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index);
 
-size_t get_lssc_size(void);
+size_t sizeof_lssc(void);
 
-void get_init(void);
-void get_free(void);
+void on_init(void);
+void on_exit(void);
 uint8_t cpu_amount(void);
-uint32_t data_checksum_compute(uint8_t *data, uint16_t length);
+uint32_t compute_checksum(uint8_t *data, uint16_t length);
 
 #endif
