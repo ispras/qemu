@@ -303,7 +303,7 @@ void windbg_restore_breakpoint(CPUState *cpu, uint8_t bp_index);
 void on_init(void);
 void on_exit(void);
 
-uint8_t cpu_amount(void);
+uint8_t get_cpu_amount(void);
 uint32_t compute_checksum(uint8_t *data, uint16_t length);
 
 #endif

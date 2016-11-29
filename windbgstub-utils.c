@@ -9,6 +9,7 @@ static CPU_KSPECIAL_REGISTERS ckr;
 static size_t lssc_size = 0;
 
 static uint32_t bps[KD_BREAKPOINT_MAX];
+static uint8_t cpu_amount;
 
 PCPU_CTRL_ADDRS get_cpu_ctrl_addrs(int cpu_index)
 {
@@ -43,7 +44,7 @@ PEXCEPTION_STATE_CHANGE get_exception_sc(int cpu_index)
     sc->ProcessorLevel = 0x6; //Pentium 4
     //
     sc->Processor = cpu_index;
-    sc->NumberProcessors = cpu_amount();
+    sc->NumberProcessors = get_cpu_amount();
     //TODO: + 0xffffffff00000000
     cpu_memory_rw_debug(cpu, cca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
                         PTR(sc->Thread), sizeof(sc->Thread), 0);
@@ -87,7 +88,7 @@ PEXCEPTION_STATE_CHANGE get_exception_sc(int cpu_index)
     cpu_memory_rw_debug(cpu, env->eip,
                         (uint8_t *) sc->ControlReport.InstructionStream,
                         sizeof(sc->ControlReport.InstructionStream), 0);
-    sc->ControlReport.SegCs = env->segs[R_CS].selector;;
+    sc->ControlReport.SegCs = env->segs[R_CS].selector;
     sc->ControlReport.SegDs = env->segs[R_DS].selector;
     sc->ControlReport.SegEs = env->segs[R_ES].selector;
     sc->ControlReport.SegFs = env->segs[R_FS].selector;
@@ -384,27 +385,28 @@ void windbg_restore_breakpoint(CPUState *cpu, uint8_t bp_index)
 
 void on_init(void)
 {
+    // init cpu_amount
+    CPUState *cpu;
+    CPU_FOREACH(cpu) {
+        ++cpu_amount;
+    }
+
+    // init lssc
     lssc = NULL;
 }
 
 void on_exit(void)
 {
+    // clear lssc
     if (lssc) {
         g_free(lssc);
     }
     lssc = NULL;
 }
 
-uint8_t cpu_amount(void)
+uint8_t get_cpu_amount(void)
 {
-    uint8_t amount = 0;
-    CPUState *cpu;
-
-    CPU_FOREACH(cpu) {
-        ++amount;
-    }
-
-    return amount;
+    return cpu_amount;
 }
 
 uint32_t compute_checksum(uint8_t *data, uint16_t length)

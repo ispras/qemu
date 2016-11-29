@@ -111,7 +111,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
     memset(packet, 0, PACKET_MAX_SIZE);
     memcpy(&m64, ctx->data, m64_size);
 
-    CPUState *cpu = qemu_get_cpu(m64.Processor);
+    CPUState *cpu = qemu_get_cpu(m64.Processor < get_cpu_amount() ?
+                                 m64.Processor : 0);
 
     extra_data_size = ctx->packet.ByteCount - m64_size;
 
@@ -234,6 +235,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     }
     case DbgKdClearAllInternalBreakpointsApi:
     {
+        // Unsupported yet!!! But need for connect
 
         send_only_m64 = true;
 
@@ -326,8 +328,6 @@ static int windbg_chr_can_receive(void *opaque)
 
 static void windbg_bp_handler(CPUState *cpu)
 {
-    CPUArchState *env = cpu->env_ptr;
-    printf("exc 0x%x \n", env->eip);
     windbg_send_data_packet((uint8_t *) get_exception_sc(0),
                             sizeof(EXCEPTION_STATE_CHANGE),
                             PACKET_TYPE_KD_STATE_CHANGE64);
