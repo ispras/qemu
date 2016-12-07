@@ -5,6 +5,7 @@
 #include "cpu.h"
 #include "exec/exec-all.h"
 #include "qemu/cutils.h"
+#include "qemu/error-report.h"
 #include "exec/windbgkd.h"
 
 // FOR DEBUG
@@ -37,6 +38,8 @@
     COUT("\n");                                     \
 }
 // FOR DEBUG END
+
+#define WINDBG_ERROR(...) error_report("\nWinDbg: " __VA_ARGS__)
 
 #define DUMP_VAR(var) windbg_dump("%c", var);
 #define DUMP_STRUCT(var) DUMP_ARRAY(&var, 1)
@@ -297,8 +300,8 @@ void set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index);
 
 size_t sizeof_lssc(void);
 
-uint8_t windbg_write_breakpoint(CPUState *cpu, uint32_t addr);
-void windbg_restore_breakpoint(CPUState *cpu, uint8_t bp_index);
+uint8_t windbg_breakpoint_insert(CPUState *cpu, uint32_t addr);
+void windbg_breakpoint_remove(CPUState *cpu, uint8_t index);
 
 void on_init(void);
 void on_exit(void);

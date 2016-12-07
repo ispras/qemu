@@ -3,7 +3,6 @@
 #include "sysemu/char.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/cpus.h"
-#include "qemu/error-report.h"
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
@@ -11,8 +10,6 @@
 // qemu.exe -windbg pipe:windbg
 
 #define WINDBG "windbg"
-
-#define WINDBG_ERROR(...) error_report("\nWinDbg: " __VA_ARGS__)
 
 typedef enum ParsingState {
     STATE_LEADER,
@@ -168,7 +165,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     {
         DBGKD_WRITE_BREAKPOINT64 *bp = &m64.u.WriteBreakPoint;
 
-        bp->BreakPointHandle = windbg_write_breakpoint(cpu, bp->BreakPointAddress);
+        bp->BreakPointHandle = windbg_breakpoint_insert(cpu, bp->BreakPointAddress);
 
         send_only_m64 = true;
 
@@ -178,7 +175,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     {
         DBGKD_RESTORE_BREAKPOINT *bp = &m64.u.RestoreBreakPoint;
 
-        windbg_restore_breakpoint(cpu, bp->BreakPointHandle);
+        windbg_breakpoint_remove(cpu, bp->BreakPointHandle);
 
         send_only_m64 = true;
 
