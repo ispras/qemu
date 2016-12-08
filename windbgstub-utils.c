@@ -27,14 +27,15 @@ typedef struct InitedAddr {
     bool is_init;
 } InitedAddr;
 
-static CPU_CTRL_ADDRS cca;
-static uint8_t *lssc;
-static EXCEPTION_STATE_CHANGE esc;
-static CPU_CONTEXT cc;
-static CPU_KSPECIAL_REGISTERS ckr;
+typedef struct KDData {
+    CPU_CTRL_ADDRS cca;
+    SizedData lssc;
+    EXCEPTION_STATE_CHANGE esc;
+    CPU_CONTEXT cc;
+    CPU_KSPECIAL_REGISTERS ckr;
+} KDData;
 
-static size_t lssc_size = 0;
-
+static KDData kd;
 static InitedAddr bps[KD_BREAKPOINT_MAX];
 static InitedAddr dr[8];
 static uint8_t cpu_amount;
@@ -98,33 +99,33 @@ static void windbg_update_dr(CPUState *cpu, target_ulong *new_dr)
     }
 }
 
-PCPU_CTRL_ADDRS get_cpu_ctrl_addrs(int cpu_index)
+CPU_CTRL_ADDRS *kd_get_cpu_ctrl_addrs(int cpu_index)
 {
     CPUState *cpu = qemu_get_cpu(cpu_index);
     CPUArchState *env = cpu->env_ptr;
 
-    cca.KPCR = env->segs[R_FS].base;
+    kd.cca.KPCR = env->segs[R_FS].base;
 
-    cpu_memory_rw_debug(cpu, cca.KPCR + OFFSET_KPRCB, PTR(cca.KPRCB),
-                        sizeof(cca.KPRCB), 0);
+    cpu_memory_rw_debug(cpu, kd.cca.KPCR + OFFSET_KPRCB, PTR(kd.cca.KPRCB),
+                        sizeof(kd.cca.KPRCB), 0);
 
-    cpu_memory_rw_debug(cpu, cca.KPCR + OFFSET_VERSION, PTR(cca.Version),
-                        sizeof(cca.Version), 0);
+    cpu_memory_rw_debug(cpu, kd.cca.KPCR + OFFSET_VERSION, PTR(kd.cca.Version),
+                        sizeof(kd.cca.Version), 0);
 
-    cpu_memory_rw_debug(cpu, cca.Version + OFFSET_KRNL_BASE, PTR(cca.KernelBase),
-                        sizeof(cca.KernelBase), 0);
+    cpu_memory_rw_debug(cpu, kd.cca.Version + OFFSET_KRNL_BASE, PTR(kd.cca.KernelBase),
+                        sizeof(kd.cca.KernelBase), 0);
 
-    return &cca;
+    return &kd.cca;
 }
 
-PEXCEPTION_STATE_CHANGE get_exception_sc(int cpu_index)
+EXCEPTION_STATE_CHANGE *kd_get_exception_sc(int cpu_index)
 {
     CPUState *cpu = qemu_get_cpu(cpu_index);
     CPUArchState *env = cpu->env_ptr;
 
-    memset(&esc, 0, sizeof(esc));
+    memset(&kd.esc, 0, sizeof(kd.esc));
 
-    DBGKD_ANY_WAIT_STATE_CHANGE *sc = &esc.StateChange;
+    DBGKD_ANY_WAIT_STATE_CHANGE *sc = &kd.esc.StateChange;
 
     sc->NewState = DbgKdExceptionStateChange;
     //TODO: Get it
@@ -133,7 +134,7 @@ PEXCEPTION_STATE_CHANGE get_exception_sc(int cpu_index)
     sc->Processor = cpu_index;
     sc->NumberProcessors = get_cpu_amount();
     //TODO: + 0xffffffff00000000
-    cpu_memory_rw_debug(cpu, cca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
+    cpu_memory_rw_debug(cpu, kd.cca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
                         PTR(sc->Thread), sizeof(sc->Thread), 0);
     sc->ProgramCounter = env->eip;
     //
@@ -181,17 +182,12 @@ PEXCEPTION_STATE_CHANGE get_exception_sc(int cpu_index)
     sc->ControlReport.SegFs = env->segs[R_FS].selector;
     sc->ControlReport.EFlags = env->eflags;
     //TODO: Get it
-    esc.value = 0x1;
+    kd.esc.value = 0x1;
 
-    return &esc;
+    return &kd.esc;
 }
 
-size_t sizeof_lssc(void)
-{
-    return lssc_size;
-}
-
-uint8_t *get_load_symbols_sc(int cpu_index)
+SizedData *kd_get_load_symbols_sc(int cpu_index)
 {
     int i;
     uint8_t path_name[128]; //For Win7
@@ -201,7 +197,7 @@ uint8_t *get_load_symbols_sc(int cpu_index)
     CPUState *cpu = qemu_get_cpu(cpu_index);
     DBGKD_ANY_WAIT_STATE_CHANGE sc;
 
-    memcpy(&sc, get_exception_sc(0), size);
+    memcpy(&sc, kd_get_exception_sc(0), size);
 
     cpu_memory_rw_debug(cpu, NT_KRNL_PNAME_ADDR, path_name, count, 0);
     for (i = 0; i < count; i++) {
@@ -211,7 +207,7 @@ uint8_t *get_load_symbols_sc(int cpu_index)
         i++;
     }
     count = i / 2 + 1;
-    lssc_size = size + count;
+    kd.lssc.size = size + count;
 
     sc.NewState = DbgKdLoadSymbolsStateChange;
     sc.u.LoadSymbols.PathNameLength = count;
@@ -223,111 +219,111 @@ uint8_t *get_load_symbols_sc(int cpu_index)
     //sc.u.LoadSymbols.UnloadSymbols = false;
     ////
 
-    if (lssc) {
-        g_free(lssc);
+    if (kd.lssc.data) {
+        g_free(kd.lssc.data);
     }
-    lssc = g_malloc0(lssc_size);
-    memcpy(lssc, &sc, size);
-    memcpy(lssc + size, path_name, count);
+    kd.lssc.data = g_malloc0(kd.lssc.size);
+    memcpy(kd.lssc.data, &sc, size);
+    memcpy(kd.lssc.data + size, path_name, count);
 
-    return lssc;
+    return &kd.lssc;
 }
 
-PCPU_CONTEXT get_context(int cpu_index)
+CPU_CONTEXT *kd_get_context(int cpu_index)
 {
     CPUState *cpu = qemu_get_cpu(cpu_index);
     CPUArchState *env = cpu->env_ptr;
     int i;
 
-    memset(&cc, 0, sizeof(cc));
+    memset(&kd.cc, 0, sizeof(kd.cc));
 
   #if defined(TARGET_I386)
 
-    cc.ContextFlags = CPU_CONTEXT_ALL;
+    kd.cc.ContextFlags = CPU_CONTEXT_ALL;
 
-    if (cc.ContextFlags & CPU_CONTEXT_FULL) {
-        cc.Dr0    = env->dr[0];
-        cc.Dr1    = env->dr[1];
-        cc.Dr2    = env->dr[2];
-        cc.Dr3    = env->dr[3];
-        cc.Dr6    = env->dr[6];
-        cc.Dr7    = env->dr[7];
+    if (kd.cc.ContextFlags & CPU_CONTEXT_FULL) {
+        kd.cc.Dr0    = env->dr[0];
+        kd.cc.Dr1    = env->dr[1];
+        kd.cc.Dr2    = env->dr[2];
+        kd.cc.Dr3    = env->dr[3];
+        kd.cc.Dr6    = env->dr[6];
+        kd.cc.Dr7    = env->dr[7];
 
-        cc.Edi    = env->regs[R_EDI];
-        cc.Esi    = env->regs[R_ESI];
-        cc.Ebx    = env->regs[R_EBX];
-        cc.Edx    = env->regs[R_EDX];
-        cc.Ecx    = env->regs[R_ECX];
-        cc.Eax    = env->regs[R_EAX];
-        cc.Ebp    = env->regs[R_EBP];
-        cc.Esp    = env->regs[R_ESP];
+        kd.cc.Edi    = env->regs[R_EDI];
+        kd.cc.Esi    = env->regs[R_ESI];
+        kd.cc.Ebx    = env->regs[R_EBX];
+        kd.cc.Edx    = env->regs[R_EDX];
+        kd.cc.Ecx    = env->regs[R_ECX];
+        kd.cc.Eax    = env->regs[R_EAX];
+        kd.cc.Ebp    = env->regs[R_EBP];
+        kd.cc.Esp    = env->regs[R_ESP];
 
-        cc.Eip    = env->eip;
-        cc.EFlags = env->eflags;
+        kd.cc.Eip    = env->eip;
+        kd.cc.EFlags = env->eflags;
 
-        cc.SegGs  = env->segs[R_GS].selector;
-        cc.SegFs  = env->segs[R_FS].selector;
-        cc.SegEs  = env->segs[R_ES].selector;
-        cc.SegDs  = env->segs[R_DS].selector;
-        cc.SegCs  = env->segs[R_CS].selector;
-        cc.SegSs  = env->segs[R_SS].selector;
+        kd.cc.SegGs  = env->segs[R_GS].selector;
+        kd.cc.SegFs  = env->segs[R_FS].selector;
+        kd.cc.SegEs  = env->segs[R_ES].selector;
+        kd.cc.SegDs  = env->segs[R_DS].selector;
+        kd.cc.SegCs  = env->segs[R_CS].selector;
+        kd.cc.SegSs  = env->segs[R_SS].selector;
     }
 
-    if (cc.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
-        cc.FloatSave.ControlWord    = env->fpuc;
-        cc.FloatSave.StatusWord     = env->fpus;
-        cc.FloatSave.TagWord        = env->fpstt;
-        cc.FloatSave.ErrorOffset    = DWORD(env->fpip, 0);
-        cc.FloatSave.ErrorSelector  = DWORD(env->fpip, 1);
-        cc.FloatSave.DataOffset     = DWORD(env->fpdp, 0);
-        cc.FloatSave.DataSelector   = DWORD(env->fpdp, 1);
-        cc.FloatSave.Cr0NpxState    = env->cr[0];
+    if (kd.cc.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
+        kd.cc.FloatSave.ControlWord    = env->fpuc;
+        kd.cc.FloatSave.StatusWord     = env->fpus;
+        kd.cc.FloatSave.TagWord        = env->fpstt;
+        kd.cc.FloatSave.ErrorOffset    = DWORD(env->fpip, 0);
+        kd.cc.FloatSave.ErrorSelector  = DWORD(env->fpip, 1);
+        kd.cc.FloatSave.DataOffset     = DWORD(env->fpdp, 0);
+        kd.cc.FloatSave.DataSelector   = DWORD(env->fpdp, 1);
+        kd.cc.FloatSave.Cr0NpxState    = env->cr[0];
 
         for (i = 0; i < 8; ++i) {
-            memcpy(PTR(cc.FloatSave.RegisterArea[i * 10]),
+            memcpy(PTR(kd.cc.FloatSave.RegisterArea[i * 10]),
                    PTR(env->fpregs[i].mmx), sizeof(MMXReg));
         }
     }
 
-    if (cc.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
+    if (kd.cc.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
 
     }
 
-    if (cc.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
+    if (kd.cc.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
         for (i = 0; i < 8; ++i) {
-            memcpy(PTR(cc.ExtendedRegisters[(10 + i) * 16]),
+            memcpy(PTR(kd.cc.ExtendedRegisters[(10 + i) * 16]),
                    PTR(env->xmm_regs[i]), sizeof(ZMMReg));
         }
         // offset 24
-        DWORD(cc.ExtendedRegisters, 6) = env->mxcsr;
+        DWORD(kd.cc.ExtendedRegisters, 6) = env->mxcsr;
     }
 
-    cc.ExtendedRegisters[0] = 0xaa;
+    kd.cc.ExtendedRegisters[0] = 0xaa;
 
   #elif defined(TARGET_X86_64)
 
   #endif
 
-    return &cc;
+    return &kd.cc;
 }
 
-void set_context(uint8_t *data, int len, int cpu_index)
+void kd_set_context(uint8_t *data, int len, int cpu_index)
 {
     CPUState *cpu = qemu_get_cpu(cpu_index);
 
-    CPU_CONTEXT new_cc;
-    memcpy(PTR(new_cc), data, MIN(len, sizeof(new_cc)));
+    CPU_CONTEXT cc;
+    memcpy(PTR(cc), data, MIN(len, sizeof(cc)));
 
   #if defined(TARGET_I386)
 
     if (cc.ContextFlags & CPU_CONTEXT_FULL) {
         target_ulong new_dr[8] = {
-            [0] = new_cc.Dr0,
-            [1] = new_cc.Dr1,
-            [2] = new_cc.Dr2,
-            [3] = new_cc.Dr3,
-            [6] = new_cc.Dr6,
-            [7] = new_cc.Dr7
+            [0] = cc.Dr0,
+            [1] = cc.Dr1,
+            [2] = cc.Dr2,
+            [3] = cc.Dr3,
+            [6] = cc.Dr6,
+            [7] = cc.Dr7
         };
         windbg_update_dr(cpu, new_dr);
     }
@@ -349,62 +345,59 @@ void set_context(uint8_t *data, int len, int cpu_index)
   #endif
 }
 
-PCPU_KSPECIAL_REGISTERS get_kspecial_registers(int cpu_index)
+CPU_KSPECIAL_REGISTERS *kd_get_kspecial_registers(int cpu_index)
 {
     CPUState *cpu = qemu_get_cpu(cpu_index);
     CPUArchState *env = cpu->env_ptr;
 
-    memset(&ckr, 0, sizeof(ckr));
+    memset(&kd.ckr, 0, sizeof(kd.ckr));
 
-    ckr.Cr0 = env->cr[0];
-    ckr.Cr2 = env->cr[2];
-    ckr.Cr3 = env->cr[3];
-    ckr.Cr4 = env->cr[4];
+    kd.ckr.Cr0 = env->cr[0];
+    kd.ckr.Cr2 = env->cr[2];
+    kd.ckr.Cr3 = env->cr[3];
+    kd.ckr.Cr4 = env->cr[4];
 
-    ckr.KernelDr0 = dr[0].is_init ? dr[0].addr : env->dr[0];
-    ckr.KernelDr1 = dr[1].is_init ? dr[1].addr : env->dr[1];
-    ckr.KernelDr2 = dr[2].is_init ? dr[2].addr : env->dr[2];
-    ckr.KernelDr3 = dr[3].is_init ? dr[3].addr : env->dr[3];
-    ckr.KernelDr6 = dr[6].is_init ? dr[6].addr : env->dr[6];
-    ckr.KernelDr7 = dr[7].is_init ? dr[7].addr : env->dr[7];
+    kd.ckr.KernelDr0 = dr[0].is_init ? dr[0].addr : env->dr[0];
+    kd.ckr.KernelDr1 = dr[1].is_init ? dr[1].addr : env->dr[1];
+    kd.ckr.KernelDr2 = dr[2].is_init ? dr[2].addr : env->dr[2];
+    kd.ckr.KernelDr3 = dr[3].is_init ? dr[3].addr : env->dr[3];
+    kd.ckr.KernelDr6 = dr[6].is_init ? dr[6].addr : env->dr[6];
+    kd.ckr.KernelDr7 = dr[7].is_init ? dr[7].addr : env->dr[7];
 
-    ckr.Gdtr.Pad   = env->gdt.selector;
-    ckr.Gdtr.Limit = env->gdt.limit;
-    ckr.Gdtr.Base  = env->gdt.base;
-    ckr.Idtr.Pad   = env->idt.selector;
-    ckr.Idtr.Limit = env->idt.limit;
-    ckr.Idtr.Base  = env->idt.base;
-    ckr.Tr         = env->tr.selector;
-    ckr.Ldtr       = env->ldt.selector;
+    kd.ckr.Gdtr.Pad   = env->gdt.selector;
+    kd.ckr.Gdtr.Limit = env->gdt.limit;
+    kd.ckr.Gdtr.Base  = env->gdt.base;
+    kd.ckr.Idtr.Pad   = env->idt.selector;
+    kd.ckr.Idtr.Limit = env->idt.limit;
+    kd.ckr.Idtr.Base  = env->idt.base;
+    kd.ckr.Tr         = env->tr.selector;
+    kd.ckr.Ldtr       = env->ldt.selector;
 
-    // ckr.Reserved[6];
+    // kd.ckr.Reserved[6];
 
-    return &ckr;
+    return &kd.ckr;
 }
 
-void set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index)
+void kd_set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index)
 {
 }
 
-void on_init(void)
+void windbg_on_init(void)
 {
     // init cpu_amount
     CPUState *cpu;
     CPU_FOREACH(cpu) {
         ++cpu_amount;
     }
-
-    // init lssc
-    lssc = NULL;
 }
 
-void on_exit(void)
+void windbg_on_exit(void)
 {
     // clear lssc
-    if (lssc) {
-        g_free(lssc);
+    if (kd.lssc.data) {
+        g_free(kd.lssc.data);
     }
-    lssc = NULL;
+    kd.lssc.data = NULL;
 }
 
 uint8_t get_cpu_amount(void)

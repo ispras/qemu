@@ -41,18 +41,6 @@
 
 #define WINDBG_ERROR(...) error_report("\nWinDbg: " __VA_ARGS__)
 
-#define DUMP_VAR(var) windbg_dump("%c", var);
-#define DUMP_STRUCT(var) DUMP_ARRAY(&var, 1)
-#define DUMP_PSTRUCT(var) DUMP_ARRAY(var, 1)
-#define DUMP_ARRAY(var, count) _DUMP_STRUCT(var, sizeof(*(var)), count)
-#define _DUMP_STRUCT(var, size, count) { \
-    uint8_t *_var = (uint8_t *) (var);   \
-    int _i, _s = (size) * (count);       \
-    for (_i = 0; _i < _s; ++_i) {        \
-       DUMP_VAR(_var[_i]);               \
-    }                                    \
-}
-
 #define CAST_TO_PTR(type, var) ((type *) &(var))
 #define PTR(var) CAST_TO_PTR(uint8_t, var)
 
@@ -289,22 +277,25 @@ typedef struct _CPU_CONTEXT {
 #error Unsupported Architecture
 #endif
 
-PCPU_CTRL_ADDRS          get_cpu_ctrl_addrs(int cpu_index);
-PEXCEPTION_STATE_CHANGE  get_exception_sc(int cpu_index);
-uint8_t                 *get_load_symbols_sc(int cpu_index);
-PCPU_CONTEXT             get_context(int cpu_index);
-PCPU_KSPECIAL_REGISTERS  get_kspecial_registers(int cpu_index);
+typedef struct SizedData {
+    uint8_t *data;
+    size_t size;
+} SizedData;
 
-void set_context(uint8_t *data, int len, int cpu_index);
-void set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index);
+CPU_CTRL_ADDRS         *kd_get_cpu_ctrl_addrs(int cpu_index);
+EXCEPTION_STATE_CHANGE *kd_get_exception_sc(int cpu_index);
+SizedData              *kd_get_load_symbols_sc(int cpu_index);
+CPU_CONTEXT            *kd_get_context(int cpu_index);
+CPU_KSPECIAL_REGISTERS *kd_get_kspecial_registers(int cpu_index);
 
-size_t sizeof_lssc(void);
+void kd_set_context(uint8_t *data, int len, int cpu_index);
+void kd_set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index);
 
 uint8_t windbg_breakpoint_insert(CPUState *cpu, target_ulong addr);
-void windbg_breakpoint_remove(CPUState *cpu, uint8_t index);
+void    windbg_breakpoint_remove(CPUState *cpu, uint8_t index);
 
-void on_init(void);
-void on_exit(void);
+void windbg_on_init(void);
+void windbg_on_exit(void);
 
 uint8_t get_cpu_amount(void);
 uint32_t compute_checksum(uint8_t *data, uint16_t length);

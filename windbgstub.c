@@ -40,7 +40,7 @@ static CharDriverState *windbg_chr = NULL;
 
 static FILE *dump_file;
 
-static PCPU_CTRL_ADDRS cc_addrs;
+static CPU_CTRL_ADDRS *cc_addrs;
 
 static void windbg_dump(const char *fmt, ...)
 {
@@ -72,10 +72,6 @@ static void windbg_send_data_packet(uint8_t *data, uint16_t byte_count,
     qemu_chr_fe_write(windbg_chr, &trailing_byte, sizeof(trailing_byte));
 
     data_packet_id ^= 1;
-
-    DUMP_STRUCT(packet);
-    DUMP_ARRAY(data, byte_count);
-    DUMP_VAR(trailing_byte);
 }
 
 static void windbg_send_control_packet(uint16_t type)
@@ -91,8 +87,6 @@ static void windbg_send_control_packet(uint16_t type)
     qemu_chr_fe_write(windbg_chr, PTR(packet), sizeof(packet));
 
     cntrl_packet_id ^= 1;
-
-    DUMP_STRUCT(packet);
 }
 
 static void windbg_process_manipulate_packet(Context *ctx)
@@ -145,7 +139,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     case DbgKdGetContextApi:
     {
         packet_size = sizeof(CPU_CONTEXT);
-        memcpy(M64_OFFSET(packet), get_context(m64.Processor), packet_size);
+        memcpy(M64_OFFSET(packet), kd_get_context(m64.Processor), packet_size);
         packet_size += m64_size;
 
         send_only_m64 = false;
@@ -154,8 +148,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
     }
     case DbgKdSetContextApi:
     {
-        set_context(M64_OFFSET(ctx->data), MIN(extra_data_size,
-                    sizeof(CPU_CONTEXT)), m64.Processor);
+        kd_set_context(M64_OFFSET(ctx->data), MIN(extra_data_size,
+                       sizeof(CPU_CONTEXT)), m64.Processor);
 
         send_only_m64 = true;
 
@@ -165,7 +159,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     {
         DBGKD_WRITE_BREAKPOINT64 *bp = &m64.u.WriteBreakPoint;
 
-        bp->BreakPointHandle = windbg_breakpoint_insert(cpu, bp->BreakPointAddress);
+        bp->BreakPointHandle = windbg_breakpoint_insert(cpu, bp->BreakPointAddress) + 1;
 
         send_only_m64 = true;
 
@@ -175,7 +169,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     {
         DBGKD_RESTORE_BREAKPOINT *bp = &m64.u.RestoreBreakPoint;
 
-        windbg_breakpoint_remove(cpu, bp->BreakPointHandle);
+        windbg_breakpoint_remove(cpu, bp->BreakPointHandle - 1);
 
         send_only_m64 = true;
 
@@ -188,7 +182,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
         mem->ActualBytesRead = mem->TransferCount;
         uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
         memcpy(M64_OFFSET(packet),
-               ((uint8_t *) get_kspecial_registers(m64.Processor)) + offset,
+               ((uint8_t *) kd_get_kspecial_registers(m64.Processor)) + offset,
                mem->ActualBytesRead);
         packet_size = m64_size + mem->ActualBytesRead;
 
@@ -202,7 +196,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
         uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
-        set_kspecial_registers(M64_OFFSET(ctx->data), mem->ActualBytesWritten,
+        kd_set_kspecial_registers(M64_OFFSET(ctx->data), mem->ActualBytesWritten,
                                offset, m64.Processor);
 
         send_only_m64 = true;
@@ -296,9 +290,9 @@ static void windbg_process_control_packet(Context *ctx)
     case PACKET_TYPE_KD_RESET:
     {
         //TODO: For all processors
-        uint8_t *data = get_load_symbols_sc(0);
+        SizedData *lssc = kd_get_load_symbols_sc(0);
 
-        windbg_send_data_packet(data, sizeof_lssc(),
+        windbg_send_data_packet(lssc->data, lssc->size,
                                 PACKET_TYPE_KD_STATE_CHANGE64);
         windbg_send_control_packet(ctx->packet.PacketType);
         cntrl_packet_id = INITIAL_PACKET_ID;
@@ -325,7 +319,7 @@ static int windbg_chr_can_receive(void *opaque)
 
 static void windbg_bp_handler(CPUState *cpu)
 {
-    windbg_send_data_packet((uint8_t *) get_exception_sc(0),
+    windbg_send_data_packet((uint8_t *) kd_get_exception_sc(0),
                             sizeof(EXCEPTION_STATE_CHANGE),
                             PACKET_TYPE_KD_STATE_CHANGE64);
 }
@@ -442,15 +436,15 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 
 void windbg_start_sync(void)
 {
-    on_init();
-    cc_addrs = get_cpu_ctrl_addrs(0);
+    windbg_on_init();
+    cc_addrs = kd_get_cpu_ctrl_addrs(0);
 
     lock = 1;
 }
 
 static void windbg_exit(void)
 {
-    on_exit();
+    windbg_on_exit();
 
     if (dump_file) {
         fclose(dump_file);
@@ -482,6 +476,9 @@ int windbgserver_start(const char *device)
 
     // open dump file
     dump_file = fopen(WINDBG ".dump", "wb");
+
+    // stub for unusing
+    windbg_dump("");
 
     atexit(windbg_exit);
 
