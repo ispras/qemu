@@ -300,7 +300,7 @@ void set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index);
 
 size_t sizeof_lssc(void);
 
-uint8_t windbg_breakpoint_insert(CPUState *cpu, uint32_t addr);
+uint8_t windbg_breakpoint_insert(CPUState *cpu, target_ulong addr);
 void windbg_breakpoint_remove(CPUState *cpu, uint8_t index);
 
 void on_init(void);

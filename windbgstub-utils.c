@@ -10,10 +10,22 @@
 #define BP_TYPE(dr7, index) \
     ((int) ((dr7) >> (DR7_TYPE_SHIFT + ((index) * 4))) & 3)
 
-#define BP_LEN(dr7, index) ({ \
+#define BP_LEN(dr7, index) ({                                    \
     int _len = (((dr7) >> (DR7_LEN_SHIFT + ((index) * 4))) & 3); \
-    (_len == 2) ? 8 : _len + 1; \
+    (_len == 2) ? 8 : _len + 1;                                  \
 })
+
+#define BP_FLAG(dr7, index) ({                                 \
+    int _type = BP_TYPE(dr7, index);                           \
+    int _flag = _type == DR7_TYPE_DATA_WR ? BP_MEM_WRITE :     \
+                _type == DR7_TYPE_DATA_RW ? BP_MEM_ACCESS : 0; \
+    _flag | BP_GDB;                                            \
+})
+
+typedef struct InitedAddr {
+    target_ulong addr;
+    bool is_init;
+} InitedAddr;
 
 static CPU_CTRL_ADDRS cca;
 static uint8_t *lssc;
@@ -23,81 +35,66 @@ static CPU_KSPECIAL_REGISTERS ckr;
 
 static size_t lssc_size = 0;
 
-static uint32_t bps[KD_BREAKPOINT_MAX];
+static InitedAddr bps[KD_BREAKPOINT_MAX];
+static InitedAddr dr[8];
 static uint8_t cpu_amount;
 
-uint8_t windbg_breakpoint_insert(CPUState *cpu, uint32_t addr)
+uint8_t windbg_breakpoint_insert(CPUState *cpu, target_ulong addr)
 {
     int i = 0, s = ARRAY_SIZE(bps);
     for (; i < s; ++i) {
-        if (!bps[i]) {
-            bps[i] = addr;
-            cpu_breakpoint_insert(cpu, bps[i], BP_GDB, NULL);
+        if (!bps[i].is_init) {
+            cpu_breakpoint_insert(cpu, addr, BP_GDB, NULL);
             tb_flush(cpu);
-            return i + 1;
+            bps[i].addr = addr;
+            bps[i].is_init = true;
+            return i;
         }
     }
-    return 0;
+    return -1;
 }
 
 void windbg_breakpoint_remove(CPUState *cpu, uint8_t index)
 {
-    index -= 1;
-    if (bps[index]) {
-        cpu_breakpoint_remove(cpu, bps[index], BP_GDB);
-        bps[index] = 0;
+    if (bps[index].is_init) {
+        cpu_breakpoint_remove(cpu, bps[index].addr, BP_GDB);
+        bps[index].is_init = false;
     }
 }
 
-static void windbg_watchpoint_insert(CPUState *cpu, target_ulong dr7, target_ulong dri, int index)
+static void windbg_update_dr(CPUState *cpu, target_ulong *new_dr)
 {
-    switch (BP_TYPE(dr7, index)) {
-    case DR7_TYPE_DATA_WR:
-        if (IS_BP_ENABLED(dr7, index)) {
-            cpu_watchpoint_insert(cpu, dri, BP_LEN(dr7, index),
-                                  BP_GDB | BP_MEM_WRITE, NULL);
+    int i;
+    if (!dr[7].is_init || dr[7].addr != new_dr[7]) {
+        for (i = 0; i < DR7_MAX_BP; ++i) {
+            bool is_enabled = IS_BP_ENABLED(new_dr[7], i);
+            if (!is_enabled) {
+                if (dr[i].is_init) {
+                    cpu_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i), BP_FLAG(dr[7].addr, i));
+                    dr[i].is_init = false;
+                }
+            }
+            else if (is_enabled && (new_dr[i] != dr[i].addr)) {
+                if (dr[i].is_init) {
+                    cpu_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i), BP_FLAG(dr[7].addr, i));
+                    dr[i].is_init = false;
+                }
+
+                dr[i].addr = new_dr[i];
+                dr[i].is_init = true;
+
+                cpu_watchpoint_insert(cpu, dr[i].addr, BP_LEN(new_dr[7], i), BP_FLAG(new_dr[7], i), NULL);
+            }
         }
-        break;
 
-    case DR7_TYPE_DATA_RW:
-        if (IS_BP_ENABLED(dr7, index)) {
-            cpu_watchpoint_insert(cpu, dri, BP_LEN(dr7, index),
-                                  BP_GDB | BP_MEM_ACCESS, NULL);
+        dr[7].addr = new_dr[7];
+        dr[7].is_init = false;
+        for (i = 0; i < DR7_MAX_BP; ++i) {
+            if (dr[i].is_init) {
+                dr[7].is_init = true;
+                break;
+            }
         }
-        break;
-    }
-}
-
-static void windbg_watchpoint_remove(CPUState *cpu, target_ulong dr7, target_ulong dri, int index)
-{
-    int type = BP_TYPE(dr7, index);
-    COUT_HEX(type);
-
-    switch (BP_TYPE(dr7, index)) {
-    case DR7_TYPE_DATA_WR:
-        cpu_watchpoint_remove(cpu, dri, BP_LEN(dr7, index),
-                              BP_GDB | BP_MEM_WRITE);
-        break;
-
-    case DR7_TYPE_DATA_RW:
-        cpu_watchpoint_remove(cpu, dri, BP_LEN(dr7, index),
-                              BP_GDB | BP_MEM_ACCESS);
-        break;
-    }
-}
-
-static void windbg_update_dr7(CPUState *cpu, CPU_CONTEXT *cc)
-{
-    if (((CPUArchState *) cpu->env_ptr)->dr[7] != cc->Dr7) {
-        windbg_watchpoint_remove(cpu, cc->Dr7, cc->Dr0, 0);
-        windbg_watchpoint_remove(cpu, cc->Dr7, cc->Dr1, 1);
-        windbg_watchpoint_remove(cpu, cc->Dr7, cc->Dr2, 2);
-        windbg_watchpoint_remove(cpu, cc->Dr7, cc->Dr3, 3);
-
-        windbg_watchpoint_insert(cpu, cc->Dr7, cc->Dr0, 0);
-        windbg_watchpoint_insert(cpu, cc->Dr7, cc->Dr1, 1);
-        windbg_watchpoint_insert(cpu, cc->Dr7, cc->Dr2, 2);
-        windbg_watchpoint_insert(cpu, cc->Dr7, cc->Dr3, 3);
     }
 }
 
@@ -317,7 +314,6 @@ PCPU_CONTEXT get_context(int cpu_index)
 void set_context(uint8_t *data, int len, int cpu_index)
 {
     CPUState *cpu = qemu_get_cpu(cpu_index);
-    // CPUArchState *env = cpu->env_ptr;
 
     CPU_CONTEXT new_cc;
     memcpy(PTR(new_cc), data, MIN(len, sizeof(new_cc)));
@@ -325,7 +321,15 @@ void set_context(uint8_t *data, int len, int cpu_index)
   #if defined(TARGET_I386)
 
     if (cc.ContextFlags & CPU_CONTEXT_FULL) {
-        windbg_update_dr7(cpu, &new_cc);
+        target_ulong new_dr[8] = {
+            [0] = new_cc.Dr0,
+            [1] = new_cc.Dr1,
+            [2] = new_cc.Dr2,
+            [3] = new_cc.Dr3,
+            [6] = new_cc.Dr6,
+            [7] = new_cc.Dr7
+        };
+        windbg_update_dr(cpu, new_dr);
     }
 
     if (cc.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
@@ -357,12 +361,12 @@ PCPU_KSPECIAL_REGISTERS get_kspecial_registers(int cpu_index)
     ckr.Cr3 = env->cr[3];
     ckr.Cr4 = env->cr[4];
 
-    ckr.KernelDr0 = env->dr[0];
-    ckr.KernelDr1 = env->dr[1];
-    ckr.KernelDr2 = env->dr[2];
-    ckr.KernelDr3 = env->dr[3];
-    ckr.KernelDr6 = env->dr[6];
-    ckr.KernelDr7 = env->dr[7];
+    ckr.KernelDr0 = dr[0].is_init ? dr[0].addr : env->dr[0];
+    ckr.KernelDr1 = dr[1].is_init ? dr[1].addr : env->dr[1];
+    ckr.KernelDr2 = dr[2].is_init ? dr[2].addr : env->dr[2];
+    ckr.KernelDr3 = dr[3].is_init ? dr[3].addr : env->dr[3];
+    ckr.KernelDr6 = dr[6].is_init ? dr[6].addr : env->dr[6];
+    ckr.KernelDr7 = dr[7].is_init ? dr[7].addr : env->dr[7];
 
     ckr.Gdtr.Pad   = env->gdt.selector;
     ckr.Gdtr.Limit = env->gdt.limit;
@@ -380,7 +384,6 @@ PCPU_KSPECIAL_REGISTERS get_kspecial_registers(int cpu_index)
 
 void set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index)
 {
-
 }
 
 void on_init(void)
