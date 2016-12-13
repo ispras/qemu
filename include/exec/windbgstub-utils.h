@@ -37,9 +37,22 @@
     }                                               \
     COUT("\n");                                     \
 }
+
 // FOR DEBUG END
 
-#define WINDBG_ERROR(...) error_report("\nWinDbg: " __VA_ARGS__)
+#define WINDBG_DUMP_LN(...)   \
+    windbg_dump(__VA_ARGS__); \
+    windbg_dump("\n");
+
+#define WINDBG_DEBUG_ON true
+#if (WINDBG_DEBUG_ON)
+#define WINDBG_DEBUG(...) WINDBG_DUMP_LN("Debug: " __VA_ARGS__)
+#define WINDBG_ERROR(...) WINDBG_DUMP_LN("Error: " __VA_ARGS__); \
+                          error_report("WinDbg: " __VA_ARGS__)
+#else
+#define WINDBG_DEBUG(...)
+#define WINDBG_ERROR(...) error_report("WinDbg: " __VA_ARGS__)
+#endif
 
 #define CAST_TO_PTR(type, var) ((type *) &(var))
 #define PTR(var) CAST_TO_PTR(uint8_t, var)
@@ -277,22 +290,24 @@ typedef struct _CPU_CONTEXT {
 #error Unsupported Architecture
 #endif
 
-typedef struct SizedData {
+typedef struct SizedBuf {
     uint8_t *data;
     size_t size;
-} SizedData;
+} SizedBuf;
 
 CPU_CTRL_ADDRS         *kd_get_cpu_ctrl_addrs(int cpu_index);
 EXCEPTION_STATE_CHANGE *kd_get_exception_sc(int cpu_index);
-SizedData              *kd_get_load_symbols_sc(int cpu_index);
+SizedBuf               *kd_get_load_symbols_sc(int cpu_index);
 CPU_CONTEXT            *kd_get_context(int cpu_index);
 CPU_KSPECIAL_REGISTERS *kd_get_kspecial_registers(int cpu_index);
 
 void kd_set_context(uint8_t *data, int len, int cpu_index);
 void kd_set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index);
 
-uint8_t windbg_breakpoint_insert(CPUState *cpu, target_ulong addr);
+uint8_t windbg_breakpoint_insert(CPUState *cpu, vaddr addr);
 void    windbg_breakpoint_remove(CPUState *cpu, uint8_t index);
+
+void windbg_dump(const char *fmt, ...);
 
 void windbg_on_init(void);
 void windbg_on_exit(void);

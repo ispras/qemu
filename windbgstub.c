@@ -42,7 +42,7 @@ static FILE *dump_file;
 
 static CPU_CTRL_ADDRS *cc_addrs;
 
-static void windbg_dump(const char *fmt, ...)
+void windbg_dump(const char *fmt, ...)
 {
     va_list ap;
 
@@ -290,7 +290,7 @@ static void windbg_process_control_packet(Context *ctx)
     case PACKET_TYPE_KD_RESET:
     {
         //TODO: For all processors
-        SizedData *lssc = kd_get_load_symbols_sc(0);
+        SizedBuf *lssc = kd_get_load_symbols_sc(0);
 
         windbg_send_data_packet(lssc->data, lssc->size,
                                 PACKET_TYPE_KD_STATE_CHANGE64);
@@ -476,9 +476,6 @@ int windbgserver_start(const char *device)
 
     // open dump file
     dump_file = fopen(WINDBG ".dump", "wb");
-
-    // stub for unusing
-    windbg_dump("");
 
     atexit(windbg_exit);
 

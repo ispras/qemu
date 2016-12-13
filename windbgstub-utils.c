@@ -15,21 +15,14 @@
     (_len == 2) ? 8 : _len + 1;                                  \
 })
 
-#define BP_FLAG(dr7, index) ({                                 \
-    int _type = BP_TYPE(dr7, index);                           \
-    int _flag = _type == DR7_TYPE_DATA_WR ? BP_MEM_WRITE :     \
-                _type == DR7_TYPE_DATA_RW ? BP_MEM_ACCESS : 0; \
-    _flag | BP_GDB;                                            \
-})
-
 typedef struct InitedAddr {
-    target_ulong addr;
+    vaddr addr;
     bool is_init;
 } InitedAddr;
 
 typedef struct KDData {
     CPU_CTRL_ADDRS cca;
-    SizedData lssc;
+    SizedBuf lssc;
     EXCEPTION_STATE_CHANGE esc;
     CPU_CONTEXT cc;
     CPU_KSPECIAL_REGISTERS ckr;
@@ -40,54 +33,128 @@ static InitedAddr bps[KD_BREAKPOINT_MAX];
 static InitedAddr dr[8];
 static uint8_t cpu_amount;
 
-uint8_t windbg_breakpoint_insert(CPUState *cpu, target_ulong addr)
+uint8_t windbg_breakpoint_insert(CPUState *cpu, vaddr addr)
 {
-    int i = 0, s = ARRAY_SIZE(bps);
-    for (; i < s; ++i) {
+    int i = 0, err = 0;
+    for (; i < KD_BREAKPOINT_MAX; ++i) {
         if (!bps[i].is_init) {
-            cpu_breakpoint_insert(cpu, addr, BP_GDB, NULL);
-            tb_flush(cpu);
-            bps[i].addr = addr;
-            bps[i].is_init = true;
+            err = cpu_breakpoint_insert(cpu, addr, BP_GDB, NULL);
+            if (!err) {
+                tb_flush(cpu);
+                bps[i].addr = addr;
+                bps[i].is_init = true;
+                WINDBG_DEBUG("bp_insert: addr 0x%x", addr);
+                return i;
+            }
+            else {
+                WINDBG_ERROR("bp_insert: Error %d", err);
+                return -1;
+            }
+        }
+        else if (addr == bps[i].addr) {
             return i;
         }
     }
+
+    WINDBG_ERROR("bp_insert: All breakpoints occupied");
     return -1;
 }
 
 void windbg_breakpoint_remove(CPUState *cpu, uint8_t index)
 {
     if (bps[index].is_init) {
-        cpu_breakpoint_remove(cpu, bps[index].addr, BP_GDB);
-        bps[index].is_init = false;
+        int err = cpu_breakpoint_remove(cpu, bps[index].addr, BP_GDB);
+        if (!err) {
+            bps[index].is_init = false;
+            WINDBG_DEBUG("bp_remove: addr 0x%x, index %d",
+                         bps[index].addr, index);
+        }
+        else {
+            WINDBG_ERROR("bp_remove: Error %d", err);
+        }
     }
 }
 
-static void windbg_update_dr(CPUState *cpu, target_ulong *new_dr)
+static void windbg_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len, int type)
+{
+    int err = 0;
+    switch (type) {
+    case DR7_TYPE_DATA_WR:
+        err = cpu_watchpoint_insert(cpu, addr, len, BP_MEM_WRITE | BP_GDB, NULL);
+        break;
+    case DR7_TYPE_DATA_RW:
+        err = cpu_watchpoint_insert(cpu, addr, len, BP_MEM_ACCESS | BP_GDB, NULL);
+        break;
+    case DR7_TYPE_BP_INST:
+        err = cpu_breakpoint_insert(cpu, addr, BP_GDB, NULL);
+        break;
+    default:
+        WINDBG_ERROR("wp_insert: Unknown wp type");
+        break;
+    }
+
+    if (!err) {
+        WINDBG_DEBUG("wp_insert: addr 0x%x, len 0x%x, type %d",
+                     addr, len, type);
+    }
+    else {
+        WINDBG_ERROR("wp_insert: Error %d", err);
+    }
+}
+
+static void windbg_watchpoint_remove(CPUState *cpu, vaddr addr, vaddr len, int type)
+{
+    int err = 0;
+    switch (type) {
+    case DR7_TYPE_DATA_WR:
+        err = cpu_watchpoint_remove(cpu, addr, len, BP_MEM_WRITE | BP_GDB);
+        break;
+    case DR7_TYPE_DATA_RW:
+        err = cpu_watchpoint_remove(cpu, addr, len, BP_MEM_ACCESS | BP_GDB);
+        break;
+    case DR7_TYPE_BP_INST:
+        err = cpu_breakpoint_remove(cpu, addr, BP_GDB);
+        break;
+    default:
+        WINDBG_ERROR("wp_remove: Unknown wp type");
+        break;
+    }
+
+    if (!err) {
+        WINDBG_DEBUG("wp_remove: addr 0x%x, len 0x%x, type %d",
+                     addr, len, type);
+    }
+    else {
+        WINDBG_ERROR("wp_remove: Error %d", err);
+    }
+}
+
+static void windbg_update_dr(CPUState *cpu, vaddr *new_dr)
 {
     int i;
-    if (!dr[7].is_init || dr[7].addr != new_dr[7]) {
-        for (i = 0; i < DR7_MAX_BP; ++i) {
-            bool is_enabled = IS_BP_ENABLED(new_dr[7], i);
-            if (!is_enabled) {
-                if (dr[i].is_init) {
-                    cpu_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i), BP_FLAG(dr[7].addr, i));
-                    dr[i].is_init = false;
-                }
-            }
-            else if (is_enabled && (new_dr[i] != dr[i].addr)) {
-                if (dr[i].is_init) {
-                    cpu_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i), BP_FLAG(dr[7].addr, i));
-                    dr[i].is_init = false;
-                }
 
-                dr[i].addr = new_dr[i];
-                dr[i].is_init = true;
-
-                cpu_watchpoint_insert(cpu, dr[i].addr, BP_LEN(new_dr[7], i), BP_FLAG(new_dr[7], i), NULL);
+    for (i = 0; i < DR7_MAX_BP; ++i) {
+        bool is_enabled = IS_BP_ENABLED(new_dr[7], i);
+        if (!is_enabled) {
+            if (dr[i].is_init) {
+                windbg_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i), BP_TYPE(dr[7].addr, i));
+                dr[i].is_init = false;
             }
         }
+        else if (is_enabled && (new_dr[i] != dr[i].addr)) {
+            if (dr[i].is_init) {
+                windbg_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i), BP_TYPE(dr[7].addr, i));
+                dr[i].is_init = false;
+            }
 
+            dr[i].addr = new_dr[i];
+            dr[i].is_init = true;
+
+            windbg_watchpoint_insert(cpu, dr[i].addr, BP_LEN(new_dr[7], i), BP_TYPE(new_dr[7], i));
+        }
+    }
+
+    if (!dr[7].is_init || dr[7].addr != new_dr[7]) {
         dr[7].addr = new_dr[7];
         dr[7].is_init = false;
         for (i = 0; i < DR7_MAX_BP; ++i) {
@@ -187,7 +254,7 @@ EXCEPTION_STATE_CHANGE *kd_get_exception_sc(int cpu_index)
     return &kd.esc;
 }
 
-SizedData *kd_get_load_symbols_sc(int cpu_index)
+SizedBuf *kd_get_load_symbols_sc(int cpu_index)
 {
     int i;
     uint8_t path_name[128]; //For Win7
@@ -317,7 +384,7 @@ void kd_set_context(uint8_t *data, int len, int cpu_index)
   #if defined(TARGET_I386)
 
     if (cc.ContextFlags & CPU_CONTEXT_FULL) {
-        target_ulong new_dr[8] = {
+        vaddr new_dr[8] = {
             [0] = cc.Dr0,
             [1] = cc.Dr1,
             [2] = cc.Dr2,
