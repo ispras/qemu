@@ -97,6 +97,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
            m64_size = sizeof(DBGKD_MANIPULATE_STATE64);
 
     bool send_only_m64;
+    int err = 0;
 
     DBGKD_MANIPULATE_STATE64 m64;
     memset(packet, 0, PACKET_MAX_SIZE);
@@ -107,7 +108,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
     extra_data_size = ctx->packet.ByteCount - m64_size;
 
-    m64.ReturnStatus = 0x0;
+    m64.ReturnStatus = STATUS_SUCCESS;
 
     switch(m64.ApiNumber) {
 
@@ -115,10 +116,14 @@ static void windbg_process_manipulate_packet(Context *ctx)
     {
         DBGKD_READ_MEMORY64 *mem = &m64.u.ReadMemory;
 
-        mem->ActualBytesRead = mem->TransferCount;
-        cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
-                            M64_OFFSET(packet), mem->TransferCount, 0);
+        mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
+        err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
+                                  M64_OFFSET(packet), mem->ActualBytesRead, 0);
         packet_size = m64_size + mem->ActualBytesRead;
+
+        if (err) {
+            m64.ReturnStatus = STATUS_UNSUCCESSFUL;
+        }
 
         send_only_m64 = false;
 
@@ -129,8 +134,12 @@ static void windbg_process_manipulate_packet(Context *ctx)
         DBGKD_WRITE_MEMORY64 *mem = &m64.u.WriteMemory;
 
         mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
-        cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
-                            M64_OFFSET(ctx->data), mem->ActualBytesWritten, 1);
+        err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
+                                  M64_OFFSET(ctx->data), mem->ActualBytesWritten, 1);
+
+        if (err) {
+            m64.ReturnStatus = STATUS_UNSUCCESSFUL;
+        }
 
         send_only_m64 = true;
 
@@ -161,6 +170,10 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         bp->BreakPointHandle = windbg_breakpoint_insert(cpu, bp->BreakPointAddress) + 1;
 
+        if (bp->BreakPointHandle <= 0) {
+            m64.ReturnStatus = STATUS_UNSUCCESSFUL;
+        }
+
         send_only_m64 = true;
 
         break;
@@ -169,7 +182,11 @@ static void windbg_process_manipulate_packet(Context *ctx)
     {
         DBGKD_RESTORE_BREAKPOINT *bp = &m64.u.RestoreBreakPoint;
 
-        windbg_breakpoint_remove(cpu, bp->BreakPointHandle - 1);
+        int err = windbg_breakpoint_remove(cpu, bp->BreakPointHandle - 1);
+
+        if (err) {
+            m64.ReturnStatus = STATUS_UNSUCCESSFUL;
+        }
 
         send_only_m64 = true;
 
@@ -179,7 +196,13 @@ static void windbg_process_manipulate_packet(Context *ctx)
     {
         DBGKD_READ_MEMORY64 *mem = &m64.u.ReadMemory;
 
-        mem->ActualBytesRead = mem->TransferCount;
+        // tmp checking
+        if (mem->TargetBaseAddress == 0x02f4 || mem->TargetBaseAddress == 0x02cc) {
+            WINDBG_ERROR("ReadControlSpaceApi: Catched unknown addr 0x%x",
+                         (int) mem->TargetBaseAddress);
+        }
+
+        mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
         uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
         memcpy(M64_OFFSET(packet),
                ((uint8_t *) kd_get_kspecial_registers(m64.Processor)) + offset,
@@ -194,6 +217,12 @@ static void windbg_process_manipulate_packet(Context *ctx)
     {
         DBGKD_WRITE_MEMORY64 *mem = &m64.u.WriteMemory;
 
+        // tmp checking
+        if (mem->TargetBaseAddress == 0x02f4 || mem->TargetBaseAddress == 0x02cc) {
+            WINDBG_ERROR("WriteControlSpaceApi: Catched unknown addr 0x%x",
+                         (int) mem->TargetBaseAddress);
+        }
+
         mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
         uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
         kd_set_kspecial_registers(M64_OFFSET(ctx->data), mem->ActualBytesWritten,
@@ -205,8 +234,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     }
     case DbgKdContinueApi2:
     {
-        cpu_single_step(qemu_get_cpu(m64.Processor),
-                        m64.u.Continue2.ControlSet.TraceFlag ?
+        cpu_single_step(cpu, m64.u.Continue2.ControlSet.TraceFlag ?
                         SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0);
 
         if (!runstate_needs_reset()) {
@@ -217,8 +245,12 @@ static void windbg_process_manipulate_packet(Context *ctx)
     }
     case DbgKdGetVersionApi:
     {
-        cpu_memory_rw_debug(cpu, cc_addrs->Version, PTR(m64) + 0x10,
-                            m64_size - 0x10, m64.Processor);
+        err = cpu_memory_rw_debug(cpu, cc_addrs->Version, PTR(m64) + 0x10,
+                                  m64_size - 0x10, m64.Processor);
+
+        if (err) {
+            WINDBG_ERROR("GetVersionApi: Error %d", err);
+        }
 
         send_only_m64 = true;
 
@@ -248,7 +280,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     }
     default:
-        WINDBG_ERROR("Catch unsupported api (0x%x)", m64.ApiNumber);
+        WINDBG_ERROR("Catch unsupported api 0x%x", m64.ApiNumber);
 
         return;
     }
@@ -271,7 +303,7 @@ static void windbg_process_data_packet(Context *ctx)
 
         break;
     default:
-        WINDBG_ERROR("Catch unsupported data packet (0x%x)",
+        WINDBG_ERROR("Catch unsupported data packet 0x%x",
                      ctx->packet.PacketType);
 
         cntrl_packet_id = 0;
@@ -300,7 +332,7 @@ static void windbg_process_control_packet(Context *ctx)
         break;
     }
     default:
-        WINDBG_ERROR("Catch unsupported control packet (0x%x)",
+        WINDBG_ERROR("Catch unsupported control packet 0x%x",
                      ctx->packet.PacketType);
 
         cntrl_packet_id = 0;

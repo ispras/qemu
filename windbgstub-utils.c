@@ -33,7 +33,7 @@ static InitedAddr bps[KD_BREAKPOINT_MAX];
 static InitedAddr dr[8];
 static uint8_t cpu_amount;
 
-uint8_t windbg_breakpoint_insert(CPUState *cpu, vaddr addr)
+int windbg_breakpoint_insert(CPUState *cpu, vaddr addr)
 {
     int i = 0, err = 0;
     for (; i < KD_BREAKPOINT_MAX; ++i) {
@@ -43,11 +43,11 @@ uint8_t windbg_breakpoint_insert(CPUState *cpu, vaddr addr)
                 tb_flush(cpu);
                 bps[i].addr = addr;
                 bps[i].is_init = true;
-                WINDBG_DEBUG("bp_insert: addr 0x%x", addr);
+                WINDBG_DEBUG("bp_insert: addr 0x%08x", (int) addr);
                 return i;
             }
             else {
-                WINDBG_ERROR("bp_insert: Error %d", err);
+                WINDBG_ERROR("bp_insert: addr 0x%08x, Error %d", (int) addr, err);
                 return -1;
             }
         }
@@ -60,19 +60,22 @@ uint8_t windbg_breakpoint_insert(CPUState *cpu, vaddr addr)
     return -1;
 }
 
-void windbg_breakpoint_remove(CPUState *cpu, uint8_t index)
+int windbg_breakpoint_remove(CPUState *cpu, uint8_t index)
 {
+    int err = -1;
     if (bps[index].is_init) {
-        int err = cpu_breakpoint_remove(cpu, bps[index].addr, BP_GDB);
+        err = cpu_breakpoint_remove(cpu, bps[index].addr, BP_GDB);
         if (!err) {
             bps[index].is_init = false;
-            WINDBG_DEBUG("bp_remove: addr 0x%x, index %d",
-                         bps[index].addr, index);
+            WINDBG_DEBUG("bp_remove: addr 0x%08x, index %d",
+                         (int) bps[index].addr, index);
         }
         else {
-            WINDBG_ERROR("bp_remove: Error %d", err);
+            WINDBG_ERROR("bp_remove: addr 0x%08x, index %d, Error %d",
+                         (int) bps[index].addr, index, err);
         }
     }
+    return err;
 }
 
 static void windbg_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len, int type)
@@ -89,16 +92,17 @@ static void windbg_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len, int t
         err = cpu_breakpoint_insert(cpu, addr, BP_GDB, NULL);
         break;
     default:
-        WINDBG_ERROR("wp_insert: Unknown wp type");
+        WINDBG_ERROR("wp_insert: Unknown wp type 0x%x", type);
         break;
     }
 
     if (!err) {
-        WINDBG_DEBUG("wp_insert: addr 0x%x, len 0x%x, type %d",
-                     addr, len, type);
+        WINDBG_DEBUG("wp_insert: addr 0x%08x, len 0x%x, type 0x%x",
+                     (int) addr, (int) len, type);
     }
     else {
-        WINDBG_ERROR("wp_insert: Error %d", err);
+        WINDBG_ERROR("wp_insert: addr 0x%08x, len 0x%x, type 0x%x, Error %d",
+                     (int) addr, (int) len, type, err);
     }
 }
 
@@ -116,16 +120,17 @@ static void windbg_watchpoint_remove(CPUState *cpu, vaddr addr, vaddr len, int t
         err = cpu_breakpoint_remove(cpu, addr, BP_GDB);
         break;
     default:
-        WINDBG_ERROR("wp_remove: Unknown wp type");
+        WINDBG_ERROR("wp_remove: Unknown wp type 0x%x", type);
         break;
     }
 
     if (!err) {
-        WINDBG_DEBUG("wp_remove: addr 0x%x, len 0x%x, type %d",
-                     addr, len, type);
+        WINDBG_DEBUG("wp_remove: addr 0x%08x, len 0x%x, type 0x%x",
+                     (int) addr, (int) len, type);
     }
     else {
-        WINDBG_ERROR("wp_remove: Error %d", err);
+        WINDBG_ERROR("wp_remove: addr 0x%08x, len 0x%08x, type 0x%x, Error %d",
+                     (int) addr, (int) len, type, err);
     }
 }
 

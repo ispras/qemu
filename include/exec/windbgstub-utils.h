@@ -304,8 +304,8 @@ CPU_KSPECIAL_REGISTERS *kd_get_kspecial_registers(int cpu_index);
 void kd_set_context(uint8_t *data, int len, int cpu_index);
 void kd_set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index);
 
-uint8_t windbg_breakpoint_insert(CPUState *cpu, vaddr addr);
-void    windbg_breakpoint_remove(CPUState *cpu, uint8_t index);
+int windbg_breakpoint_insert(CPUState *cpu, vaddr addr);
+int windbg_breakpoint_remove(CPUState *cpu, uint8_t index);
 
 void windbg_dump(const char *fmt, ...);
 

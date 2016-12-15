@@ -199,10 +199,15 @@
 //
 #define KD_BREAKPOINT_MAX 32
 
-//TODO: Use bool
 typedef uint8_t boolean_t;
 typedef int32_t ntstatus_t;
 typedef ntstatus_t *pntstatus_t;
+
+//
+// NTSTATUS
+//
+#define STATUS_SUCCESS          ((ntstatus_t) 0x00000000)
+#define STATUS_UNSUCCESSFUL     ((ntstatus_t) 0xC0000001L)
 
 //
 // KD Packet Structure
