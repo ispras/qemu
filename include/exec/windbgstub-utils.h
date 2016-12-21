@@ -10,44 +10,47 @@
 
 // FOR DEBUG
 
-#define COUT(...) printf(__VA_ARGS__);
+#define COUT(...) printf("" __VA_ARGS__);
+#define COUT_LN(fmt, ...) COUT(fmt "\n", ##__VA_ARGS__);
+#define COUT_COMMON(fmt, var) COUT_LN(#var " = [" fmt "]", var);
 #define COUT_DEC(var) COUT_COMMON("%d", var)
 #define COUT_HEX(var) COUT_COMMON("0x%x", var)
 #define COUT_STRING(var) COUT_COMMON("%s", var)
-#define COUT_SIZEOF(var) COUT_COMMON("%lld", sizeof(var))
-#define COUT_COMMON(fmt, var) COUT(#var " = [" fmt "]\n", var);
+#define COUT_SIZEOF(var) COUT_COMMON("%lld", var)
 
 #define COUT_STRUCT(var) COUT_ARRAY(&var, 1)
 #define COUT_PSTRUCT(var) COUT_ARRAY(var, 1)
 #define COUT_ARRAY(var, count) _COUT_STRUCT(var, sizeof(*(var)), count)
-#define _COUT_STRUCT(var, size, count) {            \
-    uint8_t *_var = (uint8_t *) (var);              \
-    uint32_t _size = (uint32_t) (size);             \
-    uint32_t _count = (uint32_t) (count);           \
-                                                    \
-    COUT("%s ", #var);                              \
-    COUT("[size: %d, count: %d]\n", _size, _count); \
-                                                    \
-    int _i = 0;                                     \
-    for (_size *= _count; _i < _size; ++_i) {       \
-        if (!(_i % 16) && _i) {                     \
-            COUT("\n");                             \
-        }                                           \
-        COUT("%02x ", _var[_i]);                    \
-    }                                               \
-    COUT("\n");                                     \
+
+#define _COUT_STRUCT(var, size, count) {                 \
+	COUT("%s ", #var);                                   \
+    COUT_LN("[size: %d, count: %d]", (int) size, count); \
+	_COUT_BLOCK(var, size * count);                      \
+}
+
+#define _COUT_BLOCK(ptr, size) {     \
+    uint8_t *_p = (uint8_t *) (ptr); \
+    uint32_t _s = (size);            \
+                                     \
+    int _i = 0;                      \
+    for (; _i < _s; ++_i) {          \
+        if (!(_i % 16) && _i) {      \
+            COUT_LN();               \
+        }                            \
+        COUT("%02x ", _p[_i]);       \
+    }                                \
+    COUT_LN();                       \
 }
 
 // FOR DEBUG END
 
-#define WINDBG_DUMP_LN(...)   \
-    windbg_dump(__VA_ARGS__); \
-    windbg_dump("\n");
+#define FMT_ADDR "addr 0x" TARGET_FMT_lx
+#define FMT_ERR  "Error %d"
 
 #define WINDBG_DEBUG_ON true
 #if (WINDBG_DEBUG_ON)
-#define WINDBG_DEBUG(...) WINDBG_DUMP_LN("Debug: " __VA_ARGS__)
-#define WINDBG_ERROR(...) WINDBG_DUMP_LN("Error: " __VA_ARGS__); \
+#define WINDBG_DEBUG(...) COUT_LN("Debug: " __VA_ARGS__)
+#define WINDBG_ERROR(...) COUT_LN("Error: " __VA_ARGS__); \
                           error_report("WinDbg: " __VA_ARGS__)
 #else
 #define WINDBG_DEBUG(...)
@@ -57,8 +60,8 @@
 #define CAST_TO_PTR(type, var) ((type *) &(var))
 #define PTR(var) CAST_TO_PTR(uint8_t, var)
 
-#define BYTE(var, cpu_index) (CAST_TO_PTR(uint8_t, var)[cpu_index])
-#define DWORD(var, cpu_index) (CAST_TO_PTR(uint32_t, var)[cpu_index])
+#define UINT8(var, cpu_index) (CAST_TO_PTR(uint8_t, var)[cpu_index])
+#define UINT32(var, cpu_index) (CAST_TO_PTR(uint32_t, var)[cpu_index])
 
 #define M64_OFFSET(data) (data + sizeof(DBGKD_MANIPULATE_STATE64))
 
@@ -80,10 +83,10 @@ typedef struct _EXCEPTION_STATE_CHANGE {
 #pragma pack(pop)
 
 typedef struct _CPU_CTRL_ADDRS {
-    uint32_t KPCR;
-    uint32_t KPRCB;
-    uint32_t Version;
-    uint32_t KernelBase;
+    target_ulong KPCR;
+    target_ulong KPRCB;
+    target_ulong Version;
+    target_ulong KernelBase;
 } CPU_CTRL_ADDRS, *PCPU_CTRL_ADDRS;
 
 #if defined(TARGET_I386)
@@ -304,7 +307,7 @@ CPU_KSPECIAL_REGISTERS *kd_get_kspecial_registers(int cpu_index);
 void kd_set_context(uint8_t *data, int len, int cpu_index);
 void kd_set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index);
 
-int windbg_breakpoint_insert(CPUState *cpu, vaddr addr);
+int windbg_breakpoint_insert(CPUState *cpu, target_ulong addr);
 int windbg_breakpoint_remove(CPUState *cpu, uint8_t index);
 
 void windbg_dump(const char *fmt, ...);

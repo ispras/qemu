@@ -16,7 +16,7 @@
 })
 
 typedef struct InitedAddr {
-    vaddr addr;
+    target_ulong addr;
     bool is_init;
 } InitedAddr;
 
@@ -33,7 +33,7 @@ static InitedAddr bps[KD_BREAKPOINT_MAX];
 static InitedAddr dr[8];
 static uint8_t cpu_amount;
 
-int windbg_breakpoint_insert(CPUState *cpu, vaddr addr)
+int windbg_breakpoint_insert(CPUState *cpu, target_ulong addr)
 {
     int i = 0, err = 0;
     for (; i < KD_BREAKPOINT_MAX; ++i) {
@@ -43,11 +43,11 @@ int windbg_breakpoint_insert(CPUState *cpu, vaddr addr)
                 tb_flush(cpu);
                 bps[i].addr = addr;
                 bps[i].is_init = true;
-                WINDBG_DEBUG("bp_insert: addr 0x%08x", (int) addr);
+                WINDBG_DEBUG("bp_insert: " FMT_ADDR, addr);
                 return i;
             }
             else {
-                WINDBG_ERROR("bp_insert: addr 0x%08x, Error %d", (int) addr, err);
+                WINDBG_ERROR("bp_insert: " FMT_ADDR ", " FMT_ERR, addr, err);
                 return -1;
             }
         }
@@ -67,18 +67,37 @@ int windbg_breakpoint_remove(CPUState *cpu, uint8_t index)
         err = cpu_breakpoint_remove(cpu, bps[index].addr, BP_GDB);
         if (!err) {
             bps[index].is_init = false;
-            WINDBG_DEBUG("bp_remove: addr 0x%08x, index %d",
-                         (int) bps[index].addr, index);
+            WINDBG_DEBUG("bp_remove: " FMT_ADDR ", index %d",
+                         bps[index].addr, index);
         }
         else {
-            WINDBG_ERROR("bp_remove: addr 0x%08x, index %d, Error %d",
-                         (int) bps[index].addr, index, err);
+            WINDBG_ERROR("bp_remove: " FMT_ADDR ", index %d, " FMT_ERR,
+                         bps[index].addr, index, err);
         }
     }
     return err;
 }
 
-static void windbg_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len, int type)
+static void windbg_breakpoint_remove_range(CPUState *cpu, target_ulong base, target_ulong limit)
+{
+    int i = 0, err = 0;
+    for (; i < KD_BREAKPOINT_MAX; ++i) {
+        if (bps[i].is_init && bps[i].addr >= base && bps[i].addr < limit) {
+            err = cpu_breakpoint_remove(cpu, bps[i].addr, BP_GDB);
+            if (!err) {
+                bps[i].is_init = false;
+                WINDBG_DEBUG("bp_remove: " FMT_ADDR ", index %d",
+                            bps[i].addr, i);
+            }
+            else {
+                WINDBG_ERROR("bp_remove: " FMT_ADDR ", index %d, " FMT_ERR,
+                            bps[i].addr, i, err);
+            }
+        }
+    }
+}
+
+static void windbg_watchpoint_insert(CPUState *cpu, target_ulong addr, int len, int type)
 {
     int err = 0;
     switch (type) {
@@ -97,16 +116,16 @@ static void windbg_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len, int t
     }
 
     if (!err) {
-        WINDBG_DEBUG("wp_insert: addr 0x%08x, len 0x%x, type 0x%x",
-                     (int) addr, (int) len, type);
+        WINDBG_DEBUG("wp_insert: " FMT_ADDR ", len %d, type 0x%x",
+                     addr, len, type);
     }
     else {
-        WINDBG_ERROR("wp_insert: addr 0x%08x, len 0x%x, type 0x%x, Error %d",
-                     (int) addr, (int) len, type, err);
+        WINDBG_ERROR("wp_insert: " FMT_ADDR ", len %d, type 0x%x, " FMT_ERR,
+                     addr, len, type, err);
     }
 }
 
-static void windbg_watchpoint_remove(CPUState *cpu, vaddr addr, vaddr len, int type)
+static void windbg_watchpoint_remove(CPUState *cpu, target_ulong addr, int len, int type)
 {
     int err = 0;
     switch (type) {
@@ -125,16 +144,16 @@ static void windbg_watchpoint_remove(CPUState *cpu, vaddr addr, vaddr len, int t
     }
 
     if (!err) {
-        WINDBG_DEBUG("wp_remove: addr 0x%08x, len 0x%x, type 0x%x",
-                     (int) addr, (int) len, type);
+        WINDBG_DEBUG("wp_remove: " FMT_ADDR ", len %d, type 0x%x",
+                     addr, len, type);
     }
     else {
-        WINDBG_ERROR("wp_remove: addr 0x%08x, len 0x%08x, type 0x%x, Error %d",
-                     (int) addr, (int) len, type, err);
+        WINDBG_ERROR("wp_remove: " FMT_ADDR ", len %d, type 0x%x, " FMT_ERR,
+                     addr, len, type, err);
     }
 }
 
-static void windbg_update_dr(CPUState *cpu, vaddr *new_dr)
+static void windbg_update_dr(CPUState *cpu, target_ulong *new_dr)
 {
     int i;
 
@@ -142,20 +161,23 @@ static void windbg_update_dr(CPUState *cpu, vaddr *new_dr)
         bool is_enabled = IS_BP_ENABLED(new_dr[7], i);
         if (!is_enabled) {
             if (dr[i].is_init) {
-                windbg_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i), BP_TYPE(dr[7].addr, i));
+                windbg_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i),
+                                         BP_TYPE(dr[7].addr, i));
                 dr[i].is_init = false;
             }
         }
         else if (is_enabled && (new_dr[i] != dr[i].addr)) {
             if (dr[i].is_init) {
-                windbg_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i), BP_TYPE(dr[7].addr, i));
+                windbg_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i),
+                                         BP_TYPE(dr[7].addr, i));
                 dr[i].is_init = false;
             }
 
             dr[i].addr = new_dr[i];
             dr[i].is_init = true;
 
-            windbg_watchpoint_insert(cpu, dr[i].addr, BP_LEN(new_dr[7], i), BP_TYPE(new_dr[7], i));
+            windbg_watchpoint_insert(cpu, dr[i].addr, BP_LEN(new_dr[7], i),
+                                     BP_TYPE(new_dr[7], i));
         }
     }
 
@@ -187,7 +209,47 @@ CPU_CTRL_ADDRS *kd_get_cpu_ctrl_addrs(int cpu_index)
     cpu_memory_rw_debug(cpu, kd.cca.Version + OFFSET_KRNL_BASE, PTR(kd.cca.KernelBase),
                         sizeof(kd.cca.KernelBase), 0);
 
+    WINDBG_DEBUG("control_addr: KPCR " FMT_ADDR, kd.cca.KPCR);
+    WINDBG_DEBUG("control_addr: KPRCB " FMT_ADDR, kd.cca.KPRCB);
+    WINDBG_DEBUG("control_addr: KernelBase " FMT_ADDR, kd.cca.KernelBase);
+
     return &kd.cca;
+}
+
+static void kd_init_common_sc(CPUState *cpu, DBGKD_ANY_WAIT_STATE_CHANGE *sc)
+{
+    CPUArchState *env = cpu->env_ptr;
+    int err = 0;
+
+    // HEADER
+
+    sc->NewState = DbgKdExceptionStateChange;
+    sc->ProcessorLevel = 0x6;
+    sc->Processor = 0;
+    sc->NumberProcessors = get_cpu_amount();
+    cpu_memory_rw_debug(cpu, kd.cca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
+                        PTR(sc->Thread), sizeof(sc->Thread), 0);
+    sc->ProgramCounter = env->eip;
+
+    // CONTROL REPORT
+
+    sc->ControlReport.Dr6 = env->dr[6];
+    sc->ControlReport.Dr7 = env->dr[7];
+    // sc->ControlReport.ReportFlags = 0x3;
+    sc->ControlReport.SegCs = env->segs[R_CS].selector;
+    sc->ControlReport.SegDs = env->segs[R_DS].selector;
+    sc->ControlReport.SegEs = env->segs[R_ES].selector;
+    sc->ControlReport.SegFs = env->segs[R_FS].selector;
+    sc->ControlReport.EFlags = env->eflags;
+
+    err = cpu_memory_rw_debug(cpu, sc->ProgramCounter,
+                              PTR(sc->ControlReport.InstructionStream[0]),
+                              DBGKD_MAXSTREAM, 0);
+    if (!err) {
+        sc->ControlReport.InstructionCount = DBGKD_MAXSTREAM;
+        windbg_breakpoint_remove_range(cpu, sc->ProgramCounter,
+                                       sc->ProgramCounter + DBGKD_MAXSTREAM);
+    }
 }
 
 EXCEPTION_STATE_CHANGE *kd_get_exception_sc(int cpu_index)
@@ -198,98 +260,63 @@ EXCEPTION_STATE_CHANGE *kd_get_exception_sc(int cpu_index)
     memset(&kd.esc, 0, sizeof(kd.esc));
 
     DBGKD_ANY_WAIT_STATE_CHANGE *sc = &kd.esc.StateChange;
+    kd_init_common_sc(cpu, sc);
 
-    sc->NewState = DbgKdExceptionStateChange;
-    //TODO: Get it
-    sc->ProcessorLevel = 0x6; //Pentium 4
-    //
-    sc->Processor = cpu_index;
-    sc->NumberProcessors = get_cpu_amount();
-    //TODO: + 0xffffffff00000000
-    cpu_memory_rw_debug(cpu, kd.cca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
-                        PTR(sc->Thread), sizeof(sc->Thread), 0);
-    sc->ProgramCounter = env->eip;
-    //
-    //TODO: Get it
-    sc->u.Exception.ExceptionRecord.ExceptionCode = 0x80000003;
-    //sc->u.Exception.ExceptionRecord.ExceptionFlags = 0x0;
-    //sc->u.Exception.ExceptionRecord.ExceptionRecord = 0x0;
-    //
-    //TODO: + 0xffffffff00000000
+    sc->u.Exception.ExceptionRecord.ExceptionCode = 0x80000003; // Need get it
+    // sc->u.Exception.ExceptionRecord.ExceptionFlags = 0x0;
+    // sc->u.Exception.ExceptionRecord.ExceptionRecord = 0x0;
     sc->u.Exception.ExceptionRecord.ExceptionAddress = env->eip;
-    //
-    //TODO: Get it
-    //sc->u.Exception.ExceptionRecord.NumberParameters = 0x3;
-    //sc->u.Exception.ExceptionRecord.__unusedAligment = 0x80;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[1] = 0xffffffff82966340;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[2] = 0xffffffff82959adc;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[3] = 0xc0;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[4] = 0xffffffffc020360c;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[5] = 0x80;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[6] = 0x0;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[7] = 0x0;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[8] = 0xffffffff82870d08;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[9] = 0xffffffff82959aec;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[10] = 0xffffffff82853508;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[11] = 0xffffffffbadb0d00;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[12] = 0xffffffff82959adc;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[13] = 0xffffffff82959aa4;
-    //sc->u.Exception.ExceptionRecord.ExceptionInformation[14] = 0xffffffff828d9d15;
-    //
-    //TODO: Get it
-    sc->u.Exception.FirstChance = 0x1;
-    //
-    sc->ControlReport.Dr6 = env->dr[6];
-    sc->ControlReport.Dr7 = env->dr[7];
-    //TODO: Get it
-    //sc->ControlReport.InstructionCount = 0x10;
-    //sc->ControlReport.ReportFlags = 0x3;
-    //
-    cpu_memory_rw_debug(cpu, env->eip,
-                        (uint8_t *) sc->ControlReport.InstructionStream,
-                        sizeof(sc->ControlReport.InstructionStream), 0);
-    sc->ControlReport.SegCs = env->segs[R_CS].selector;
-    sc->ControlReport.SegDs = env->segs[R_DS].selector;
-    sc->ControlReport.SegEs = env->segs[R_ES].selector;
-    sc->ControlReport.SegFs = env->segs[R_FS].selector;
-    sc->ControlReport.EFlags = env->eflags;
-    //TODO: Get it
-    kd.esc.value = 0x1;
+    // sc->u.Exception.ExceptionRecord.NumberParameters = 0x3;
+    // sc->u.Exception.ExceptionRecord.__unusedAligment = 0x80;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[1] = 0xffffffff82966340;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[2] = 0xffffffff82959adc;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[3] = 0xc0;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[4] = 0xffffffffc020360c;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[5] = 0x80;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[6] = 0x0;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[7] = 0x0;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[8] = 0xffffffff82870d08;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[9] = 0xffffffff82959aec;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[10] = 0xffffffff82853508;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[11] = 0xffffffffbadb0d00;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[12] = 0xffffffff82959adc;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[13] = 0xffffffff82959aa4;
+    // sc->u.Exception.ExceptionRecord.ExceptionInformation[14] = 0xffffffff828d9d15;
+    sc->u.Exception.FirstChance = 0x1; // Need get it
+
+    kd.esc.value = 0x1; // Need get it
 
     return &kd.esc;
 }
 
 SizedBuf *kd_get_load_symbols_sc(int cpu_index)
 {
+    CPUState *cpu = qemu_get_cpu(cpu_index);
+
     int i;
     uint8_t path_name[128]; //For Win7
     size_t size = sizeof(DBGKD_ANY_WAIT_STATE_CHANGE),
            count = sizeof(path_name);
 
-    CPUState *cpu = qemu_get_cpu(cpu_index);
     DBGKD_ANY_WAIT_STATE_CHANGE sc;
-
-    memcpy(&sc, kd_get_exception_sc(0), size);
+    kd_init_common_sc(cpu, &sc);
 
     cpu_memory_rw_debug(cpu, NT_KRNL_PNAME_ADDR, path_name, count, 0);
-    for (i = 0; i < count; i++) {
+    for (i = 0; i < count; i += 2) {
         if((path_name[i / 2] = path_name[i]) == '\0') {
             break;
         }
-        i++;
     }
     count = i / 2 + 1;
     kd.lssc.size = size + count;
 
     sc.NewState = DbgKdLoadSymbolsStateChange;
     sc.u.LoadSymbols.PathNameLength = count;
-    ////TODO: Get it
-    //sc.u.LoadSymbols.BaseOfDll = cca.KernelBase << 8 | ;
-    //sc.u.LoadSymbols.ProcessId = -1;
-    //sc.u.LoadSymbols.CheckSum = ;
-    //sc.u.LoadSymbols.SizeOfImage = ;
-    //sc.u.LoadSymbols.UnloadSymbols = false;
-    ////
+    // sc.u.LoadSymbols.BaseOfDll = cca.KernelBase << 8 | ;
+    // sc.u.LoadSymbols.ProcessId = -1;
+    // sc.u.LoadSymbols.CheckSum = ;
+    // sc.u.LoadSymbols.SizeOfImage = ;
+    // sc.u.LoadSymbols.UnloadSymbols = false;
 
     if (kd.lssc.data) {
         g_free(kd.lssc.data);
@@ -314,13 +341,6 @@ CPU_CONTEXT *kd_get_context(int cpu_index)
     kd.cc.ContextFlags = CPU_CONTEXT_ALL;
 
     if (kd.cc.ContextFlags & CPU_CONTEXT_FULL) {
-        kd.cc.Dr0    = env->dr[0];
-        kd.cc.Dr1    = env->dr[1];
-        kd.cc.Dr2    = env->dr[2];
-        kd.cc.Dr3    = env->dr[3];
-        kd.cc.Dr6    = env->dr[6];
-        kd.cc.Dr7    = env->dr[7];
-
         kd.cc.Edi    = env->regs[R_EDI];
         kd.cc.Esi    = env->regs[R_ESI];
         kd.cc.Ebx    = env->regs[R_EBX];
@@ -345,10 +365,10 @@ CPU_CONTEXT *kd_get_context(int cpu_index)
         kd.cc.FloatSave.ControlWord    = env->fpuc;
         kd.cc.FloatSave.StatusWord     = env->fpus;
         kd.cc.FloatSave.TagWord        = env->fpstt;
-        kd.cc.FloatSave.ErrorOffset    = DWORD(env->fpip, 0);
-        kd.cc.FloatSave.ErrorSelector  = DWORD(env->fpip, 1);
-        kd.cc.FloatSave.DataOffset     = DWORD(env->fpdp, 0);
-        kd.cc.FloatSave.DataSelector   = DWORD(env->fpdp, 1);
+        kd.cc.FloatSave.ErrorOffset    = UINT32(env->fpip, 0);
+        kd.cc.FloatSave.ErrorSelector  = UINT32(env->fpip, 1);
+        kd.cc.FloatSave.DataOffset     = UINT32(env->fpdp, 0);
+        kd.cc.FloatSave.DataSelector   = UINT32(env->fpdp, 1);
         kd.cc.FloatSave.Cr0NpxState    = env->cr[0];
 
         for (i = 0; i < 8; ++i) {
@@ -358,7 +378,12 @@ CPU_CONTEXT *kd_get_context(int cpu_index)
     }
 
     if (kd.cc.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
-
+        kd.cc.Dr0    = env->dr[0];
+        kd.cc.Dr1    = env->dr[1];
+        kd.cc.Dr2    = env->dr[2];
+        kd.cc.Dr3    = env->dr[3];
+        kd.cc.Dr6    = env->dr[6];
+        kd.cc.Dr7    = env->dr[7];
     }
 
     if (kd.cc.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
@@ -367,7 +392,7 @@ CPU_CONTEXT *kd_get_context(int cpu_index)
                    PTR(env->xmm_regs[i]), sizeof(ZMMReg));
         }
         // offset 24
-        DWORD(kd.cc.ExtendedRegisters, 6) = env->mxcsr;
+        UINT32(kd.cc.ExtendedRegisters, 6) = env->mxcsr;
     }
 
     kd.cc.ExtendedRegisters[0] = 0xaa;
@@ -389,7 +414,15 @@ void kd_set_context(uint8_t *data, int len, int cpu_index)
   #if defined(TARGET_I386)
 
     if (cc.ContextFlags & CPU_CONTEXT_FULL) {
-        vaddr new_dr[8] = {
+
+    }
+
+    if (cc.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
+
+    }
+
+    if (cc.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
+        target_ulong new_dr[8] = {
             [0] = cc.Dr0,
             [1] = cc.Dr1,
             [2] = cc.Dr2,
@@ -398,14 +431,6 @@ void kd_set_context(uint8_t *data, int len, int cpu_index)
             [7] = cc.Dr7
         };
         windbg_update_dr(cpu, new_dr);
-    }
-
-    if (cc.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
-
-    }
-
-    if (cc.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
-
     }
 
     if (cc.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {

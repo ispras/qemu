@@ -123,6 +123,10 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         if (err) {
             m64.ReturnStatus = STATUS_UNSUCCESSFUL;
+
+            // tmp checking
+            WINDBG_DEBUG("ReadVirtualMemoryApi: No physical page mapped: " FMT_ADDR,
+                         (target_ulong) mem->TargetBaseAddress);
         }
 
         send_only_m64 = false;
@@ -197,9 +201,9 @@ static void windbg_process_manipulate_packet(Context *ctx)
         DBGKD_READ_MEMORY64 *mem = &m64.u.ReadMemory;
 
         // tmp checking
-        if (mem->TargetBaseAddress == 0x02f4 || mem->TargetBaseAddress == 0x02cc) {
-            WINDBG_ERROR("ReadControlSpaceApi: Catched unknown addr 0x%x",
-                         (int) mem->TargetBaseAddress);
+        if (mem->TargetBaseAddress != 0x2f4 && mem->TargetBaseAddress != 0x2cc) {
+            WINDBG_DEBUG("ReadControlSpaceApi: Catched unknown " FMT_ADDR,
+                         (target_ulong) mem->TargetBaseAddress);
         }
 
         mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
@@ -218,9 +222,9 @@ static void windbg_process_manipulate_packet(Context *ctx)
         DBGKD_WRITE_MEMORY64 *mem = &m64.u.WriteMemory;
 
         // tmp checking
-        if (mem->TargetBaseAddress == 0x02f4 || mem->TargetBaseAddress == 0x02cc) {
-            WINDBG_ERROR("WriteControlSpaceApi: Catched unknown addr 0x%x",
-                         (int) mem->TargetBaseAddress);
+        if (mem->TargetBaseAddress != 0x2f4 && mem->TargetBaseAddress != 0x2cc) {
+            WINDBG_DEBUG("WriteControlSpaceApi: Catched unknown " FMT_ADDR,
+                         (target_ulong) mem->TargetBaseAddress);
         }
 
         mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
@@ -243,13 +247,38 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         return;
     }
+    case DbgKdReadPhysicalMemoryApi:
+    {
+        DBGKD_READ_MEMORY64 *mem = &m64.u.ReadMemory;
+
+        mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
+        cpu_physical_memory_rw(mem->TargetBaseAddress, M64_OFFSET(packet),
+                               mem->ActualBytesRead, 0);
+        packet_size = m64_size + mem->ActualBytesRead;
+
+        send_only_m64 = false;
+
+        break;
+    }
+    case DbgKdWritePhysicalMemoryApi:
+    {
+        DBGKD_WRITE_MEMORY64 *mem = &m64.u.WriteMemory;
+
+        mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
+        cpu_physical_memory_rw(mem->TargetBaseAddress, M64_OFFSET(ctx->data),
+                               mem->ActualBytesWritten, 1);
+
+        send_only_m64 = true;
+
+        break;
+    }
     case DbgKdGetVersionApi:
     {
         err = cpu_memory_rw_debug(cpu, cc_addrs->Version, PTR(m64) + 0x10,
                                   m64_size - 0x10, m64.Processor);
 
         if (err) {
-            WINDBG_ERROR("GetVersionApi: Error %d", err);
+            WINDBG_ERROR("GetVersionApi: " FMT_ERR, err);
         }
 
         send_only_m64 = true;
@@ -367,10 +396,10 @@ static void windbg_read_byte(Context *ctx, uint8_t byte)
     switch (ctx->state) {
     case STATE_LEADER:
         if (byte == PACKET_LEADER_BYTE || byte == CONTROL_PACKET_LEADER_BYTE) {
-            if (ctx->index > 0 && byte != BYTE(ctx->packet.PacketLeader, 0)) {
+            if (ctx->index > 0 && byte != UINT8(ctx->packet.PacketLeader, 0)) {
                 ctx->index = 0;
             }
-            BYTE(ctx->packet.PacketLeader, ctx->index) = byte;
+            UINT8(ctx->packet.PacketLeader, ctx->index) = byte;
             ++ctx->index;
             if (ctx->index == sizeof(ctx->packet.PacketLeader)) {
                 ctx->state = STATE_PACKET_TYPE;
@@ -386,7 +415,7 @@ static void windbg_read_byte(Context *ctx, uint8_t byte)
         }
         break;
     case STATE_PACKET_TYPE:
-        BYTE(ctx->packet.PacketType, ctx->index) = byte;
+        UINT8(ctx->packet.PacketType, ctx->index) = byte;
         ++ctx->index;
         if (ctx->index == sizeof(ctx->packet.PacketType)) {
             if (ctx->packet.PacketType >= PACKET_TYPE_MAX) {
@@ -399,7 +428,7 @@ static void windbg_read_byte(Context *ctx, uint8_t byte)
         }
         break;
     case STATE_PACKET_BYTE_COUNT:
-        BYTE(ctx->packet.ByteCount, ctx->index) = byte;
+        UINT8(ctx->packet.ByteCount, ctx->index) = byte;
         ++ctx->index;
         if (ctx->index == sizeof(ctx->packet.ByteCount)) {
             ctx->state = STATE_PACKET_ID;
@@ -407,7 +436,7 @@ static void windbg_read_byte(Context *ctx, uint8_t byte)
         }
         break;
     case STATE_PACKET_ID:
-        BYTE(ctx->packet.PacketId, ctx->index) = byte;
+        UINT8(ctx->packet.PacketId, ctx->index) = byte;
         ++ctx->index;
         if (ctx->index == sizeof(ctx->packet.PacketId)) {
             ctx->state = STATE_PACKET_CHECKSUM;
@@ -415,7 +444,7 @@ static void windbg_read_byte(Context *ctx, uint8_t byte)
         }
         break;
     case STATE_PACKET_CHECKSUM:
-        BYTE(ctx->packet.Checksum, ctx->index) = byte;
+        UINT8(ctx->packet.Checksum, ctx->index) = byte;
         ++ctx->index;
         if (ctx->index == sizeof(ctx->packet.Checksum)) {
             if (ctx->packet.PacketLeader == CONTROL_PACKET_LEADER) {
