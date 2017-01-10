@@ -130,7 +130,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
         }
 
         send_only_m64 = false;
-
         break;
     }
     case DbgKdWriteVirtualMemoryApi:
@@ -146,7 +145,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
         }
 
         send_only_m64 = true;
-
         break;
     }
     case DbgKdGetContextApi:
@@ -156,7 +154,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
         packet_size += m64_size;
 
         send_only_m64 = false;
-
         break;
     }
     case DbgKdSetContextApi:
@@ -165,7 +162,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
                        sizeof(CPU_CONTEXT)), m64.Processor);
 
         send_only_m64 = true;
-
         break;
     }
     case DbgKdWriteBreakPointApi:
@@ -179,7 +175,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
         }
 
         send_only_m64 = true;
-
         break;
     }
     case DbgKdRestoreBreakPointApi:
@@ -193,7 +188,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
         }
 
         send_only_m64 = true;
-
         break;
     }
     case DbgKdReadControlSpaceApi:
@@ -214,7 +208,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
         packet_size = m64_size + mem->ActualBytesRead;
 
         send_only_m64 = false;
-
         break;
     }
     case DbgKdWriteControlSpaceApi:
@@ -233,7 +226,26 @@ static void windbg_process_manipulate_packet(Context *ctx)
                                offset, m64.Processor);
 
         send_only_m64 = true;
+        break;
+    }
+    case DbgKdReadIoSpaceApi:
+    {
+        DBGKD_READ_WRITE_IO64 *io = &m64.u.ReadWriteIo;
 
+        cpu_physical_memory_rw(io->IoAddress + 0x80000000,
+                               PTR(io->DataValue), io->DataSize, 0);
+
+        send_only_m64 = true;
+        break;
+    }
+    case DbgKdWriteIoSpaceApi:
+    {
+        DBGKD_READ_WRITE_IO64 *io = &m64.u.ReadWriteIo;
+
+        cpu_physical_memory_rw(io->IoAddress + 0x80000000,
+                               PTR(io->DataValue), io->DataSize, 1);
+
+        send_only_m64 = true;
         break;
     }
     case DbgKdContinueApi2:
@@ -257,7 +269,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
         packet_size = m64_size + mem->ActualBytesRead;
 
         send_only_m64 = false;
-
         break;
     }
     case DbgKdWritePhysicalMemoryApi:
@@ -269,7 +280,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
                                mem->ActualBytesWritten, 1);
 
         send_only_m64 = true;
-
         break;
     }
     case DbgKdGetVersionApi:
@@ -282,7 +292,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
         }
 
         send_only_m64 = true;
-
         break;
     }
     case DbgKdClearAllInternalBreakpointsApi:
@@ -290,7 +299,6 @@ static void windbg_process_manipulate_packet(Context *ctx)
         // Unsupported yet!!! But need for connect
 
         send_only_m64 = true;
-
         break;
     }
     case DbgKdQueryMemoryApi:
@@ -305,12 +313,11 @@ static void windbg_process_manipulate_packet(Context *ctx)
         }
 
         send_only_m64 = true;
-
         break;
     }
     default:
         WINDBG_ERROR("Catch unsupported api 0x%x", m64.ApiNumber);
-
+        exit(1);
         return;
     }
 

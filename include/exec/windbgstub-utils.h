@@ -10,22 +10,22 @@
 
 // FOR DEBUG
 
-#define COUT(...) printf("" __VA_ARGS__);
-#define COUT_LN(fmt, ...) COUT(fmt "\n", ##__VA_ARGS__);
-#define COUT_COMMON(fmt, var) COUT_LN(#var " = [" fmt "]", var);
+#define COUT(...) printf("" __VA_ARGS__)
+#define COUT_LN(fmt, ...) COUT(fmt "\n", ##__VA_ARGS__)
+#define COUT_COMMON(fmt, var) COUT_LN(#var " = [" fmt "]", var)
 #define COUT_DEC(var) COUT_COMMON("%d", var)
 #define COUT_HEX(var) COUT_COMMON("0x%x", var)
 #define COUT_STRING(var) COUT_COMMON("%s", var)
-#define COUT_SIZEOF(var) COUT_COMMON("%lld", var)
+#define COUT_SIZEOF(var) COUT_COMMON("%lld", sizeof(var))
 
 #define COUT_STRUCT(var) COUT_ARRAY(&var, 1)
 #define COUT_PSTRUCT(var) COUT_ARRAY(var, 1)
 #define COUT_ARRAY(var, count) _COUT_STRUCT(var, sizeof(*(var)), count)
 
 #define _COUT_STRUCT(var, size, count) {                 \
-	COUT("%s ", #var);                                   \
+    COUT(#var " ");                                      \
     COUT_LN("[size: %d, count: %d]", (int) size, count); \
-	_COUT_BLOCK(var, size * count);                      \
+    _COUT_BLOCK(var, size * count);                      \
 }
 
 #define _COUT_BLOCK(ptr, size) {     \
@@ -60,8 +60,8 @@
 #define CAST_TO_PTR(type, var) ((type *) &(var))
 #define PTR(var) CAST_TO_PTR(uint8_t, var)
 
-#define UINT8(var, cpu_index) (CAST_TO_PTR(uint8_t, var)[cpu_index])
-#define UINT32(var, cpu_index) (CAST_TO_PTR(uint32_t, var)[cpu_index])
+#define UINT8(var, index) (CAST_TO_PTR(uint8_t, var)[index])
+#define UINT32(var, index) (CAST_TO_PTR(uint32_t, var)[index])
 
 #define M64_OFFSET(data) (data + sizeof(DBGKD_MANIPULATE_STATE64))
 
