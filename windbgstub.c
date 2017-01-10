@@ -150,7 +150,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     case DbgKdGetContextApi:
     {
         packet_size = sizeof(CPU_CONTEXT);
-        memcpy(M64_OFFSET(packet), kd_get_context(m64.Processor), packet_size);
+        memcpy(M64_OFFSET(packet), kd_get_context(cpu), packet_size);
         packet_size += m64_size;
 
         send_only_m64 = false;
@@ -158,8 +158,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
     }
     case DbgKdSetContextApi:
     {
-        kd_set_context(M64_OFFSET(ctx->data), MIN(extra_data_size,
-                       sizeof(CPU_CONTEXT)), m64.Processor);
+        kd_set_context(cpu, M64_OFFSET(ctx->data),
+                       MIN(extra_data_size, sizeof(CPU_CONTEXT)));
 
         send_only_m64 = true;
         break;
@@ -203,7 +203,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
         mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
         uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
         memcpy(M64_OFFSET(packet),
-               ((uint8_t *) kd_get_kspecial_registers(m64.Processor)) + offset,
+               ((uint8_t *) kd_get_kspecial_registers(cpu)) + offset,
                mem->ActualBytesRead);
         packet_size = m64_size + mem->ActualBytesRead;
 
@@ -222,8 +222,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
         uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
-        kd_set_kspecial_registers(M64_OFFSET(ctx->data), mem->ActualBytesWritten,
-                               offset, m64.Processor);
+        kd_set_kspecial_registers(cpu, M64_OFFSET(ctx->data),
+                                  mem->ActualBytesWritten, offset);
 
         send_only_m64 = true;
         break;
@@ -285,11 +285,29 @@ static void windbg_process_manipulate_packet(Context *ctx)
     case DbgKdGetVersionApi:
     {
         err = cpu_memory_rw_debug(cpu, cc_addrs->Version, PTR(m64) + 0x10,
-                                  m64_size - 0x10, m64.Processor);
+                                  m64_size - 0x10, 0);
 
         if (err) {
             WINDBG_ERROR("GetVersionApi: " FMT_ERR, err);
         }
+
+        send_only_m64 = true;
+        break;
+    }
+    case DbgKdReadMachineSpecificRegister:
+    {
+        DBGKD_READ_WRITE_MSR *msr = &m64.u.ReadWriteMsr;
+
+        windbg_read_msr(cpu, msr);
+
+        send_only_m64 = true;
+        break;
+    }
+    case DbgKdWriteMachineSpecificRegister:
+    {
+        DBGKD_READ_WRITE_MSR *msr = &m64.u.ReadWriteMsr;
+
+        windbg_write_msr(cpu, msr);
 
         send_only_m64 = true;
         break;
@@ -317,7 +335,7 @@ static void windbg_process_manipulate_packet(Context *ctx)
     }
     default:
         WINDBG_ERROR("Catch unsupported api 0x%x", m64.ApiNumber);
-        exit(1);
+
         return;
     }
 
@@ -358,7 +376,7 @@ static void windbg_process_control_packet(Context *ctx)
     case PACKET_TYPE_KD_RESET:
     {
         //TODO: For all processors
-        SizedBuf *lssc = kd_get_load_symbols_sc(0);
+        SizedBuf *lssc = kd_get_load_symbols_sc(qemu_get_cpu(0));
 
         windbg_send_data_packet(lssc->data, lssc->size,
                                 PACKET_TYPE_KD_STATE_CHANGE64);
@@ -387,7 +405,7 @@ static int windbg_chr_can_receive(void *opaque)
 
 static void windbg_bp_handler(CPUState *cpu)
 {
-    windbg_send_data_packet((uint8_t *) kd_get_exception_sc(0),
+    windbg_send_data_packet((uint8_t *) kd_get_exception_sc(cpu),
                             sizeof(EXCEPTION_STATE_CHANGE),
                             PACKET_TYPE_KD_STATE_CHANGE64);
 }
@@ -505,7 +523,7 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 void windbg_start_sync(void)
 {
     windbg_on_init();
-    cc_addrs = kd_get_cpu_ctrl_addrs(0);
+    cc_addrs = kd_get_cpu_ctrl_addrs(qemu_get_cpu(0));
 
     lock = 1;
 }

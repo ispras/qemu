@@ -298,14 +298,14 @@ typedef struct SizedBuf {
     size_t size;
 } SizedBuf;
 
-CPU_CTRL_ADDRS         *kd_get_cpu_ctrl_addrs(int cpu_index);
-EXCEPTION_STATE_CHANGE *kd_get_exception_sc(int cpu_index);
-SizedBuf               *kd_get_load_symbols_sc(int cpu_index);
-CPU_CONTEXT            *kd_get_context(int cpu_index);
-CPU_KSPECIAL_REGISTERS *kd_get_kspecial_registers(int cpu_index);
+CPU_CTRL_ADDRS         *kd_get_cpu_ctrl_addrs(CPUState *cpu);
+EXCEPTION_STATE_CHANGE *kd_get_exception_sc(CPUState *cpu);
+SizedBuf               *kd_get_load_symbols_sc(CPUState *cpu);
+CPU_CONTEXT            *kd_get_context(CPUState *cpu);
+CPU_KSPECIAL_REGISTERS *kd_get_kspecial_registers(CPUState *cpu);
 
-void kd_set_context(uint8_t *data, int len, int cpu_index);
-void kd_set_kspecial_registers(uint8_t *data, int len, int offset, int cpu_index);
+void kd_set_context(CPUState *cpu, uint8_t *data, int len);
+void kd_set_kspecial_registers(CPUState *cpu, uint8_t *data, int len, int offset);
 
 int windbg_breakpoint_insert(CPUState *cpu, target_ulong addr);
 int windbg_breakpoint_remove(CPUState *cpu, uint8_t index);
@@ -315,7 +315,10 @@ void windbg_dump(const char *fmt, ...);
 void windbg_on_init(void);
 void windbg_on_exit(void);
 
+void windbg_read_msr(CPUState *cpu, DBGKD_READ_WRITE_MSR *msr);
+void windbg_write_msr(CPUState *cpu, DBGKD_READ_WRITE_MSR *msr);
+
 uint8_t get_cpu_amount(void);
-uint32_t compute_checksum(uint8_t *data, uint16_t length);
+uint32_t compute_checksum(uint8_t *data, uint16_t len);
 
 #endif
