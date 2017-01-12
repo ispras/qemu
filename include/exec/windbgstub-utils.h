@@ -298,6 +298,8 @@ typedef struct SizedBuf {
     size_t size;
 } SizedBuf;
 
+const char *kd_api_name(int api_number);
+
 CPU_CTRL_ADDRS         *kd_get_cpu_ctrl_addrs(CPUState *cpu);
 EXCEPTION_STATE_CHANGE *kd_get_exception_sc(CPUState *cpu);
 SizedBuf               *kd_get_load_symbols_sc(CPUState *cpu);

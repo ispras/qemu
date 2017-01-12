@@ -33,6 +33,56 @@ static InitedAddr bps[KD_BREAKPOINT_MAX];
 static InitedAddr dr[8];
 static uint8_t cpu_amount;
 
+static const char *kd_api_names[] = {
+    "DbgKdReadVirtualMemoryApi",
+    "DbgKdWriteVirtualMemoryApi",
+    "DbgKdGetContextApi",
+    "DbgKdSetContextApi",
+    "DbgKdWriteBreakPointApi",
+    "DbgKdRestoreBreakPointApi",
+    "DbgKdContinueApi",
+    "DbgKdReadControlSpaceApi",
+    "DbgKdWriteControlSpaceApi",
+    "DbgKdReadIoSpaceApi",
+    "DbgKdWriteIoSpaceApi",
+    "DbgKdRebootApi",
+    "DbgKdContinueApi2",
+    "DbgKdReadPhysicalMemoryApi",
+    "DbgKdWritePhysicalMemoryApi",
+    "DbgKdQuerySpecialCallsApi",
+    "DbgKdSetSpecialCallApi",
+    "DbgKdClearSpecialCallsApi",
+    "DbgKdSetInternalBreakPointApi",
+    "DbgKdGetInternalBreakPointApi",
+    "DbgKdReadIoSpaceExtendedApi",
+    "DbgKdWriteIoSpaceExtendedApi",
+    "DbgKdGetVersionApi",
+    "DbgKdWriteBreakPointExApi",
+    "DbgKdRestoreBreakPointExApi",
+    "DbgKdCauseBugCheckApi",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "DbgKdSwitchProcessor",
+    "DbgKdPageInApi",
+    "DbgKdReadMachineSpecificRegister",
+    "DbgKdWriteMachineSpecificRegister",
+    "OldVlm1",
+    "OldVlm2",
+    "DbgKdSearchMemoryApi",
+    "DbgKdGetBusDataApi",
+    "DbgKdSetBusDataApi",
+    "DbgKdCheckLowMemoryApi",
+    "DbgKdClearAllInternalBreakpointsApi",
+    "DbgKdFillMemoryApi",
+    "DbgKdQueryMemoryApi",
+    "DbgKdSwitchPartition",
+    "DbgKdUnknownApi"
+};
+
 int windbg_breakpoint_insert(CPUState *cpu, target_ulong addr)
 {
     int i = 0, err = 0;
@@ -191,6 +241,14 @@ static void windbg_update_dr(CPUState *cpu, target_ulong *new_dr)
             }
         }
     }
+}
+
+const char *kd_api_name(int api_number)
+{
+    if (api_number >= DbgKdMinimumManipulate && api_number < DbgKdMaximumManipulate) {
+        return kd_api_names[api_number - DbgKdMinimumManipulate];
+    }
+    return kd_api_names[DbgKdMaximumManipulate];
 }
 
 CPU_CTRL_ADDRS *kd_get_cpu_ctrl_addrs(CPUState *cpu)

@@ -230,20 +230,22 @@ static void windbg_process_manipulate_packet(Context *ctx)
     }
     case DbgKdReadIoSpaceApi:
     {
-        DBGKD_READ_WRITE_IO64 *io = &m64.u.ReadWriteIo;
+        // DBGKD_READ_WRITE_IO64 *io = &m64.u.ReadWriteIo;
 
-        cpu_physical_memory_rw(io->IoAddress + 0x80000000,
-                               PTR(io->DataValue), io->DataSize, 0);
+        // __inbyte
+        WINDBG_ERROR("Catched unimplemented api: %s",
+                     kd_api_name(m64.ApiNumber));
 
         send_only_m64 = true;
         break;
     }
     case DbgKdWriteIoSpaceApi:
     {
-        DBGKD_READ_WRITE_IO64 *io = &m64.u.ReadWriteIo;
+        // DBGKD_READ_WRITE_IO64 *io = &m64.u.ReadWriteIo;
 
-        cpu_physical_memory_rw(io->IoAddress + 0x80000000,
-                               PTR(io->DataValue), io->DataSize, 1);
+        // __outbyte
+        WINDBG_ERROR("Catched unimplemented api: %s",
+                     kd_api_name(m64.ApiNumber));
 
         send_only_m64 = true;
         break;
@@ -334,7 +336,8 @@ static void windbg_process_manipulate_packet(Context *ctx)
         break;
     }
     default:
-        WINDBG_ERROR("Catch unsupported api 0x%x", m64.ApiNumber);
+        WINDBG_ERROR("Catched unimplemented api: %s",
+                     kd_api_name(m64.ApiNumber));
 
         return;
     }
@@ -357,7 +360,7 @@ static void windbg_process_data_packet(Context *ctx)
 
         break;
     default:
-        WINDBG_ERROR("Catch unsupported data packet 0x%x",
+        WINDBG_ERROR("Catched unsupported data packet 0x%x",
                      ctx->packet.PacketType);
 
         cntrl_packet_id = 0;
@@ -386,7 +389,7 @@ static void windbg_process_control_packet(Context *ctx)
         break;
     }
     default:
-        WINDBG_ERROR("Catch unsupported control packet 0x%x",
+        WINDBG_ERROR("Catched unsupported control packet 0x%x",
                      ctx->packet.PacketType);
 
         cntrl_packet_id = 0;
