@@ -21,20 +21,20 @@ typedef enum ParsingState {
     STATE_TRAILING_BYTE,
 } ParsingState;
 
-typedef struct Context {
+typedef struct ParsingContext {
     // index in the current buffer,
     // which depends on the current state
     int index;
     ParsingState state;
     KD_PACKET packet;
     uint8_t data[PACKET_MAX_SIZE];
-} Context;
+} ParsingContext;
 
 static uint32_t cntrl_packet_id = RESET_PACKET_ID;
 static uint32_t data_packet_id = INITIAL_PACKET_ID;
 static uint8_t lock = 0;
 
-static Context chr_ctx = { .state = STATE_LEADER };
+static ParsingContext chr_ctx = { .state = STATE_LEADER };
 
 static CharDriverState *windbg_chr = NULL;
 
@@ -89,110 +89,87 @@ static void windbg_send_control_packet(uint16_t type)
     cntrl_packet_id ^= 1;
 }
 
-static void windbg_process_manipulate_packet(Context *ctx)
+static void windbg_process_manipulate_packet(ParsingContext *ctx)
 {
-    uint8_t packet[PACKET_MAX_SIZE];
-    size_t packet_size = 0,
-           extra_data_size = 0,
-           m64_size = sizeof(DBGKD_MANIPULATE_STATE64);
+    const size_t m64_size = sizeof(DBGKD_MANIPULATE_STATE64);
 
-    bool send_only_m64;
+    PacketData pd;
+    pd.m64 = (DBGKD_MANIPULATE_STATE64 *) ctx->data;
+    pd.extra_size = ctx->packet.ByteCount - m64_size;
+    pd.extra = ctx->data + m64_size;
+    pd.m64->ReturnStatus = STATUS_SUCCESS;
+
     int err = 0;
+    CPUState *cpu = qemu_get_cpu(pd.m64->Processor < get_cpu_amount() ?
+                                 pd.m64->Processor : 0);
 
-    DBGKD_MANIPULATE_STATE64 m64;
-    memset(packet, 0, PACKET_MAX_SIZE);
-    memcpy(&m64, ctx->data, m64_size);
-
-    CPUState *cpu = qemu_get_cpu(m64.Processor < get_cpu_amount() ?
-                                 m64.Processor : 0);
-
-    extra_data_size = ctx->packet.ByteCount - m64_size;
-
-    m64.ReturnStatus = STATUS_SUCCESS;
-
-    switch(m64.ApiNumber) {
+    switch(pd.m64->ApiNumber) {
 
     case DbgKdReadVirtualMemoryApi:
     {
-        DBGKD_READ_MEMORY64 *mem = &m64.u.ReadMemory;
+        DBGKD_READ_MEMORY64 *mem = &pd.m64->u.ReadMemory;
 
         mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
         err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
-                                  M64_OFFSET(packet), mem->ActualBytesRead, 0);
-        packet_size = m64_size + mem->ActualBytesRead;
+                                  pd.extra, mem->ActualBytesRead, 0);
+        pd.extra_size = mem->ActualBytesRead;
 
         if (err) {
-            m64.ReturnStatus = STATUS_UNSUCCESSFUL;
+            pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
 
             // tmp checking
             WINDBG_DEBUG("ReadVirtualMemoryApi: No physical page mapped: " FMT_ADDR,
                          (target_ulong) mem->TargetBaseAddress);
         }
 
-        send_only_m64 = false;
         break;
     }
     case DbgKdWriteVirtualMemoryApi:
     {
-        DBGKD_WRITE_MEMORY64 *mem = &m64.u.WriteMemory;
+        DBGKD_WRITE_MEMORY64 *mem = &pd.m64->u.WriteMemory;
 
-        mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
+        mem->ActualBytesWritten = MIN(pd.extra_size, mem->TransferCount);
         err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
-                                  M64_OFFSET(ctx->data), mem->ActualBytesWritten, 1);
+                                  pd.extra, mem->ActualBytesWritten, 1);
 
         if (err) {
-            m64.ReturnStatus = STATUS_UNSUCCESSFUL;
+            pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
         }
+        pd.extra_size = 0;
 
-        send_only_m64 = true;
         break;
     }
     case DbgKdGetContextApi:
     {
-        packet_size = sizeof(CPU_CONTEXT);
-        memcpy(M64_OFFSET(packet), kd_get_context(cpu), packet_size);
-        packet_size += m64_size;
+        pd.extra_size = sizeof(CPU_CONTEXT);
+        memcpy(pd.extra, kd_get_context(cpu), pd.extra_size);
 
-        send_only_m64 = false;
         break;
     }
     case DbgKdSetContextApi:
     {
-        kd_set_context(cpu, M64_OFFSET(ctx->data),
-                       MIN(extra_data_size, sizeof(CPU_CONTEXT)));
+        kd_set_context(cpu, pd.extra, MIN(pd.extra_size, sizeof(CPU_CONTEXT)));
+        pd.extra_size = 0;
 
-        send_only_m64 = true;
         break;
     }
     case DbgKdWriteBreakPointApi:
     {
-        DBGKD_WRITE_BREAKPOINT64 *bp = &m64.u.WriteBreakPoint;
+        pd.m64->ReturnStatus = windbg_write_breakpoint(cpu, &pd);
+        pd.extra_size = 0;
 
-        bp->BreakPointHandle = windbg_breakpoint_insert(cpu, bp->BreakPointAddress) + 1;
-
-        if (bp->BreakPointHandle <= 0) {
-            m64.ReturnStatus = STATUS_UNSUCCESSFUL;
-        }
-
-        send_only_m64 = true;
         break;
     }
     case DbgKdRestoreBreakPointApi:
     {
-        DBGKD_RESTORE_BREAKPOINT *bp = &m64.u.RestoreBreakPoint;
+        pd.m64->ReturnStatus = windbg_restore_breakpoint(cpu, &pd);
+        pd.extra_size = 0;
 
-        int err = windbg_breakpoint_remove(cpu, bp->BreakPointHandle - 1);
-
-        if (err) {
-            m64.ReturnStatus = STATUS_UNSUCCESSFUL;
-        }
-
-        send_only_m64 = true;
         break;
     }
     case DbgKdReadControlSpaceApi:
     {
-        DBGKD_READ_MEMORY64 *mem = &m64.u.ReadMemory;
+        DBGKD_READ_MEMORY64 *mem = &pd.m64->u.ReadMemory;
 
         // tmp checking
         if (mem->TargetBaseAddress != 0x2f4 && mem->TargetBaseAddress != 0x2cc) {
@@ -202,17 +179,15 @@ static void windbg_process_manipulate_packet(Context *ctx)
 
         mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
         uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
-        memcpy(M64_OFFSET(packet),
-               ((uint8_t *) kd_get_kspecial_registers(cpu)) + offset,
+        memcpy(pd.extra, ((uint8_t *) kd_get_kspecial_registers(cpu)) + offset,
                mem->ActualBytesRead);
-        packet_size = m64_size + mem->ActualBytesRead;
+        pd.extra_size = mem->ActualBytesRead;
 
-        send_only_m64 = false;
         break;
     }
     case DbgKdWriteControlSpaceApi:
     {
-        DBGKD_WRITE_MEMORY64 *mem = &m64.u.WriteMemory;
+        DBGKD_WRITE_MEMORY64 *mem = &pd.m64->u.WriteMemory;
 
         // tmp checking
         if (mem->TargetBaseAddress != 0x2f4 && mem->TargetBaseAddress != 0x2cc) {
@@ -220,39 +195,40 @@ static void windbg_process_manipulate_packet(Context *ctx)
                          (target_ulong) mem->TargetBaseAddress);
         }
 
-        mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
+        mem->ActualBytesWritten = MIN(pd.extra_size, mem->TransferCount);
         uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
-        kd_set_kspecial_registers(cpu, M64_OFFSET(ctx->data),
-                                  mem->ActualBytesWritten, offset);
+        kd_set_kspecial_registers(cpu, pd.extra, mem->ActualBytesWritten, offset);
+        pd.extra_size = 0;
 
-        send_only_m64 = true;
         break;
     }
     case DbgKdReadIoSpaceApi:
     {
-        // DBGKD_READ_WRITE_IO64 *io = &m64.u.ReadWriteIo;
+        // DBGKD_READ_WRITE_IO64 *io = &pd.m64->u.ReadWriteIo;
 
         // __inbyte
         WINDBG_ERROR("Catched unimplemented api: %s",
-                     kd_api_name(m64.ApiNumber));
+                     kd_api_name(pd.m64->ApiNumber));
+        pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd.extra_size = 0;
 
-        send_only_m64 = true;
         break;
     }
     case DbgKdWriteIoSpaceApi:
     {
-        // DBGKD_READ_WRITE_IO64 *io = &m64.u.ReadWriteIo;
+        // DBGKD_READ_WRITE_IO64 *io = &pd.m64->u.ReadWriteIo;
 
         // __outbyte
         WINDBG_ERROR("Catched unimplemented api: %s",
-                     kd_api_name(m64.ApiNumber));
+                     kd_api_name(pd.m64->ApiNumber));
+        pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd.extra_size = 0;
 
-        send_only_m64 = true;
         break;
     }
     case DbgKdContinueApi2:
     {
-        cpu_single_step(cpu, m64.u.Continue2.ControlSet.TraceFlag ?
+        cpu_single_step(cpu, pd.m64->u.Continue2.ControlSet.TraceFlag ?
                         SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0);
 
         if (!runstate_needs_reset()) {
@@ -263,67 +239,69 @@ static void windbg_process_manipulate_packet(Context *ctx)
     }
     case DbgKdReadPhysicalMemoryApi:
     {
-        DBGKD_READ_MEMORY64 *mem = &m64.u.ReadMemory;
+        DBGKD_READ_MEMORY64 *mem = &pd.m64->u.ReadMemory;
 
         mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
-        cpu_physical_memory_rw(mem->TargetBaseAddress, M64_OFFSET(packet),
+        cpu_physical_memory_rw(mem->TargetBaseAddress, pd.extra,
                                mem->ActualBytesRead, 0);
-        packet_size = m64_size + mem->ActualBytesRead;
+        pd.extra_size = mem->ActualBytesRead;
 
-        send_only_m64 = false;
         break;
     }
     case DbgKdWritePhysicalMemoryApi:
     {
-        DBGKD_WRITE_MEMORY64 *mem = &m64.u.WriteMemory;
+        DBGKD_WRITE_MEMORY64 *mem = &pd.m64->u.WriteMemory;
 
-        mem->ActualBytesWritten = MIN(extra_data_size, mem->TransferCount);
-        cpu_physical_memory_rw(mem->TargetBaseAddress, M64_OFFSET(ctx->data),
+        mem->ActualBytesWritten = MIN(pd.extra_size, mem->TransferCount);
+        cpu_physical_memory_rw(mem->TargetBaseAddress, pd.extra,
                                mem->ActualBytesWritten, 1);
+        pd.extra_size = 0;
 
-        send_only_m64 = true;
         break;
     }
     case DbgKdGetVersionApi:
     {
-        err = cpu_memory_rw_debug(cpu, cc_addrs->Version, PTR(m64) + 0x10,
+        err = cpu_memory_rw_debug(cpu, cc_addrs->Version, (uint8_t *) pd.m64 + 0x10,
                                   m64_size - 0x10, 0);
-
         if (err) {
             WINDBG_ERROR("GetVersionApi: " FMT_ERR, err);
+            pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
         }
+        pd.extra_size = 0;
 
-        send_only_m64 = true;
         break;
     }
     case DbgKdReadMachineSpecificRegister:
     {
-        DBGKD_READ_WRITE_MSR *msr = &m64.u.ReadWriteMsr;
+        pd.m64->ReturnStatus = windbg_read_msr(cpu, &pd);
+        pd.extra_size = 0;
 
-        windbg_read_msr(cpu, msr);
-
-        send_only_m64 = true;
         break;
     }
     case DbgKdWriteMachineSpecificRegister:
     {
-        DBGKD_READ_WRITE_MSR *msr = &m64.u.ReadWriteMsr;
+        pd.m64->ReturnStatus = windbg_write_msr(cpu, &pd);
+        pd.extra_size = 0;
 
-        windbg_write_msr(cpu, msr);
+        break;
+    }
+    case DbgKdSearchMemoryApi:
+    {
+        pd.m64->ReturnStatus = windbg_search_memory(cpu, &pd);
+        pd.extra_size = 0;
 
-        send_only_m64 = true;
         break;
     }
     case DbgKdClearAllInternalBreakpointsApi:
     {
         // Unsupported yet!!! But need for connect
+        pd.extra_size = 0;
 
-        send_only_m64 = true;
         break;
     }
     case DbgKdQueryMemoryApi:
     {
-        DBGKD_QUERY_MEMORY *mem = &m64.u.QueryMemory;
+        DBGKD_QUERY_MEMORY *mem = &pd.m64->u.QueryMemory;
 
         if (mem->AddressSpace == DBGKD_QUERY_MEMORY_VIRTUAL) {
             mem->AddressSpace = DBGKD_QUERY_MEMORY_PROCESS;
@@ -331,27 +309,22 @@ static void windbg_process_manipulate_packet(Context *ctx)
                          DBGKD_QUERY_MEMORY_WRITE |
                          DBGKD_QUERY_MEMORY_EXECUTE;
         }
+        pd.extra_size = 0;
 
-        send_only_m64 = true;
         break;
     }
     default:
         WINDBG_ERROR("Catched unimplemented api: %s",
-                     kd_api_name(m64.ApiNumber));
+                     kd_api_name(pd.m64->ApiNumber));
+        pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
 
         return;
     }
 
-    if (send_only_m64) {
-        windbg_send_data_packet(PTR(m64), m64_size, ctx->packet.PacketType);
-    }
-    else {
-        memcpy(packet, &m64, m64_size);
-        windbg_send_data_packet(packet, packet_size, ctx->packet.PacketType);
-    }
+    windbg_send_data_packet(ctx->data, pd.extra_size + m64_size, ctx->packet.PacketType);
 }
 
-static void windbg_process_data_packet(Context *ctx)
+static void windbg_process_data_packet(ParsingContext *ctx)
 {
     switch (ctx->packet.PacketType) {
     case PACKET_TYPE_KD_STATE_MANIPULATE:
@@ -370,7 +343,7 @@ static void windbg_process_data_packet(Context *ctx)
     }
 }
 
-static void windbg_process_control_packet(Context *ctx)
+static void windbg_process_control_packet(ParsingContext *ctx)
 {
     switch (ctx->packet.PacketType) {
     case PACKET_TYPE_KD_ACKNOWLEDGE:
@@ -419,7 +392,7 @@ static void windbg_vm_stop(void)
     windbg_bp_handler(qemu_get_cpu(0));
 }
 
-static void windbg_read_byte(Context *ctx, uint8_t byte)
+static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
 {
     switch (ctx->state) {
     case STATE_LEADER:

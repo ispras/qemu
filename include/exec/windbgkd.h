@@ -208,6 +208,7 @@ typedef ntstatus_t *pntstatus_t;
 //
 #define STATUS_SUCCESS          ((ntstatus_t) 0x00000000)
 #define STATUS_UNSUCCESSFUL     ((ntstatus_t) 0xC0000001L)
+#define STATUS_NO_MORE_ENTRIES  ((ntstatus_t) 0x8000001AL)
 
 //
 // KD Packet Structure

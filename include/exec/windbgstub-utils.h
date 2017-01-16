@@ -22,10 +22,10 @@
 #define COUT_PSTRUCT(var) COUT_ARRAY(var, 1)
 #define COUT_ARRAY(var, count) _COUT_STRUCT(var, sizeof(*(var)), count)
 
-#define _COUT_STRUCT(var, size, count) {                 \
-    COUT(#var " ");                                      \
-    COUT_LN("[size: %d, count: %d]", (int) size, count); \
-    _COUT_BLOCK(var, size * count);                      \
+#define _COUT_STRUCT(var, size, count) {                           \
+    COUT(#var " ");                                                \
+    COUT_LN("[size: %d, count: %d]", (int) (size), (int) (count)); \
+    _COUT_BLOCK(var, size * count);                                \
 }
 
 #define _COUT_BLOCK(ptr, size) {     \
@@ -298,6 +298,23 @@ typedef struct SizedBuf {
     size_t size;
 } SizedBuf;
 
+typedef struct InitedAddr {
+    target_ulong addr;
+    bool is_init;
+} InitedAddr;
+
+typedef struct PacketData {
+    DBGKD_MANIPULATE_STATE64 *m64;
+    uint8_t *extra;
+    uint16_t extra_size;
+} PacketData;
+
+ntstatus_t windbg_write_breakpoint(CPUState *cpu, PacketData *pd);
+ntstatus_t windbg_restore_breakpoint(CPUState *cpu, PacketData *pd);
+ntstatus_t windbg_read_msr(CPUState *cpu, PacketData *pd);
+ntstatus_t windbg_write_msr(CPUState *cpu, PacketData *pd);
+ntstatus_t windbg_search_memory(CPUState *cpu, PacketData *pd);
+
 const char *kd_api_name(int api_number);
 
 CPU_CTRL_ADDRS         *kd_get_cpu_ctrl_addrs(CPUState *cpu);
@@ -309,16 +326,10 @@ CPU_KSPECIAL_REGISTERS *kd_get_kspecial_registers(CPUState *cpu);
 void kd_set_context(CPUState *cpu, uint8_t *data, int len);
 void kd_set_kspecial_registers(CPUState *cpu, uint8_t *data, int len, int offset);
 
-int windbg_breakpoint_insert(CPUState *cpu, target_ulong addr);
-int windbg_breakpoint_remove(CPUState *cpu, uint8_t index);
-
 void windbg_dump(const char *fmt, ...);
 
 void windbg_on_init(void);
 void windbg_on_exit(void);
-
-void windbg_read_msr(CPUState *cpu, DBGKD_READ_WRITE_MSR *msr);
-void windbg_write_msr(CPUState *cpu, DBGKD_READ_WRITE_MSR *msr);
 
 uint8_t get_cpu_amount(void);
 uint32_t compute_checksum(uint8_t *data, uint16_t len);

@@ -15,11 +15,6 @@
     (_len == 2) ? 8 : _len + 1;                                  \
 })
 
-typedef struct InitedAddr {
-    target_ulong addr;
-    bool is_init;
-} InitedAddr;
-
 typedef struct KDData {
     CPU_CTRL_ADDRS cca;
     SizedBuf lssc;
@@ -83,9 +78,12 @@ static const char *kd_api_names[] = {
     "DbgKdUnknownApi"
 };
 
-int windbg_breakpoint_insert(CPUState *cpu, target_ulong addr)
+ntstatus_t windbg_write_breakpoint(CPUState *cpu, PacketData *pd)
 {
+    DBGKD_WRITE_BREAKPOINT64 *m64cu = &pd->m64->u.WriteBreakPoint;
+    target_ulong addr = m64cu->BreakPointAddress - 1;
     int i = 0, err = 0;
+
     for (; i < KD_BREAKPOINT_MAX; ++i) {
         if (!bps[i].is_init) {
             err = cpu_breakpoint_insert(cpu, addr, BP_GDB, NULL);
@@ -93,38 +91,395 @@ int windbg_breakpoint_insert(CPUState *cpu, target_ulong addr)
                 tb_flush(cpu);
                 bps[i].addr = addr;
                 bps[i].is_init = true;
-                WINDBG_DEBUG("bp_insert: " FMT_ADDR, addr);
-                return i;
+                WINDBG_DEBUG("write_breakpoint: " FMT_ADDR, addr);
+                break;
             }
             else {
-                WINDBG_ERROR("bp_insert: " FMT_ADDR ", " FMT_ERR, addr, err);
-                return -1;
+                WINDBG_ERROR("write_breakpoint: " FMT_ADDR ", " FMT_ERR, addr, err);
+                return STATUS_UNSUCCESSFUL;
             }
         }
         else if (addr == bps[i].addr) {
-            return i;
+            break;
         }
     }
 
-    WINDBG_ERROR("bp_insert: All breakpoints occupied");
-    return -1;
+    if (!err) {
+        m64cu->BreakPointHandle = i + 1;
+        return STATUS_SUCCESS;
+    }
+
+    WINDBG_ERROR("write_breakpoint: All breakpoints occupied");
+    return STATUS_UNSUCCESSFUL;
 }
 
-int windbg_breakpoint_remove(CPUState *cpu, uint8_t index)
+ntstatus_t windbg_restore_breakpoint(CPUState *cpu, PacketData *pd)
 {
+    DBGKD_RESTORE_BREAKPOINT *m64cu = &pd->m64->u.RestoreBreakPoint;
+    uint8_t index = m64cu->BreakPointHandle - 1;
     int err = -1;
+
     if (bps[index].is_init) {
         err = cpu_breakpoint_remove(cpu, bps[index].addr, BP_GDB);
         if (!err) {
-            bps[index].is_init = false;
-            WINDBG_DEBUG("bp_remove: " FMT_ADDR ", index %d",
+            WINDBG_DEBUG("restore_breakpoint: " FMT_ADDR ", index %d",
                          bps[index].addr, index);
         }
         else {
-            WINDBG_ERROR("bp_remove: " FMT_ADDR ", index %d, " FMT_ERR,
+            WINDBG_ERROR("restore_breakpoint: " FMT_ADDR ", index %d, " FMT_ERR,
                          bps[index].addr, index, err);
         }
+        bps[index].is_init = false;
+        return STATUS_SUCCESS;
     }
+    return STATUS_UNSUCCESSFUL;
+}
+
+ntstatus_t windbg_read_msr(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_READ_WRITE_MSR *m64cu = &pd->m64->u.ReadWriteMsr;
+    CPUArchState *env = cpu->env_ptr;
+    uint64_t val;
+
+    cpu_svm_check_intercept_param(env, SVM_EXIT_MSR, 0);
+
+    switch (m64cu->Msr) {
+    case MSR_IA32_SYSENTER_CS:
+        val = env->sysenter_cs;
+        break;
+    case MSR_IA32_SYSENTER_ESP:
+        val = env->sysenter_esp;
+        break;
+    case MSR_IA32_SYSENTER_EIP:
+        val = env->sysenter_eip;
+        break;
+    case MSR_IA32_APICBASE:
+        val = cpu_get_apic_base(x86_env_get_cpu(env)->apic_state);
+        break;
+    case MSR_EFER:
+        val = env->efer;
+        break;
+    case MSR_STAR:
+        val = env->star;
+        break;
+    case MSR_PAT:
+        val = env->pat;
+        break;
+    case MSR_VM_HSAVE_PA:
+        val = env->vm_hsave;
+        break;
+    case MSR_IA32_PERF_STATUS:
+        /* tsc_increment_by_tick */
+        val = 1000ULL;
+        /* CPU multiplier */
+        val |= (((uint64_t)4ULL) << 40);
+        break;
+  #ifdef TARGET_X86_64
+    case MSR_LSTAR:
+        val = env->lstar;
+        break;
+    case MSR_CSTAR:
+        val = env->cstar;
+        break;
+    case MSR_FMASK:
+        val = env->fmask;
+        break;
+    case MSR_FSBASE:
+        val = env->segs[R_FS].base;
+        break;
+    case MSR_GSBASE:
+        val = env->segs[R_GS].base;
+        break;
+    case MSR_KERNELGSBASE:
+        val = env->kernelgsbase;
+        break;
+    case MSR_TSC_AUX:
+        val = env->tsc_aux;
+        break;
+  #endif
+    case MSR_MTRRphysBase(0):
+    case MSR_MTRRphysBase(1):
+    case MSR_MTRRphysBase(2):
+    case MSR_MTRRphysBase(3):
+    case MSR_MTRRphysBase(4):
+    case MSR_MTRRphysBase(5):
+    case MSR_MTRRphysBase(6):
+    case MSR_MTRRphysBase(7):
+        val = env->mtrr_var[((uint32_t)env->regs[R_ECX] -
+                             MSR_MTRRphysBase(0)) / 2].base;
+        break;
+    case MSR_MTRRphysMask(0):
+    case MSR_MTRRphysMask(1):
+    case MSR_MTRRphysMask(2):
+    case MSR_MTRRphysMask(3):
+    case MSR_MTRRphysMask(4):
+    case MSR_MTRRphysMask(5):
+    case MSR_MTRRphysMask(6):
+    case MSR_MTRRphysMask(7):
+        val = env->mtrr_var[((uint32_t)env->regs[R_ECX] -
+                             MSR_MTRRphysMask(0)) / 2].mask;
+        break;
+    case MSR_MTRRfix64K_00000:
+        val = env->mtrr_fixed[0];
+        break;
+    case MSR_MTRRfix16K_80000:
+    case MSR_MTRRfix16K_A0000:
+        val = env->mtrr_fixed[(uint32_t)env->regs[R_ECX] -
+                              MSR_MTRRfix16K_80000 + 1];
+        break;
+    case MSR_MTRRfix4K_C0000:
+    case MSR_MTRRfix4K_C8000:
+    case MSR_MTRRfix4K_D0000:
+    case MSR_MTRRfix4K_D8000:
+    case MSR_MTRRfix4K_E0000:
+    case MSR_MTRRfix4K_E8000:
+    case MSR_MTRRfix4K_F0000:
+    case MSR_MTRRfix4K_F8000:
+        val = env->mtrr_fixed[(uint32_t)env->regs[R_ECX] -
+                              MSR_MTRRfix4K_C0000 + 3];
+        break;
+    case MSR_MTRRdefType:
+        val = env->mtrr_deftype;
+        break;
+    case MSR_MTRRcap:
+        if (env->features[FEAT_1_EDX] & CPUID_MTRR) {
+            val = MSR_MTRRcap_VCNT | MSR_MTRRcap_FIXRANGE_SUPPORT |
+                MSR_MTRRcap_WC_SUPPORTED;
+        } else {
+            /* XXX: exception? */
+            val = 0;
+        }
+        break;
+    case MSR_MCG_CAP:
+        val = env->mcg_cap;
+        break;
+    case MSR_MCG_CTL:
+        if (env->mcg_cap & MCG_CTL_P) {
+            val = env->mcg_ctl;
+        } else {
+            val = 0;
+        }
+        break;
+    case MSR_MCG_STATUS:
+        val = env->mcg_status;
+        break;
+    case MSR_IA32_MISC_ENABLE:
+        val = env->msr_ia32_misc_enable;
+        break;
+    case MSR_IA32_BNDCFGS:
+        val = env->msr_bndcfgs;
+        break;
+    default:
+        if ((uint32_t)env->regs[R_ECX] >= MSR_MC0_CTL
+            && (uint32_t)env->regs[R_ECX] < MSR_MC0_CTL +
+            (4 * env->mcg_cap & 0xff)) {
+            uint32_t offset = (uint32_t)env->regs[R_ECX] - MSR_MC0_CTL;
+            val = env->mce_banks[offset];
+            break;
+        }
+        /* XXX: exception? */
+        val = 0;
+        break;
+    }
+
+    m64cu->DataValueLow  = UINT32(val, 0);
+    m64cu->DataValueHigh = UINT32(val, 1);
+    return STATUS_SUCCESS;
+}
+
+ntstatus_t windbg_write_msr(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_READ_WRITE_MSR *m64cu = &pd->m64->u.ReadWriteMsr;
+    CPUArchState *env = cpu->env_ptr;
+    uint64_t val;
+
+    cpu_svm_check_intercept_param(env, SVM_EXIT_MSR, 1);
+
+    val = m64cu->DataValueLow | ((uint64_t) m64cu->DataValueHigh) << 32;
+
+    switch (m64cu->Msr) {
+    case MSR_IA32_SYSENTER_CS:
+        env->sysenter_cs = val & 0xffff;
+        break;
+    case MSR_IA32_SYSENTER_ESP:
+        env->sysenter_esp = val;
+        break;
+    case MSR_IA32_SYSENTER_EIP:
+        env->sysenter_eip = val;
+        break;
+    case MSR_IA32_APICBASE:
+        cpu_set_apic_base(x86_env_get_cpu(env)->apic_state, val);
+        break;
+    case MSR_EFER:
+        {
+            uint64_t update_mask;
+
+            update_mask = 0;
+            if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_SYSCALL) {
+                update_mask |= MSR_EFER_SCE;
+            }
+            if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_LM) {
+                update_mask |= MSR_EFER_LME;
+            }
+            if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_FFXSR) {
+                update_mask |= MSR_EFER_FFXSR;
+            }
+            if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_NX) {
+                update_mask |= MSR_EFER_NXE;
+            }
+            if (env->features[FEAT_8000_0001_ECX] & CPUID_EXT3_SVM) {
+                update_mask |= MSR_EFER_SVME;
+            }
+            if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_FFXSR) {
+                update_mask |= MSR_EFER_FFXSR;
+            }
+            cpu_load_efer(env, (env->efer & ~update_mask) |
+                          (val & update_mask));
+        }
+        break;
+    case MSR_STAR:
+        env->star = val;
+        break;
+    case MSR_PAT:
+        env->pat = val;
+        break;
+    case MSR_VM_HSAVE_PA:
+        env->vm_hsave = val;
+        break;
+  #ifdef TARGET_X86_64
+    case MSR_LSTAR:
+        env->lstar = val;
+        break;
+    case MSR_CSTAR:
+        env->cstar = val;
+        break;
+    case MSR_FMASK:
+        env->fmask = val;
+        break;
+    case MSR_FSBASE:
+        env->segs[R_FS].base = val;
+        break;
+    case MSR_GSBASE:
+        env->segs[R_GS].base = val;
+        break;
+    case MSR_KERNELGSBASE:
+        env->kernelgsbase = val;
+        break;
+  #endif
+    case MSR_MTRRphysBase(0):
+    case MSR_MTRRphysBase(1):
+    case MSR_MTRRphysBase(2):
+    case MSR_MTRRphysBase(3):
+    case MSR_MTRRphysBase(4):
+    case MSR_MTRRphysBase(5):
+    case MSR_MTRRphysBase(6):
+    case MSR_MTRRphysBase(7):
+        env->mtrr_var[((uint32_t)env->regs[R_ECX] -
+                       MSR_MTRRphysBase(0)) / 2].base = val;
+        break;
+    case MSR_MTRRphysMask(0):
+    case MSR_MTRRphysMask(1):
+    case MSR_MTRRphysMask(2):
+    case MSR_MTRRphysMask(3):
+    case MSR_MTRRphysMask(4):
+    case MSR_MTRRphysMask(5):
+    case MSR_MTRRphysMask(6):
+    case MSR_MTRRphysMask(7):
+        env->mtrr_var[((uint32_t)env->regs[R_ECX] -
+                       MSR_MTRRphysMask(0)) / 2].mask = val;
+        break;
+    case MSR_MTRRfix64K_00000:
+        env->mtrr_fixed[(uint32_t)env->regs[R_ECX] -
+                        MSR_MTRRfix64K_00000] = val;
+        break;
+    case MSR_MTRRfix16K_80000:
+    case MSR_MTRRfix16K_A0000:
+        env->mtrr_fixed[(uint32_t)env->regs[R_ECX] -
+                        MSR_MTRRfix16K_80000 + 1] = val;
+        break;
+    case MSR_MTRRfix4K_C0000:
+    case MSR_MTRRfix4K_C8000:
+    case MSR_MTRRfix4K_D0000:
+    case MSR_MTRRfix4K_D8000:
+    case MSR_MTRRfix4K_E0000:
+    case MSR_MTRRfix4K_E8000:
+    case MSR_MTRRfix4K_F0000:
+    case MSR_MTRRfix4K_F8000:
+        env->mtrr_fixed[(uint32_t)env->regs[R_ECX] -
+                        MSR_MTRRfix4K_C0000 + 3] = val;
+        break;
+    case MSR_MTRRdefType:
+        env->mtrr_deftype = val;
+        break;
+    case MSR_MCG_STATUS:
+        env->mcg_status = val;
+        break;
+    case MSR_MCG_CTL:
+        if ((env->mcg_cap & MCG_CTL_P)
+            && (val == 0 || val == ~(uint64_t)0)) {
+            env->mcg_ctl = val;
+        }
+        break;
+    case MSR_TSC_AUX:
+        env->tsc_aux = val;
+        break;
+    case MSR_IA32_MISC_ENABLE:
+        env->msr_ia32_misc_enable = val;
+        break;
+    case MSR_IA32_BNDCFGS:
+        /* FIXME: #GP if reserved bits are set.  */
+        /* FIXME: Extend highest implemented bit of linear address.  */
+        env->msr_bndcfgs = val;
+        cpu_sync_bndcs_hflags(env);
+        break;
+    default:
+        if ((uint32_t)env->regs[R_ECX] >= MSR_MC0_CTL
+            && (uint32_t)env->regs[R_ECX] < MSR_MC0_CTL +
+            (4 * env->mcg_cap & 0xff)) {
+            uint32_t offset = (uint32_t)env->regs[R_ECX] - MSR_MC0_CTL;
+            if ((offset & 0x3) != 0
+                || (val == 0 || val == ~(uint64_t)0)) {
+                env->mce_banks[offset] = val;
+            }
+            break;
+        }
+        /* XXX: exception? */
+        break;
+    }
+    return STATUS_SUCCESS;
+}
+
+ntstatus_t windbg_search_memory(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_SEARCH_MEMORY *m64cu = &pd->m64->u.SearchMemory;
+    int s_len = MAX(1, m64cu->SearchLength);
+    int p_len = MIN(m64cu->PatternLength, pd->extra_size);
+
+    SizedBuf mem;
+    mem.size = s_len - 1 + p_len;
+    mem.data = g_malloc0(mem.size);
+
+    ntstatus_t err;
+    err = cpu_memory_rw_debug(cpu, m64cu->SearchAddress, mem.data, mem.size, 0);
+    if (!err) {
+        int i;
+        err = STATUS_NO_MORE_ENTRIES;
+        for (i = 0; i < s_len; ++i) {
+            if (memcmp(mem.data + i, pd->extra, p_len) == 0) {
+                m64cu->FoundAddress = m64cu->SearchAddress + i;
+                err = STATUS_SUCCESS;
+                break;
+            }
+        }
+    }
+    else {
+        // tmp checking
+        WINDBG_DEBUG("search_memory: No physical page mapped: " FMT_ADDR,
+                     (target_ulong) m64cu->SearchAddress);
+        err = STATUS_UNSUCCESSFUL;
+    }
+
+    g_free(mem.data);
     return err;
 }
 
@@ -135,14 +490,14 @@ static void windbg_breakpoint_remove_range(CPUState *cpu, target_ulong base, tar
         if (bps[i].is_init && bps[i].addr >= base && bps[i].addr < limit) {
             err = cpu_breakpoint_remove(cpu, bps[i].addr, BP_GDB);
             if (!err) {
-                bps[i].is_init = false;
-                WINDBG_DEBUG("bp_remove: " FMT_ADDR ", index %d",
+                WINDBG_DEBUG("breakpoint_remove_range: " FMT_ADDR ", index %d",
                             bps[i].addr, i);
             }
             else {
-                WINDBG_ERROR("bp_remove: " FMT_ADDR ", index %d, " FMT_ERR,
+                WINDBG_ERROR("breakpoint_remove_range: " FMT_ADDR ", index %d, " FMT_ERR,
                             bps[i].addr, i, err);
             }
+            bps[i].is_init = false;
         }
     }
 }
@@ -161,16 +516,16 @@ static void windbg_watchpoint_insert(CPUState *cpu, target_ulong addr, int len, 
         err = cpu_breakpoint_insert(cpu, addr, BP_GDB, NULL);
         break;
     default:
-        WINDBG_ERROR("wp_insert: Unknown wp type 0x%x", type);
+        WINDBG_ERROR("watchpoint_insert: Unknown wp type 0x%x", type);
         break;
     }
 
     if (!err) {
-        WINDBG_DEBUG("wp_insert: " FMT_ADDR ", len %d, type 0x%x",
+        WINDBG_DEBUG("watchpoint_insert: " FMT_ADDR ", len %d, type 0x%x",
                      addr, len, type);
     }
     else {
-        WINDBG_ERROR("wp_insert: " FMT_ADDR ", len %d, type 0x%x, " FMT_ERR,
+        WINDBG_ERROR("watchpoint_insert: " FMT_ADDR ", len %d, type 0x%x, " FMT_ERR,
                      addr, len, type, err);
     }
 }
@@ -544,316 +899,6 @@ void windbg_on_exit(void)
     if (kd.lssc.data) {
         g_free(kd.lssc.data);
         kd.lssc.data = NULL;
-    }
-}
-
-void windbg_read_msr(CPUState *cpu, DBGKD_READ_WRITE_MSR *msr)
-{
-    CPUArchState *env = cpu->env_ptr;
-    uint64_t val;
-
-    cpu_svm_check_intercept_param(env, SVM_EXIT_MSR, 0);
-
-    switch (msr->Msr) {
-    case MSR_IA32_SYSENTER_CS:
-        val = env->sysenter_cs;
-        break;
-    case MSR_IA32_SYSENTER_ESP:
-        val = env->sysenter_esp;
-        break;
-    case MSR_IA32_SYSENTER_EIP:
-        val = env->sysenter_eip;
-        break;
-    case MSR_IA32_APICBASE:
-        val = cpu_get_apic_base(x86_env_get_cpu(env)->apic_state);
-        break;
-    case MSR_EFER:
-        val = env->efer;
-        break;
-    case MSR_STAR:
-        val = env->star;
-        break;
-    case MSR_PAT:
-        val = env->pat;
-        break;
-    case MSR_VM_HSAVE_PA:
-        val = env->vm_hsave;
-        break;
-    case MSR_IA32_PERF_STATUS:
-        /* tsc_increment_by_tick */
-        val = 1000ULL;
-        /* CPU multiplier */
-        val |= (((uint64_t)4ULL) << 40);
-        break;
-  #ifdef TARGET_X86_64
-    case MSR_LSTAR:
-        val = env->lstar;
-        break;
-    case MSR_CSTAR:
-        val = env->cstar;
-        break;
-    case MSR_FMASK:
-        val = env->fmask;
-        break;
-    case MSR_FSBASE:
-        val = env->segs[R_FS].base;
-        break;
-    case MSR_GSBASE:
-        val = env->segs[R_GS].base;
-        break;
-    case MSR_KERNELGSBASE:
-        val = env->kernelgsbase;
-        break;
-    case MSR_TSC_AUX:
-        val = env->tsc_aux;
-        break;
-  #endif
-    case MSR_MTRRphysBase(0):
-    case MSR_MTRRphysBase(1):
-    case MSR_MTRRphysBase(2):
-    case MSR_MTRRphysBase(3):
-    case MSR_MTRRphysBase(4):
-    case MSR_MTRRphysBase(5):
-    case MSR_MTRRphysBase(6):
-    case MSR_MTRRphysBase(7):
-        val = env->mtrr_var[((uint32_t)env->regs[R_ECX] -
-                             MSR_MTRRphysBase(0)) / 2].base;
-        break;
-    case MSR_MTRRphysMask(0):
-    case MSR_MTRRphysMask(1):
-    case MSR_MTRRphysMask(2):
-    case MSR_MTRRphysMask(3):
-    case MSR_MTRRphysMask(4):
-    case MSR_MTRRphysMask(5):
-    case MSR_MTRRphysMask(6):
-    case MSR_MTRRphysMask(7):
-        val = env->mtrr_var[((uint32_t)env->regs[R_ECX] -
-                             MSR_MTRRphysMask(0)) / 2].mask;
-        break;
-    case MSR_MTRRfix64K_00000:
-        val = env->mtrr_fixed[0];
-        break;
-    case MSR_MTRRfix16K_80000:
-    case MSR_MTRRfix16K_A0000:
-        val = env->mtrr_fixed[(uint32_t)env->regs[R_ECX] -
-                              MSR_MTRRfix16K_80000 + 1];
-        break;
-    case MSR_MTRRfix4K_C0000:
-    case MSR_MTRRfix4K_C8000:
-    case MSR_MTRRfix4K_D0000:
-    case MSR_MTRRfix4K_D8000:
-    case MSR_MTRRfix4K_E0000:
-    case MSR_MTRRfix4K_E8000:
-    case MSR_MTRRfix4K_F0000:
-    case MSR_MTRRfix4K_F8000:
-        val = env->mtrr_fixed[(uint32_t)env->regs[R_ECX] -
-                              MSR_MTRRfix4K_C0000 + 3];
-        break;
-    case MSR_MTRRdefType:
-        val = env->mtrr_deftype;
-        break;
-    case MSR_MTRRcap:
-        if (env->features[FEAT_1_EDX] & CPUID_MTRR) {
-            val = MSR_MTRRcap_VCNT | MSR_MTRRcap_FIXRANGE_SUPPORT |
-                MSR_MTRRcap_WC_SUPPORTED;
-        } else {
-            /* XXX: exception? */
-            val = 0;
-        }
-        break;
-    case MSR_MCG_CAP:
-        val = env->mcg_cap;
-        break;
-    case MSR_MCG_CTL:
-        if (env->mcg_cap & MCG_CTL_P) {
-            val = env->mcg_ctl;
-        } else {
-            val = 0;
-        }
-        break;
-    case MSR_MCG_STATUS:
-        val = env->mcg_status;
-        break;
-    case MSR_IA32_MISC_ENABLE:
-        val = env->msr_ia32_misc_enable;
-        break;
-    case MSR_IA32_BNDCFGS:
-        val = env->msr_bndcfgs;
-        break;
-    default:
-        if ((uint32_t)env->regs[R_ECX] >= MSR_MC0_CTL
-            && (uint32_t)env->regs[R_ECX] < MSR_MC0_CTL +
-            (4 * env->mcg_cap & 0xff)) {
-            uint32_t offset = (uint32_t)env->regs[R_ECX] - MSR_MC0_CTL;
-            val = env->mce_banks[offset];
-            break;
-        }
-        /* XXX: exception? */
-        val = 0;
-        break;
-    }
-
-    msr->DataValueLow  = UINT32(val, 0);
-    msr->DataValueHigh = UINT32(val, 1);
-}
-
-void windbg_write_msr(CPUState *cpu, DBGKD_READ_WRITE_MSR *msr)
-{
-    CPUArchState *env = cpu->env_ptr;
-    uint64_t val;
-
-    cpu_svm_check_intercept_param(env, SVM_EXIT_MSR, 1);
-
-    val = msr->DataValueLow | ((uint64_t) msr->DataValueHigh) << 32;
-
-    switch (msr->Msr) {
-    case MSR_IA32_SYSENTER_CS:
-        env->sysenter_cs = val & 0xffff;
-        break;
-    case MSR_IA32_SYSENTER_ESP:
-        env->sysenter_esp = val;
-        break;
-    case MSR_IA32_SYSENTER_EIP:
-        env->sysenter_eip = val;
-        break;
-    case MSR_IA32_APICBASE:
-        cpu_set_apic_base(x86_env_get_cpu(env)->apic_state, val);
-        break;
-    case MSR_EFER:
-        {
-            uint64_t update_mask;
-
-            update_mask = 0;
-            if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_SYSCALL) {
-                update_mask |= MSR_EFER_SCE;
-            }
-            if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_LM) {
-                update_mask |= MSR_EFER_LME;
-            }
-            if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_FFXSR) {
-                update_mask |= MSR_EFER_FFXSR;
-            }
-            if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_NX) {
-                update_mask |= MSR_EFER_NXE;
-            }
-            if (env->features[FEAT_8000_0001_ECX] & CPUID_EXT3_SVM) {
-                update_mask |= MSR_EFER_SVME;
-            }
-            if (env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_FFXSR) {
-                update_mask |= MSR_EFER_FFXSR;
-            }
-            cpu_load_efer(env, (env->efer & ~update_mask) |
-                          (val & update_mask));
-        }
-        break;
-    case MSR_STAR:
-        env->star = val;
-        break;
-    case MSR_PAT:
-        env->pat = val;
-        break;
-    case MSR_VM_HSAVE_PA:
-        env->vm_hsave = val;
-        break;
-  #ifdef TARGET_X86_64
-    case MSR_LSTAR:
-        env->lstar = val;
-        break;
-    case MSR_CSTAR:
-        env->cstar = val;
-        break;
-    case MSR_FMASK:
-        env->fmask = val;
-        break;
-    case MSR_FSBASE:
-        env->segs[R_FS].base = val;
-        break;
-    case MSR_GSBASE:
-        env->segs[R_GS].base = val;
-        break;
-    case MSR_KERNELGSBASE:
-        env->kernelgsbase = val;
-        break;
-  #endif
-    case MSR_MTRRphysBase(0):
-    case MSR_MTRRphysBase(1):
-    case MSR_MTRRphysBase(2):
-    case MSR_MTRRphysBase(3):
-    case MSR_MTRRphysBase(4):
-    case MSR_MTRRphysBase(5):
-    case MSR_MTRRphysBase(6):
-    case MSR_MTRRphysBase(7):
-        env->mtrr_var[((uint32_t)env->regs[R_ECX] -
-                       MSR_MTRRphysBase(0)) / 2].base = val;
-        break;
-    case MSR_MTRRphysMask(0):
-    case MSR_MTRRphysMask(1):
-    case MSR_MTRRphysMask(2):
-    case MSR_MTRRphysMask(3):
-    case MSR_MTRRphysMask(4):
-    case MSR_MTRRphysMask(5):
-    case MSR_MTRRphysMask(6):
-    case MSR_MTRRphysMask(7):
-        env->mtrr_var[((uint32_t)env->regs[R_ECX] -
-                       MSR_MTRRphysMask(0)) / 2].mask = val;
-        break;
-    case MSR_MTRRfix64K_00000:
-        env->mtrr_fixed[(uint32_t)env->regs[R_ECX] -
-                        MSR_MTRRfix64K_00000] = val;
-        break;
-    case MSR_MTRRfix16K_80000:
-    case MSR_MTRRfix16K_A0000:
-        env->mtrr_fixed[(uint32_t)env->regs[R_ECX] -
-                        MSR_MTRRfix16K_80000 + 1] = val;
-        break;
-    case MSR_MTRRfix4K_C0000:
-    case MSR_MTRRfix4K_C8000:
-    case MSR_MTRRfix4K_D0000:
-    case MSR_MTRRfix4K_D8000:
-    case MSR_MTRRfix4K_E0000:
-    case MSR_MTRRfix4K_E8000:
-    case MSR_MTRRfix4K_F0000:
-    case MSR_MTRRfix4K_F8000:
-        env->mtrr_fixed[(uint32_t)env->regs[R_ECX] -
-                        MSR_MTRRfix4K_C0000 + 3] = val;
-        break;
-    case MSR_MTRRdefType:
-        env->mtrr_deftype = val;
-        break;
-    case MSR_MCG_STATUS:
-        env->mcg_status = val;
-        break;
-    case MSR_MCG_CTL:
-        if ((env->mcg_cap & MCG_CTL_P)
-            && (val == 0 || val == ~(uint64_t)0)) {
-            env->mcg_ctl = val;
-        }
-        break;
-    case MSR_TSC_AUX:
-        env->tsc_aux = val;
-        break;
-    case MSR_IA32_MISC_ENABLE:
-        env->msr_ia32_misc_enable = val;
-        break;
-    case MSR_IA32_BNDCFGS:
-        /* FIXME: #GP if reserved bits are set.  */
-        /* FIXME: Extend highest implemented bit of linear address.  */
-        env->msr_bndcfgs = val;
-        cpu_sync_bndcs_hflags(env);
-        break;
-    default:
-        if ((uint32_t)env->regs[R_ECX] >= MSR_MC0_CTL
-            && (uint32_t)env->regs[R_ECX] < MSR_MC0_CTL +
-            (4 * env->mcg_cap & 0xff)) {
-            uint32_t offset = (uint32_t)env->regs[R_ECX] - MSR_MC0_CTL;
-            if ((offset & 0x3) != 0
-                || (val == 0 || val == ~(uint64_t)0)) {
-                env->mce_banks[offset] = val;
-            }
-            break;
-        }
-        /* XXX: exception? */
-        break;
     }
 }
 
