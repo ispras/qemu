@@ -1,5 +1,4 @@
 #include "qemu/osdep.h"
-#include "cpu.h"
 #include "sysemu/char.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/cpus.h"
@@ -155,16 +154,12 @@ static void windbg_process_manipulate_packet(ParsingContext *ctx)
     }
     case DbgKdWriteBreakPointApi:
     {
-        pd.m64->ReturnStatus = windbg_write_breakpoint(cpu, &pd);
-        pd.extra_size = 0;
-
+        windbg_write_breakpoint(cpu, &pd);
         break;
     }
     case DbgKdRestoreBreakPointApi:
     {
-        pd.m64->ReturnStatus = windbg_restore_breakpoint(cpu, &pd);
-        pd.extra_size = 0;
-
+        windbg_restore_breakpoint(cpu, &pd);
         break;
     }
     case DbgKdReadControlSpaceApi:
@@ -204,26 +199,12 @@ static void windbg_process_manipulate_packet(ParsingContext *ctx)
     }
     case DbgKdReadIoSpaceApi:
     {
-        // DBGKD_READ_WRITE_IO64 *io = &pd.m64->u.ReadWriteIo;
-
-        // __inbyte
-        WINDBG_ERROR("Catched unimplemented api: %s",
-                     kd_api_name(pd.m64->ApiNumber));
-        pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
-        pd.extra_size = 0;
-
+        windbg_read_io_space(cpu, &pd);
         break;
     }
     case DbgKdWriteIoSpaceApi:
     {
-        // DBGKD_READ_WRITE_IO64 *io = &pd.m64->u.ReadWriteIo;
-
-        // __outbyte
-        WINDBG_ERROR("Catched unimplemented api: %s",
-                     kd_api_name(pd.m64->ApiNumber));
-        pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
-        pd.extra_size = 0;
-
+        windbg_write_io_space(cpu, &pd);
         break;
     }
     case DbgKdContinueApi2:
@@ -267,36 +248,27 @@ static void windbg_process_manipulate_packet(ParsingContext *ctx)
             WINDBG_ERROR("GetVersionApi: " FMT_ERR, err);
             pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
         }
-        pd.extra_size = 0;
 
         break;
     }
     case DbgKdReadMachineSpecificRegister:
     {
-        pd.m64->ReturnStatus = windbg_read_msr(cpu, &pd);
-        pd.extra_size = 0;
-
+        windbg_read_msr(cpu, &pd);
         break;
     }
     case DbgKdWriteMachineSpecificRegister:
     {
-        pd.m64->ReturnStatus = windbg_write_msr(cpu, &pd);
-        pd.extra_size = 0;
-
+        windbg_write_msr(cpu, &pd);
         break;
     }
     case DbgKdSearchMemoryApi:
     {
-        pd.m64->ReturnStatus = windbg_search_memory(cpu, &pd);
-        pd.extra_size = 0;
-
+        windbg_search_memory(cpu, &pd);
         break;
     }
     case DbgKdClearAllInternalBreakpointsApi:
     {
         // Unsupported yet!!! But need for connect
-        pd.extra_size = 0;
-
         break;
     }
     case DbgKdQueryMemoryApi:
@@ -309,8 +281,6 @@ static void windbg_process_manipulate_packet(ParsingContext *ctx)
                          DBGKD_QUERY_MEMORY_WRITE |
                          DBGKD_QUERY_MEMORY_EXECUTE;
         }
-        pd.extra_size = 0;
-
         break;
     }
     default:
@@ -321,7 +291,7 @@ static void windbg_process_manipulate_packet(ParsingContext *ctx)
         return;
     }
 
-    windbg_send_data_packet(ctx->data, pd.extra_size + m64_size, ctx->packet.PacketType);
+    windbg_send_data_packet(pd.m64, pd.extra_size + m64_size, ctx->packet.PacketType);
 }
 
 static void windbg_process_data_packet(ParsingContext *ctx)

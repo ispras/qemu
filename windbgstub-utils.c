@@ -15,6 +15,13 @@
     (_len == 2) ? 8 : _len + 1;                                  \
 })
 
+#define OFFSET_KPRCB            0x20
+#define OFFSET_KPRCB_CURRTHREAD 0x4
+#define OFFSET_VERSION          0x34
+#define OFFSET_KRNL_BASE        0x10
+
+#define NT_KRNL_PNAME_ADDR 0x89000fb8 //For Win7
+
 typedef struct KDData {
     CPU_CTRL_ADDRS cca;
     SizedBuf lssc;
@@ -78,7 +85,7 @@ static const char *kd_api_names[] = {
     "DbgKdUnknownApi"
 };
 
-ntstatus_t windbg_write_breakpoint(CPUState *cpu, PacketData *pd)
+void windbg_write_breakpoint(CPUState *cpu, PacketData *pd)
 {
     DBGKD_WRITE_BREAKPOINT64 *m64cu = &pd->m64->u.WriteBreakPoint;
     target_ulong addr = m64cu->BreakPointAddress - 1;
@@ -96,7 +103,8 @@ ntstatus_t windbg_write_breakpoint(CPUState *cpu, PacketData *pd)
             }
             else {
                 WINDBG_ERROR("write_breakpoint: " FMT_ADDR ", " FMT_ERR, addr, err);
-                return STATUS_UNSUCCESSFUL;
+                pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+                return;
             }
         }
         else if (addr == bps[i].addr) {
@@ -106,14 +114,15 @@ ntstatus_t windbg_write_breakpoint(CPUState *cpu, PacketData *pd)
 
     if (!err) {
         m64cu->BreakPointHandle = i + 1;
-        return STATUS_SUCCESS;
+        pd->m64->ReturnStatus = STATUS_SUCCESS;
     }
-
-    WINDBG_ERROR("write_breakpoint: All breakpoints occupied");
-    return STATUS_UNSUCCESSFUL;
+    else {
+        WINDBG_ERROR("write_breakpoint: All breakpoints occupied");
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+    }
 }
 
-ntstatus_t windbg_restore_breakpoint(CPUState *cpu, PacketData *pd)
+void windbg_restore_breakpoint(CPUState *cpu, PacketData *pd)
 {
     DBGKD_RESTORE_BREAKPOINT *m64cu = &pd->m64->u.RestoreBreakPoint;
     uint8_t index = m64cu->BreakPointHandle - 1;
@@ -130,12 +139,66 @@ ntstatus_t windbg_restore_breakpoint(CPUState *cpu, PacketData *pd)
                          bps[index].addr, index, err);
         }
         bps[index].is_init = false;
-        return STATUS_SUCCESS;
+        pd->m64->ReturnStatus = STATUS_SUCCESS;
     }
-    return STATUS_UNSUCCESSFUL;
+    else {
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+    }
 }
 
-ntstatus_t windbg_read_msr(CPUState *cpu, PacketData *pd)
+void windbg_read_io_space(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_READ_WRITE_IO64 *io = &pd->m64->u.ReadWriteIo;
+    CPUArchState *env = cpu->env_ptr;
+
+    switch (io->DataSize) {
+    case 1:
+        io->DataValue = address_space_ldub(&address_space_io, io->IoAddress,
+                                           cpu_get_mem_attrs(env), NULL);
+        break;
+    case 2:
+        io->DataValue = address_space_lduw(&address_space_io, io->IoAddress,
+                                           cpu_get_mem_attrs(env), NULL);
+        break;
+    case 4:
+        io->DataValue = address_space_ldl(&address_space_io, io->IoAddress,
+                                           cpu_get_mem_attrs(env), NULL);
+        break;
+    default:
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        return;
+    }
+
+    pd->m64->ReturnStatus = STATUS_SUCCESS;
+}
+
+void windbg_write_io_space(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_READ_WRITE_IO64 *io = &pd->m64->u.ReadWriteIo;
+    CPUArchState *env = cpu->env_ptr;
+
+    switch (io->DataSize) {
+    case 1:
+        address_space_stb(&address_space_io, io->IoAddress, io->DataValue,
+                          cpu_get_mem_attrs(env), NULL);
+        break;
+    case 2:
+        address_space_stw(&address_space_io, io->IoAddress, io->DataValue,
+                          cpu_get_mem_attrs(env), NULL);
+        break;
+    case 4:
+        address_space_stl(&address_space_io, io->IoAddress, io->DataValue,
+                          cpu_get_mem_attrs(env), NULL);
+        break;
+    default:
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        return;
+    }
+
+    pd->m64->ReturnStatus = STATUS_SUCCESS;
+}
+
+void windbg_read_msr(CPUState *cpu, PacketData *pd)
 {
     DBGKD_READ_WRITE_MSR *m64cu = &pd->m64->u.ReadWriteMsr;
     CPUArchState *env = cpu->env_ptr;
@@ -284,10 +347,10 @@ ntstatus_t windbg_read_msr(CPUState *cpu, PacketData *pd)
 
     m64cu->DataValueLow  = UINT32(val, 0);
     m64cu->DataValueHigh = UINT32(val, 1);
-    return STATUS_SUCCESS;
+    pd->m64->ReturnStatus = STATUS_SUCCESS;
 }
 
-ntstatus_t windbg_write_msr(CPUState *cpu, PacketData *pd)
+void windbg_write_msr(CPUState *cpu, PacketData *pd)
 {
     DBGKD_READ_WRITE_MSR *m64cu = &pd->m64->u.ReadWriteMsr;
     CPUArchState *env = cpu->env_ptr;
@@ -446,10 +509,10 @@ ntstatus_t windbg_write_msr(CPUState *cpu, PacketData *pd)
         /* XXX: exception? */
         break;
     }
-    return STATUS_SUCCESS;
+    pd->m64->ReturnStatus = STATUS_SUCCESS;
 }
 
-ntstatus_t windbg_search_memory(CPUState *cpu, PacketData *pd)
+void windbg_search_memory(CPUState *cpu, PacketData *pd)
 {
     DBGKD_SEARCH_MEMORY *m64cu = &pd->m64->u.SearchMemory;
     int s_len = MAX(1, m64cu->SearchLength);
@@ -459,15 +522,14 @@ ntstatus_t windbg_search_memory(CPUState *cpu, PacketData *pd)
     mem.size = s_len - 1 + p_len;
     mem.data = g_malloc0(mem.size);
 
-    ntstatus_t err;
-    err = cpu_memory_rw_debug(cpu, m64cu->SearchAddress, mem.data, mem.size, 0);
+    int err = cpu_memory_rw_debug(cpu, m64cu->SearchAddress, mem.data, mem.size, 0);
     if (!err) {
         int i;
-        err = STATUS_NO_MORE_ENTRIES;
+        pd->m64->ReturnStatus = STATUS_NO_MORE_ENTRIES;
         for (i = 0; i < s_len; ++i) {
             if (memcmp(mem.data + i, pd->extra, p_len) == 0) {
                 m64cu->FoundAddress = m64cu->SearchAddress + i;
-                err = STATUS_SUCCESS;
+                pd->m64->ReturnStatus = STATUS_SUCCESS;
                 break;
             }
         }
@@ -476,11 +538,11 @@ ntstatus_t windbg_search_memory(CPUState *cpu, PacketData *pd)
         // tmp checking
         WINDBG_DEBUG("search_memory: No physical page mapped: " FMT_ADDR,
                      (target_ulong) m64cu->SearchAddress);
-        err = STATUS_UNSUCCESSFUL;
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
+    pd->extra_size = 0;
     g_free(mem.data);
-    return err;
 }
 
 static void windbg_breakpoint_remove_range(CPUState *cpu, target_ulong base, target_ulong limit)

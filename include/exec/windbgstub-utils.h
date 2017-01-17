@@ -3,9 +3,10 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
-#include "exec/exec-all.h"
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
+#include "exec/exec-all.h"
+#include "exec/address-spaces.h"
 #include "exec/windbgkd.h"
 
 // FOR DEBUG
@@ -62,15 +63,6 @@
 
 #define UINT8(var, index) (CAST_TO_PTR(uint8_t, var)[index])
 #define UINT32(var, index) (CAST_TO_PTR(uint32_t, var)[index])
-
-#define M64_OFFSET(data) (data + sizeof(DBGKD_MANIPULATE_STATE64))
-
-#define OFFSET_KPRCB            0x20
-#define OFFSET_KPRCB_CURRTHREAD 0x4
-#define OFFSET_VERSION          0x34
-#define OFFSET_KRNL_BASE        0x10
-
-#define NT_KRNL_PNAME_ADDR 0x89000fb8 //For Win7
 
 //
 // Structure for DbgKdExceptionStateChange
@@ -309,11 +301,13 @@ typedef struct PacketData {
     uint16_t extra_size;
 } PacketData;
 
-ntstatus_t windbg_write_breakpoint(CPUState *cpu, PacketData *pd);
-ntstatus_t windbg_restore_breakpoint(CPUState *cpu, PacketData *pd);
-ntstatus_t windbg_read_msr(CPUState *cpu, PacketData *pd);
-ntstatus_t windbg_write_msr(CPUState *cpu, PacketData *pd);
-ntstatus_t windbg_search_memory(CPUState *cpu, PacketData *pd);
+void windbg_write_breakpoint(CPUState *cpu, PacketData *pd);
+void windbg_restore_breakpoint(CPUState *cpu, PacketData *pd);
+void windbg_read_io_space(CPUState *cpu, PacketData *pd);
+void windbg_write_io_space(CPUState *cpu, PacketData *pd);
+void windbg_read_msr(CPUState *cpu, PacketData *pd);
+void windbg_write_msr(CPUState *cpu, PacketData *pd);
+void windbg_search_memory(CPUState *cpu, PacketData *pd);
 
 const char *kd_api_name(int api_number);
 
