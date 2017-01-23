@@ -22,12 +22,15 @@
 
 #define NT_KRNL_PNAME_ADDR 0x89000fb8 //For Win7
 
+#define KD_API_NAME(api)                                              \
+    (api >= DbgKdMinimumManipulate && api < DbgKdMaximumManipulate) ? \
+        kd_api_names[api - DbgKdMinimumManipulate] :                  \
+        kd_api_names[DbgKdMaximumManipulate]
+
 typedef struct KDData {
     CPU_CTRL_ADDRS cca;
     SizedBuf lssc;
     EXCEPTION_STATE_CHANGE esc;
-    CPU_CONTEXT cc;
-    CPU_KSPECIAL_REGISTERS ckr;
 } KDData;
 
 static KDData kd;
@@ -85,7 +88,352 @@ static const char *kd_api_names[] = {
     "DbgKdUnknownApi"
 };
 
-void windbg_write_breakpoint(CPUState *cpu, PacketData *pd)
+static void windbg_breakpoint_remove_range(CPUState *cpu, target_ulong base, target_ulong limit)
+{
+    int i = 0, err = 0;
+    for (; i < KD_BREAKPOINT_MAX; ++i) {
+        if (bps[i].is_init && bps[i].addr >= base && bps[i].addr < limit) {
+            err = cpu_breakpoint_remove(cpu, bps[i].addr, BP_GDB);
+            if (!err) {
+                WINDBG_DEBUG("breakpoint_remove_range: " FMT_ADDR ", index %d",
+                            bps[i].addr, i);
+            }
+            else {
+                WINDBG_ERROR("breakpoint_remove_range: " FMT_ADDR ", index %d, " FMT_ERR,
+                            bps[i].addr, i, err);
+            }
+            bps[i].is_init = false;
+        }
+    }
+}
+
+static int windbg_watchpoint_insert(CPUState *cpu, target_ulong addr, int len, int type)
+{
+    int err = 0;
+    switch (type) {
+    case DR7_TYPE_DATA_WR:
+        err = cpu_watchpoint_insert(cpu, addr, len, BP_MEM_WRITE | BP_GDB, NULL);
+        break;
+    case DR7_TYPE_DATA_RW:
+        err = cpu_watchpoint_insert(cpu, addr, len, BP_MEM_ACCESS | BP_GDB, NULL);
+        break;
+    case DR7_TYPE_BP_INST:
+        err = cpu_breakpoint_insert(cpu, addr, BP_GDB, NULL);
+        break;
+    default:
+        WINDBG_ERROR("watchpoint_insert: Unknown wp type 0x%x", type);
+        break;
+    }
+
+    if (!err) {
+        WINDBG_DEBUG("watchpoint_insert: " FMT_ADDR ", len %d, type 0x%x",
+                     addr, len, type);
+    }
+    else {
+        WINDBG_ERROR("watchpoint_insert: " FMT_ADDR ", len %d, type 0x%x, " FMT_ERR,
+                     addr, len, type, err);
+    }
+    return err;
+}
+
+static int windbg_watchpoint_remove(CPUState *cpu, target_ulong addr, int len, int type)
+{
+    int err = 0;
+    switch (type) {
+    case DR7_TYPE_DATA_WR:
+        err = cpu_watchpoint_remove(cpu, addr, len, BP_MEM_WRITE | BP_GDB);
+        break;
+    case DR7_TYPE_DATA_RW:
+        err = cpu_watchpoint_remove(cpu, addr, len, BP_MEM_ACCESS | BP_GDB);
+        break;
+    case DR7_TYPE_BP_INST:
+        err = cpu_breakpoint_remove(cpu, addr, BP_GDB);
+        break;
+    default:
+        WINDBG_ERROR("wp_remove: Unknown wp type 0x%x", type);
+        break;
+    }
+
+    if (!err) {
+        WINDBG_DEBUG("wp_remove: " FMT_ADDR ", len %d, type 0x%x",
+                     addr, len, type);
+    }
+    else {
+        WINDBG_ERROR("wp_remove: " FMT_ADDR ", len %d, type 0x%x, " FMT_ERR,
+                     addr, len, type, err);
+    }
+    return err;
+}
+
+static void windbg_update_dr(CPUState *cpu, target_ulong *new_dr)
+{
+    int i;
+
+    for (i = 0; i < DR7_MAX_BP; ++i) {
+        bool is_enabled = IS_BP_ENABLED(new_dr[7], i);
+        if (!is_enabled) {
+            if (dr[i].is_init) {
+                windbg_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i),
+                                         BP_TYPE(dr[7].addr, i));
+                dr[i].is_init = false;
+            }
+        }
+        else if (is_enabled && (new_dr[i] != dr[i].addr)) {
+            if (dr[i].is_init) {
+                windbg_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i),
+                                         BP_TYPE(dr[7].addr, i));
+                dr[i].is_init = false;
+            }
+
+            dr[i].addr = new_dr[i];
+            dr[i].is_init = true;
+
+            windbg_watchpoint_insert(cpu, dr[i].addr, BP_LEN(new_dr[7], i),
+                                     BP_TYPE(new_dr[7], i));
+        }
+    }
+
+    if (!dr[7].is_init || dr[7].addr != new_dr[7]) {
+        dr[7].addr = new_dr[7];
+        dr[7].is_init = false;
+        for (i = 0; i < DR7_MAX_BP; ++i) {
+            if (dr[i].is_init) {
+                dr[7].is_init = true;
+                break;
+            }
+        }
+    }
+}
+
+static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
+{
+    CPUArchState *env = cpu->env_ptr;
+    int i, err = 0;
+    const bool new_mem = (len != sizeof(CPU_CONTEXT) || offset != 0);
+    CPU_CONTEXT *cc;
+    if (new_mem) {
+        cc = (CPU_CONTEXT *) g_malloc(sizeof(CPU_CONTEXT));
+    }
+    else {
+        cc = (CPU_CONTEXT *) buf;
+    }
+
+    memset(cc, 0, len);
+
+  #ifdef TARGET_I386
+
+    cc->ContextFlags = CPU_CONTEXT_ALL;
+
+    if (cc->ContextFlags & CPU_CONTEXT_FULL) {
+        cc->Edi    = env->regs[R_EDI];
+        cc->Esi    = env->regs[R_ESI];
+        cc->Ebx    = env->regs[R_EBX];
+        cc->Edx    = env->regs[R_EDX];
+        cc->Ecx    = env->regs[R_ECX];
+        cc->Eax    = env->regs[R_EAX];
+        cc->Ebp    = env->regs[R_EBP];
+        cc->Esp    = env->regs[R_ESP];
+
+        cc->Eip    = env->eip;
+        cc->EFlags = env->eflags;
+
+        cc->SegGs  = env->segs[R_GS].selector;
+        cc->SegFs  = env->segs[R_FS].selector;
+        cc->SegEs  = env->segs[R_ES].selector;
+        cc->SegDs  = env->segs[R_DS].selector;
+        cc->SegCs  = env->segs[R_CS].selector;
+        cc->SegSs  = env->segs[R_SS].selector;
+    }
+
+    if (cc->ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
+        cc->FloatSave.ControlWord    = env->fpuc;
+        cc->FloatSave.StatusWord     = env->fpus;
+        cc->FloatSave.TagWord        = env->fpstt;
+        cc->FloatSave.ErrorOffset    = UINT32(env->fpip, 0);
+        cc->FloatSave.ErrorSelector  = UINT32(env->fpip, 1);
+        cc->FloatSave.DataOffset     = UINT32(env->fpdp, 0);
+        cc->FloatSave.DataSelector   = UINT32(env->fpdp, 1);
+        cc->FloatSave.Cr0NpxState    = env->cr[0];
+
+        for (i = 0; i < 8; ++i) {
+            memcpy(PTR(cc->FloatSave.RegisterArea[i * 10]),
+                   PTR(env->fpregs[i].mmx), sizeof(MMXReg));
+        }
+    }
+
+    if (cc->ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
+        cc->Dr0    = env->dr[0];
+        cc->Dr1    = env->dr[1];
+        cc->Dr2    = env->dr[2];
+        cc->Dr3    = env->dr[3];
+        cc->Dr6    = env->dr[6];
+        cc->Dr7    = env->dr[7];
+    }
+
+    if (cc->ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
+        for (i = 0; i < 8; ++i) {
+            memcpy(PTR(cc->ExtendedRegisters[(10 + i) * 16]),
+                   PTR(env->xmm_regs[i]), sizeof(ZMMReg));
+        }
+        // offset 24
+        UINT32(cc->ExtendedRegisters, 6) = env->mxcsr;
+    }
+
+    cc->ExtendedRegisters[0] = 0xaa;
+
+  #elif defined(TARGET_X86_64)
+    err = -1;
+  #endif
+
+    if (new_mem) {
+        memcpy(buf, (uint8_t *) cc + offset, len);
+        g_free(cc);
+    }
+    return err;
+}
+
+static int windbg_write_context(CPUState *cpu, uint8_t *buf, int len, int offset)
+{
+    if (len != sizeof(CPU_CONTEXT) || offset != 0) {
+        WINDBG_ERROR("write_context: T0D0 windbgstub bug: len %d, offset %d",
+                     len, offset);
+        return -1;
+    }
+
+    CPU_CONTEXT *cc = (CPU_CONTEXT *) buf;
+
+  #if defined(TARGET_I386)
+
+    if (cc->ContextFlags & CPU_CONTEXT_FULL) {
+
+    }
+
+    if (cc->ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
+
+    }
+
+    if (cc->ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
+        target_ulong new_dr[8] = {
+            [0] = cc->Dr0,
+            [1] = cc->Dr1,
+            [2] = cc->Dr2,
+            [3] = cc->Dr3,
+            [6] = cc->Dr6,
+            [7] = cc->Dr7
+        };
+        windbg_update_dr(cpu, new_dr);
+    }
+
+    if (cc->ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
+
+    }
+
+  #elif defined(TARGET_X86_64)
+    return -1;
+  #endif
+    return 0;
+}
+
+static int windbg_read_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset)
+{
+    CPUArchState *env = cpu->env_ptr;
+    const bool new_mem = (len != sizeof(CPU_KSPECIAL_REGISTERS) || offset != 0);
+    CPU_KSPECIAL_REGISTERS *ckr;
+    if (new_mem) {
+        ckr = (CPU_KSPECIAL_REGISTERS *) g_malloc(sizeof(CPU_KSPECIAL_REGISTERS));
+    }
+    else {
+        ckr = (CPU_KSPECIAL_REGISTERS *) buf;
+    }
+
+    memset(ckr, 0, len);
+
+    ckr->Cr0 = env->cr[0];
+    ckr->Cr2 = env->cr[2];
+    ckr->Cr3 = env->cr[3];
+    ckr->Cr4 = env->cr[4];
+
+    ckr->KernelDr0 = dr[0].is_init ? dr[0].addr : env->dr[0];
+    ckr->KernelDr1 = dr[1].is_init ? dr[1].addr : env->dr[1];
+    ckr->KernelDr2 = dr[2].is_init ? dr[2].addr : env->dr[2];
+    ckr->KernelDr3 = dr[3].is_init ? dr[3].addr : env->dr[3];
+    ckr->KernelDr6 = dr[6].is_init ? dr[6].addr : env->dr[6];
+    ckr->KernelDr7 = dr[7].is_init ? dr[7].addr : env->dr[7];
+
+    ckr->Gdtr.Pad   = env->gdt.selector;
+    ckr->Gdtr.Limit = env->gdt.limit;
+    ckr->Gdtr.Base  = env->gdt.base;
+    ckr->Idtr.Pad   = env->idt.selector;
+    ckr->Idtr.Limit = env->idt.limit;
+    ckr->Idtr.Base  = env->idt.base;
+    ckr->Tr         = env->tr.selector;
+    ckr->Ldtr       = env->ldt.selector;
+
+    if (new_mem) {
+        memcpy(buf, (uint8_t *) ckr + offset, len);
+        g_free(ckr);
+    }
+    return 0;
+}
+
+static int windbg_write_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset)
+{
+    return -1;
+}
+
+void kd_api_read_virtual_memory(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_READ_MEMORY64 *mem = &pd->m64->u.ReadMemory;
+
+    mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - M64_SIZE);
+    int err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
+                                  pd->extra, mem->ActualBytesRead, 0);
+    pd->extra_size = mem->ActualBytesRead;
+
+    if (err) {
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+
+        // tmp checking
+        WINDBG_DEBUG("ReadVirtualMemoryApi: No physical page mapped: " FMT_ADDR,
+                        (target_ulong) mem->TargetBaseAddress);
+    }
+}
+
+void kd_api_write_virtual_memory(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_WRITE_MEMORY64 *mem = &pd->m64->u.WriteMemory;
+
+    mem->ActualBytesWritten = MIN(pd->extra_size, mem->TransferCount);
+    int err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
+                                  pd->extra, mem->ActualBytesWritten, 1);
+    if (err) {
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+    }
+    pd->extra_size = 0;
+}
+
+void kd_api_get_context(CPUState *cpu, PacketData *pd)
+{
+    pd->extra_size = sizeof(CPU_CONTEXT);
+    int err = windbg_read_context(cpu, pd->extra, pd->extra_size, 0);
+
+    if (err) {
+        pd->extra_size = 0;
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+    }
+}
+
+void kd_api_set_context(CPUState *cpu, PacketData *pd)
+{
+    int err = windbg_write_context(cpu, pd->extra, pd->extra_size, 0);
+    pd->extra_size = 0;
+
+    if (err) {
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+    }
+}
+
+void kd_api_write_breakpoint(CPUState *cpu, PacketData *pd)
 {
     DBGKD_WRITE_BREAKPOINT64 *m64cu = &pd->m64->u.WriteBreakPoint;
     target_ulong addr = m64cu->BreakPointAddress - 1;
@@ -122,7 +470,7 @@ void windbg_write_breakpoint(CPUState *cpu, PacketData *pd)
     }
 }
 
-void windbg_restore_breakpoint(CPUState *cpu, PacketData *pd)
+void kd_api_restore_breakpoint(CPUState *cpu, PacketData *pd)
 {
     DBGKD_RESTORE_BREAKPOINT *m64cu = &pd->m64->u.RestoreBreakPoint;
     uint8_t index = m64cu->BreakPointHandle - 1;
@@ -146,7 +494,114 @@ void windbg_restore_breakpoint(CPUState *cpu, PacketData *pd)
     }
 }
 
-void windbg_read_io_space(CPUState *cpu, PacketData *pd)
+void kd_api_continue(CPUState *cpu, PacketData *pd)
+{
+    if (NT_SUCCESS(pd->m64->ReturnStatus)) {
+        cpu_single_step(cpu, pd->m64->u.Continue2.ControlSet.TraceFlag ?
+                        SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0);
+
+        if (!runstate_needs_reset()) {
+            vm_start();
+        }
+    }
+}
+
+void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_READ_MEMORY64 *mem = &pd->m64->u.ReadMemory;
+    int err = -1;
+
+    if (mem->TargetBaseAddress < sizeof(CPU_KPROCESSOR_STATE)) {
+        mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - M64_SIZE);
+        mem->ActualBytesRead = MIN(mem->ActualBytesRead,
+                                   sizeof(CPU_KPROCESSOR_STATE) - mem->TargetBaseAddress);
+
+        int from_context = MAX(0, (int) sizeof(CPU_CONTEXT) - (int) mem->TargetBaseAddress);
+        int from_ks_regs = mem->ActualBytesRead - from_context;
+
+
+        if (from_context > 0) {
+            err = windbg_read_context(cpu, pd->extra, from_context,
+                                      mem->TargetBaseAddress);
+        }
+        if (from_ks_regs > 0) {
+            err = windbg_read_ks_regs(cpu, pd->extra + from_context, from_ks_regs,
+                                      mem->TargetBaseAddress - sizeof(CPU_CONTEXT) + from_context);
+        }
+    }
+
+    if (err) {
+        pd->extra_size = mem->ActualBytesRead = 0;
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+    }
+    else {
+        pd->extra_size = mem->ActualBytesRead;
+    }
+}
+
+void kd_api_write_control_space(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_WRITE_MEMORY64 *mem = &pd->m64->u.WriteMemory;
+    int err = -1;
+
+    if (mem->TargetBaseAddress < sizeof(CPU_KPROCESSOR_STATE)) {
+        mem->ActualBytesWritten = MIN(pd->extra_size, mem->TransferCount);
+        mem->ActualBytesWritten = MIN(mem->ActualBytesWritten,
+                                      sizeof(CPU_KPROCESSOR_STATE) - mem->TargetBaseAddress);
+
+        int to_context = MAX(0, (int) sizeof(CPU_CONTEXT) - (int) mem->TargetBaseAddress);
+        int to_ks_regs = mem->ActualBytesWritten - to_context;
+
+
+        if (to_context > 0) {
+            err = windbg_write_context(cpu, pd->extra, to_context,
+                                       mem->TargetBaseAddress);
+        }
+        if (to_ks_regs > 0) {
+            err = windbg_write_ks_regs(cpu, pd->extra + to_context, to_ks_regs,
+                                       mem->TargetBaseAddress - sizeof(CPU_CONTEXT) + to_context);
+        }
+    }
+
+    pd->extra_size = 0;
+    if (err) {
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        mem->ActualBytesWritten = 0;
+    }
+}
+
+void kd_api_read_physical_memory(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_READ_MEMORY64 *mem = &pd->m64->u.ReadMemory;
+
+    mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - M64_SIZE);
+    cpu_physical_memory_rw(mem->TargetBaseAddress, pd->extra,
+                           mem->ActualBytesRead, 0);
+    pd->extra_size = mem->ActualBytesRead;
+}
+
+void kd_api_write_physical_memory(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_WRITE_MEMORY64 *mem = &pd->m64->u.WriteMemory;
+
+    mem->ActualBytesWritten = MIN(pd->extra_size, mem->TransferCount);
+    cpu_physical_memory_rw(mem->TargetBaseAddress, pd->extra,
+                            mem->ActualBytesWritten, 1);
+    pd->extra_size = 0;
+}
+
+void kd_api_get_version(CPUState *cpu, PacketData *pd)
+{
+    int err = cpu_memory_rw_debug(cpu, kd.cca.Version,
+                                  (uint8_t *) pd->m64 + 0x10,
+                                  M64_SIZE - 0x10, 0);
+    if (err) {
+        WINDBG_ERROR("GetVersionApi: " FMT_ERR, err);
+        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+    }
+}
+
+void kd_api_read_io_space(CPUState *cpu, PacketData *pd)
 {
     DBGKD_READ_WRITE_IO64 *io = &pd->m64->u.ReadWriteIo;
     CPUArchState *env = cpu->env_ptr;
@@ -172,7 +627,7 @@ void windbg_read_io_space(CPUState *cpu, PacketData *pd)
     pd->m64->ReturnStatus = STATUS_SUCCESS;
 }
 
-void windbg_write_io_space(CPUState *cpu, PacketData *pd)
+void kd_api_write_io_space(CPUState *cpu, PacketData *pd)
 {
     DBGKD_READ_WRITE_IO64 *io = &pd->m64->u.ReadWriteIo;
     CPUArchState *env = cpu->env_ptr;
@@ -198,7 +653,7 @@ void windbg_write_io_space(CPUState *cpu, PacketData *pd)
     pd->m64->ReturnStatus = STATUS_SUCCESS;
 }
 
-void windbg_read_msr(CPUState *cpu, PacketData *pd)
+void kd_api_read_msr(CPUState *cpu, PacketData *pd)
 {
     DBGKD_READ_WRITE_MSR *m64cu = &pd->m64->u.ReadWriteMsr;
     CPUArchState *env = cpu->env_ptr;
@@ -350,7 +805,7 @@ void windbg_read_msr(CPUState *cpu, PacketData *pd)
     pd->m64->ReturnStatus = STATUS_SUCCESS;
 }
 
-void windbg_write_msr(CPUState *cpu, PacketData *pd)
+void kd_api_write_msr(CPUState *cpu, PacketData *pd)
 {
     DBGKD_READ_WRITE_MSR *m64cu = &pd->m64->u.ReadWriteMsr;
     CPUArchState *env = cpu->env_ptr;
@@ -512,7 +967,7 @@ void windbg_write_msr(CPUState *cpu, PacketData *pd)
     pd->m64->ReturnStatus = STATUS_SUCCESS;
 }
 
-void windbg_search_memory(CPUState *cpu, PacketData *pd)
+void kd_api_search_memory(CPUState *cpu, PacketData *pd)
 {
     DBGKD_SEARCH_MEMORY *m64cu = &pd->m64->u.SearchMemory;
     int s_len = MAX(1, m64cu->SearchLength);
@@ -545,127 +1000,23 @@ void windbg_search_memory(CPUState *cpu, PacketData *pd)
     g_free(mem.data);
 }
 
-static void windbg_breakpoint_remove_range(CPUState *cpu, target_ulong base, target_ulong limit)
+void kd_api_query_memory(CPUState *cpu, PacketData *pd)
 {
-    int i = 0, err = 0;
-    for (; i < KD_BREAKPOINT_MAX; ++i) {
-        if (bps[i].is_init && bps[i].addr >= base && bps[i].addr < limit) {
-            err = cpu_breakpoint_remove(cpu, bps[i].addr, BP_GDB);
-            if (!err) {
-                WINDBG_DEBUG("breakpoint_remove_range: " FMT_ADDR ", index %d",
-                            bps[i].addr, i);
-            }
-            else {
-                WINDBG_ERROR("breakpoint_remove_range: " FMT_ADDR ", index %d, " FMT_ERR,
-                            bps[i].addr, i, err);
-            }
-            bps[i].is_init = false;
-        }
+    DBGKD_QUERY_MEMORY *mem = &pd->m64->u.QueryMemory;
+
+    if (mem->AddressSpace == DBGKD_QUERY_MEMORY_VIRTUAL) {
+        mem->AddressSpace = DBGKD_QUERY_MEMORY_PROCESS;
+        mem->Flags = DBGKD_QUERY_MEMORY_READ |
+                     DBGKD_QUERY_MEMORY_WRITE |
+                     DBGKD_QUERY_MEMORY_EXECUTE;
     }
 }
 
-static void windbg_watchpoint_insert(CPUState *cpu, target_ulong addr, int len, int type)
+void kd_api_unsupported(CPUState *cpu, PacketData *pd)
 {
-    int err = 0;
-    switch (type) {
-    case DR7_TYPE_DATA_WR:
-        err = cpu_watchpoint_insert(cpu, addr, len, BP_MEM_WRITE | BP_GDB, NULL);
-        break;
-    case DR7_TYPE_DATA_RW:
-        err = cpu_watchpoint_insert(cpu, addr, len, BP_MEM_ACCESS | BP_GDB, NULL);
-        break;
-    case DR7_TYPE_BP_INST:
-        err = cpu_breakpoint_insert(cpu, addr, BP_GDB, NULL);
-        break;
-    default:
-        WINDBG_ERROR("watchpoint_insert: Unknown wp type 0x%x", type);
-        break;
-    }
-
-    if (!err) {
-        WINDBG_DEBUG("watchpoint_insert: " FMT_ADDR ", len %d, type 0x%x",
-                     addr, len, type);
-    }
-    else {
-        WINDBG_ERROR("watchpoint_insert: " FMT_ADDR ", len %d, type 0x%x, " FMT_ERR,
-                     addr, len, type, err);
-    }
-}
-
-static void windbg_watchpoint_remove(CPUState *cpu, target_ulong addr, int len, int type)
-{
-    int err = 0;
-    switch (type) {
-    case DR7_TYPE_DATA_WR:
-        err = cpu_watchpoint_remove(cpu, addr, len, BP_MEM_WRITE | BP_GDB);
-        break;
-    case DR7_TYPE_DATA_RW:
-        err = cpu_watchpoint_remove(cpu, addr, len, BP_MEM_ACCESS | BP_GDB);
-        break;
-    case DR7_TYPE_BP_INST:
-        err = cpu_breakpoint_remove(cpu, addr, BP_GDB);
-        break;
-    default:
-        WINDBG_ERROR("wp_remove: Unknown wp type 0x%x", type);
-        break;
-    }
-
-    if (!err) {
-        WINDBG_DEBUG("wp_remove: " FMT_ADDR ", len %d, type 0x%x",
-                     addr, len, type);
-    }
-    else {
-        WINDBG_ERROR("wp_remove: " FMT_ADDR ", len %d, type 0x%x, " FMT_ERR,
-                     addr, len, type, err);
-    }
-}
-
-static void windbg_update_dr(CPUState *cpu, target_ulong *new_dr)
-{
-    int i;
-
-    for (i = 0; i < DR7_MAX_BP; ++i) {
-        bool is_enabled = IS_BP_ENABLED(new_dr[7], i);
-        if (!is_enabled) {
-            if (dr[i].is_init) {
-                windbg_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i),
-                                         BP_TYPE(dr[7].addr, i));
-                dr[i].is_init = false;
-            }
-        }
-        else if (is_enabled && (new_dr[i] != dr[i].addr)) {
-            if (dr[i].is_init) {
-                windbg_watchpoint_remove(cpu, dr[i].addr, BP_LEN(dr[7].addr, i),
-                                         BP_TYPE(dr[7].addr, i));
-                dr[i].is_init = false;
-            }
-
-            dr[i].addr = new_dr[i];
-            dr[i].is_init = true;
-
-            windbg_watchpoint_insert(cpu, dr[i].addr, BP_LEN(new_dr[7], i),
-                                     BP_TYPE(new_dr[7], i));
-        }
-    }
-
-    if (!dr[7].is_init || dr[7].addr != new_dr[7]) {
-        dr[7].addr = new_dr[7];
-        dr[7].is_init = false;
-        for (i = 0; i < DR7_MAX_BP; ++i) {
-            if (dr[i].is_init) {
-                dr[7].is_init = true;
-                break;
-            }
-        }
-    }
-}
-
-const char *kd_api_name(int api_number)
-{
-    if (api_number >= DbgKdMinimumManipulate && api_number < DbgKdMaximumManipulate) {
-        return kd_api_names[api_number - DbgKdMinimumManipulate];
-    }
-    return kd_api_names[DbgKdMaximumManipulate];
+    WINDBG_ERROR("Catched unimplemented api: %s",
+                 KD_API_NAME(pd->m64->ApiNumber));
+    pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
 }
 
 CPU_CTRL_ADDRS *kd_get_cpu_ctrl_addrs(CPUState *cpu)
@@ -799,155 +1150,11 @@ SizedBuf *kd_get_load_symbols_sc(CPUState *cpu)
     return &kd.lssc;
 }
 
-CPU_CONTEXT *kd_get_context(CPUState *cpu)
-{
-    CPUArchState *env = cpu->env_ptr;
-    int i;
-
-    memset(&kd.cc, 0, sizeof(kd.cc));
-
-  #if defined(TARGET_I386)
-
-    kd.cc.ContextFlags = CPU_CONTEXT_ALL;
-
-    if (kd.cc.ContextFlags & CPU_CONTEXT_FULL) {
-        kd.cc.Edi    = env->regs[R_EDI];
-        kd.cc.Esi    = env->regs[R_ESI];
-        kd.cc.Ebx    = env->regs[R_EBX];
-        kd.cc.Edx    = env->regs[R_EDX];
-        kd.cc.Ecx    = env->regs[R_ECX];
-        kd.cc.Eax    = env->regs[R_EAX];
-        kd.cc.Ebp    = env->regs[R_EBP];
-        kd.cc.Esp    = env->regs[R_ESP];
-
-        kd.cc.Eip    = env->eip;
-        kd.cc.EFlags = env->eflags;
-
-        kd.cc.SegGs  = env->segs[R_GS].selector;
-        kd.cc.SegFs  = env->segs[R_FS].selector;
-        kd.cc.SegEs  = env->segs[R_ES].selector;
-        kd.cc.SegDs  = env->segs[R_DS].selector;
-        kd.cc.SegCs  = env->segs[R_CS].selector;
-        kd.cc.SegSs  = env->segs[R_SS].selector;
-    }
-
-    if (kd.cc.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
-        kd.cc.FloatSave.ControlWord    = env->fpuc;
-        kd.cc.FloatSave.StatusWord     = env->fpus;
-        kd.cc.FloatSave.TagWord        = env->fpstt;
-        kd.cc.FloatSave.ErrorOffset    = UINT32(env->fpip, 0);
-        kd.cc.FloatSave.ErrorSelector  = UINT32(env->fpip, 1);
-        kd.cc.FloatSave.DataOffset     = UINT32(env->fpdp, 0);
-        kd.cc.FloatSave.DataSelector   = UINT32(env->fpdp, 1);
-        kd.cc.FloatSave.Cr0NpxState    = env->cr[0];
-
-        for (i = 0; i < 8; ++i) {
-            memcpy(PTR(kd.cc.FloatSave.RegisterArea[i * 10]),
-                   PTR(env->fpregs[i].mmx), sizeof(MMXReg));
-        }
-    }
-
-    if (kd.cc.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
-        kd.cc.Dr0    = env->dr[0];
-        kd.cc.Dr1    = env->dr[1];
-        kd.cc.Dr2    = env->dr[2];
-        kd.cc.Dr3    = env->dr[3];
-        kd.cc.Dr6    = env->dr[6];
-        kd.cc.Dr7    = env->dr[7];
-    }
-
-    if (kd.cc.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
-        for (i = 0; i < 8; ++i) {
-            memcpy(PTR(kd.cc.ExtendedRegisters[(10 + i) * 16]),
-                   PTR(env->xmm_regs[i]), sizeof(ZMMReg));
-        }
-        // offset 24
-        UINT32(kd.cc.ExtendedRegisters, 6) = env->mxcsr;
-    }
-
-    kd.cc.ExtendedRegisters[0] = 0xaa;
-
-  #elif defined(TARGET_X86_64)
-
-  #endif
-
-    return &kd.cc;
-}
-
-void kd_set_context(CPUState *cpu, uint8_t *data, int len)
-{
-    CPU_CONTEXT cc;
-    memcpy(PTR(cc), data, MIN(len, sizeof(cc)));
-
-  #if defined(TARGET_I386)
-
-    if (cc.ContextFlags & CPU_CONTEXT_FULL) {
-
-    }
-
-    if (cc.ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
-
-    }
-
-    if (cc.ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
-        target_ulong new_dr[8] = {
-            [0] = cc.Dr0,
-            [1] = cc.Dr1,
-            [2] = cc.Dr2,
-            [3] = cc.Dr3,
-            [6] = cc.Dr6,
-            [7] = cc.Dr7
-        };
-        windbg_update_dr(cpu, new_dr);
-    }
-
-    if (cc.ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
-
-    }
-
-  #elif defined(TARGET_X86_64)
-
-  #endif
-}
-
-CPU_KSPECIAL_REGISTERS *kd_get_kspecial_registers(CPUState *cpu)
-{
-    CPUArchState *env = cpu->env_ptr;
-
-    memset(&kd.ckr, 0, sizeof(kd.ckr));
-
-    kd.ckr.Cr0 = env->cr[0];
-    kd.ckr.Cr2 = env->cr[2];
-    kd.ckr.Cr3 = env->cr[3];
-    kd.ckr.Cr4 = env->cr[4];
-
-    kd.ckr.KernelDr0 = dr[0].is_init ? dr[0].addr : env->dr[0];
-    kd.ckr.KernelDr1 = dr[1].is_init ? dr[1].addr : env->dr[1];
-    kd.ckr.KernelDr2 = dr[2].is_init ? dr[2].addr : env->dr[2];
-    kd.ckr.KernelDr3 = dr[3].is_init ? dr[3].addr : env->dr[3];
-    kd.ckr.KernelDr6 = dr[6].is_init ? dr[6].addr : env->dr[6];
-    kd.ckr.KernelDr7 = dr[7].is_init ? dr[7].addr : env->dr[7];
-
-    kd.ckr.Gdtr.Pad   = env->gdt.selector;
-    kd.ckr.Gdtr.Limit = env->gdt.limit;
-    kd.ckr.Gdtr.Base  = env->gdt.base;
-    kd.ckr.Idtr.Pad   = env->idt.selector;
-    kd.ckr.Idtr.Limit = env->idt.limit;
-    kd.ckr.Idtr.Base  = env->idt.base;
-    kd.ckr.Tr         = env->tr.selector;
-    kd.ckr.Ldtr       = env->ldt.selector;
-
-    // kd.ckr.Reserved[6];
-
-    return &kd.ckr;
-}
-
-void kd_set_kspecial_registers(CPUState *cpu, uint8_t *data, int len, int offset)
-{
-}
-
 void windbg_on_init(void)
 {
+    // init cpu ctrl addrs
+    kd_get_cpu_ctrl_addrs(qemu_get_cpu(0));
+
     // init cpu_amount
     CPUState *cpu;
     CPU_FOREACH(cpu) {

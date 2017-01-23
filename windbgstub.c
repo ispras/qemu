@@ -1,7 +1,5 @@
 #include "qemu/osdep.h"
 #include "sysemu/char.h"
-#include "sysemu/sysemu.h"
-#include "sysemu/cpus.h"
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
@@ -38,8 +36,6 @@ static ParsingContext chr_ctx = { .state = STATE_LEADER };
 static CharDriverState *windbg_chr = NULL;
 
 static FILE *dump_file;
-
-static CPU_CTRL_ADDRS *cc_addrs;
 
 void windbg_dump(const char *fmt, ...)
 {
@@ -90,208 +86,101 @@ static void windbg_send_control_packet(uint16_t type)
 
 static void windbg_process_manipulate_packet(ParsingContext *ctx)
 {
-    const size_t m64_size = sizeof(DBGKD_MANIPULATE_STATE64);
-
     PacketData pd;
     pd.m64 = (DBGKD_MANIPULATE_STATE64 *) ctx->data;
-    pd.extra_size = ctx->packet.ByteCount - m64_size;
-    pd.extra = ctx->data + m64_size;
+    pd.extra_size = ctx->packet.ByteCount - M64_SIZE;
+    pd.extra = ctx->data + M64_SIZE;
     pd.m64->ReturnStatus = STATUS_SUCCESS;
 
-    int err = 0;
     CPUState *cpu = qemu_get_cpu(pd.m64->Processor < get_cpu_amount() ?
                                  pd.m64->Processor : 0);
 
     switch(pd.m64->ApiNumber) {
 
     case DbgKdReadVirtualMemoryApi:
-    {
-        DBGKD_READ_MEMORY64 *mem = &pd.m64->u.ReadMemory;
-
-        mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
-        err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
-                                  pd.extra, mem->ActualBytesRead, 0);
-        pd.extra_size = mem->ActualBytesRead;
-
-        if (err) {
-            pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
-
-            // tmp checking
-            WINDBG_DEBUG("ReadVirtualMemoryApi: No physical page mapped: " FMT_ADDR,
-                         (target_ulong) mem->TargetBaseAddress);
-        }
-
+        kd_api_read_virtual_memory(cpu, &pd);
         break;
-    }
+
     case DbgKdWriteVirtualMemoryApi:
-    {
-        DBGKD_WRITE_MEMORY64 *mem = &pd.m64->u.WriteMemory;
-
-        mem->ActualBytesWritten = MIN(pd.extra_size, mem->TransferCount);
-        err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
-                                  pd.extra, mem->ActualBytesWritten, 1);
-
-        if (err) {
-            pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
-        }
-        pd.extra_size = 0;
-
+        kd_api_write_virtual_memory(cpu, &pd);
         break;
-    }
+
     case DbgKdGetContextApi:
-    {
-        pd.extra_size = sizeof(CPU_CONTEXT);
-        memcpy(pd.extra, kd_get_context(cpu), pd.extra_size);
-
+        kd_api_get_context(cpu, &pd);
         break;
-    }
+
     case DbgKdSetContextApi:
-    {
-        kd_set_context(cpu, pd.extra, MIN(pd.extra_size, sizeof(CPU_CONTEXT)));
-        pd.extra_size = 0;
-
+        kd_api_set_context(cpu, &pd);
         break;
-    }
+
     case DbgKdWriteBreakPointApi:
-    {
-        windbg_write_breakpoint(cpu, &pd);
+        kd_api_write_breakpoint(cpu, &pd);
         break;
-    }
+
     case DbgKdRestoreBreakPointApi:
-    {
-        windbg_restore_breakpoint(cpu, &pd);
+        kd_api_restore_breakpoint(cpu, &pd);
         break;
-    }
+
     case DbgKdReadControlSpaceApi:
-    {
-        DBGKD_READ_MEMORY64 *mem = &pd.m64->u.ReadMemory;
-
-        // tmp checking
-        if (mem->TargetBaseAddress != 0x2f4 && mem->TargetBaseAddress != 0x2cc) {
-            WINDBG_DEBUG("ReadControlSpaceApi: Catched unknown " FMT_ADDR,
-                         (target_ulong) mem->TargetBaseAddress);
-        }
-
-        mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
-        uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
-        memcpy(pd.extra, ((uint8_t *) kd_get_kspecial_registers(cpu)) + offset,
-               mem->ActualBytesRead);
-        pd.extra_size = mem->ActualBytesRead;
-
+        kd_api_read_control_space(cpu, &pd);
         break;
-    }
+
     case DbgKdWriteControlSpaceApi:
-    {
-        DBGKD_WRITE_MEMORY64 *mem = &pd.m64->u.WriteMemory;
-
-        // tmp checking
-        if (mem->TargetBaseAddress != 0x2f4 && mem->TargetBaseAddress != 0x2cc) {
-            WINDBG_DEBUG("WriteControlSpaceApi: Catched unknown " FMT_ADDR,
-                         (target_ulong) mem->TargetBaseAddress);
-        }
-
-        mem->ActualBytesWritten = MIN(pd.extra_size, mem->TransferCount);
-        uint32_t offset = mem->TargetBaseAddress - sizeof(CPU_CONTEXT);
-        kd_set_kspecial_registers(cpu, pd.extra, mem->ActualBytesWritten, offset);
-        pd.extra_size = 0;
-
+        kd_api_write_control_space(cpu, &pd);
         break;
-    }
+
     case DbgKdReadIoSpaceApi:
-    {
-        windbg_read_io_space(cpu, &pd);
+        kd_api_read_io_space(cpu, &pd);
         break;
-    }
+
     case DbgKdWriteIoSpaceApi:
-    {
-        windbg_write_io_space(cpu, &pd);
+        kd_api_write_io_space(cpu, &pd);
         break;
-    }
+
+    case DbgKdContinueApi:
     case DbgKdContinueApi2:
-    {
-        cpu_single_step(cpu, pd.m64->u.Continue2.ControlSet.TraceFlag ?
-                        SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0);
-
-        if (!runstate_needs_reset()) {
-            vm_start();
-        }
-
+        kd_api_continue(cpu, &pd);
         return;
-    }
+
     case DbgKdReadPhysicalMemoryApi:
-    {
-        DBGKD_READ_MEMORY64 *mem = &pd.m64->u.ReadMemory;
-
-        mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - m64_size);
-        cpu_physical_memory_rw(mem->TargetBaseAddress, pd.extra,
-                               mem->ActualBytesRead, 0);
-        pd.extra_size = mem->ActualBytesRead;
-
+        kd_api_read_physical_memory(cpu, &pd);
         break;
-    }
+
     case DbgKdWritePhysicalMemoryApi:
-    {
-        DBGKD_WRITE_MEMORY64 *mem = &pd.m64->u.WriteMemory;
-
-        mem->ActualBytesWritten = MIN(pd.extra_size, mem->TransferCount);
-        cpu_physical_memory_rw(mem->TargetBaseAddress, pd.extra,
-                               mem->ActualBytesWritten, 1);
-        pd.extra_size = 0;
-
+        kd_api_write_physical_memory(cpu, &pd);
         break;
-    }
+
     case DbgKdGetVersionApi:
-    {
-        err = cpu_memory_rw_debug(cpu, cc_addrs->Version, (uint8_t *) pd.m64 + 0x10,
-                                  m64_size - 0x10, 0);
-        if (err) {
-            WINDBG_ERROR("GetVersionApi: " FMT_ERR, err);
-            pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
-        }
+        kd_api_get_version(cpu, &pd);
+        break;
 
-        break;
-    }
     case DbgKdReadMachineSpecificRegister:
-    {
-        windbg_read_msr(cpu, &pd);
+        kd_api_read_msr(cpu, &pd);
         break;
-    }
+
     case DbgKdWriteMachineSpecificRegister:
-    {
-        windbg_write_msr(cpu, &pd);
+        kd_api_write_msr(cpu, &pd);
         break;
-    }
+
     case DbgKdSearchMemoryApi:
-    {
-        windbg_search_memory(cpu, &pd);
+        kd_api_search_memory(cpu, &pd);
         break;
-    }
+
     case DbgKdClearAllInternalBreakpointsApi:
-    {
         // Unsupported yet!!! But need for connect
         break;
-    }
+
     case DbgKdQueryMemoryApi:
-    {
-        DBGKD_QUERY_MEMORY *mem = &pd.m64->u.QueryMemory;
-
-        if (mem->AddressSpace == DBGKD_QUERY_MEMORY_VIRTUAL) {
-            mem->AddressSpace = DBGKD_QUERY_MEMORY_PROCESS;
-            mem->Flags = DBGKD_QUERY_MEMORY_READ |
-                         DBGKD_QUERY_MEMORY_WRITE |
-                         DBGKD_QUERY_MEMORY_EXECUTE;
-        }
+        kd_api_query_memory(cpu, &pd);
         break;
-    }
-    default:
-        WINDBG_ERROR("Catched unimplemented api: %s",
-                     kd_api_name(pd.m64->ApiNumber));
-        pd.m64->ReturnStatus = STATUS_UNSUCCESSFUL;
 
+    default:
+        kd_api_unsupported(cpu, &pd);
         return;
     }
 
-    windbg_send_data_packet(pd.m64, pd.extra_size + m64_size, ctx->packet.PacketType);
+    windbg_send_data_packet((uint8_t *) pd.m64, pd.extra_size + M64_SIZE,
+                            ctx->packet.PacketType);
 }
 
 static void windbg_process_data_packet(ParsingContext *ctx)
@@ -469,7 +358,6 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 void windbg_start_sync(void)
 {
     windbg_on_init();
-    cc_addrs = kd_get_cpu_ctrl_addrs(qemu_get_cpu(0));
 
     lock = 1;
 }

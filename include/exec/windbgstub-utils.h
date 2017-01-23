@@ -3,6 +3,7 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
+#include "sysemu/sysemu.h"
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
 #include "exec/exec-all.h"
@@ -14,8 +15,8 @@
 #define COUT(...) printf("" __VA_ARGS__)
 #define COUT_LN(fmt, ...) COUT(fmt "\n", ##__VA_ARGS__)
 #define COUT_COMMON(fmt, var) COUT_LN(#var " = [" fmt "]", var)
-#define COUT_DEC(var) COUT_COMMON("%d", var)
-#define COUT_HEX(var) COUT_COMMON("0x%x", var)
+#define COUT_DEC(var) COUT_COMMON("%d", (uint32_t) var)
+#define COUT_HEX(var) COUT_COMMON("0x%x", (uint32_t) var)
 #define COUT_STRING(var) COUT_COMMON("%s", var)
 #define COUT_SIZEOF(var) COUT_COMMON("%lld", sizeof(var))
 
@@ -63,6 +64,8 @@
 
 #define UINT8(var, index) (CAST_TO_PTR(uint8_t, var)[index])
 #define UINT32(var, index) (CAST_TO_PTR(uint32_t, var)[index])
+
+#define M64_SIZE sizeof(DBGKD_MANIPULATE_STATE64)
 
 //
 // Structure for DbgKdExceptionStateChange
@@ -285,6 +288,11 @@ typedef struct _CPU_CONTEXT {
 #error Unsupported Architecture
 #endif
 
+typedef struct _CPU_KPROCESSOR_STATE {
+    CPU_CONTEXT ContextFrame;
+    CPU_KSPECIAL_REGISTERS SpecialRegisters;
+} CPU_KPROCESSOR_STATE, *PCPU_KPROCESSOR_STATE;
+
 typedef struct SizedBuf {
     uint8_t *data;
     size_t size;
@@ -301,24 +309,29 @@ typedef struct PacketData {
     uint16_t extra_size;
 } PacketData;
 
-void windbg_write_breakpoint(CPUState *cpu, PacketData *pd);
-void windbg_restore_breakpoint(CPUState *cpu, PacketData *pd);
-void windbg_read_io_space(CPUState *cpu, PacketData *pd);
-void windbg_write_io_space(CPUState *cpu, PacketData *pd);
-void windbg_read_msr(CPUState *cpu, PacketData *pd);
-void windbg_write_msr(CPUState *cpu, PacketData *pd);
-void windbg_search_memory(CPUState *cpu, PacketData *pd);
-
-const char *kd_api_name(int api_number);
+void kd_api_read_virtual_memory(CPUState *cpu, PacketData *pd);
+void kd_api_write_virtual_memory(CPUState *cpu, PacketData *pd);
+void kd_api_get_context(CPUState *cpu, PacketData *pd);
+void kd_api_set_context(CPUState *cpu, PacketData *pd);
+void kd_api_write_breakpoint(CPUState *cpu, PacketData *pd);
+void kd_api_restore_breakpoint(CPUState *cpu, PacketData *pd);
+void kd_api_continue(CPUState *cpu, PacketData *pd);
+void kd_api_read_control_space(CPUState *cpu, PacketData *pd);
+void kd_api_write_control_space(CPUState *cpu, PacketData *pd);
+void kd_api_read_physical_memory(CPUState *cpu, PacketData *pd);
+void kd_api_write_physical_memory(CPUState *cpu, PacketData *pd);
+void kd_api_get_version(CPUState *cpu, PacketData *pd);
+void kd_api_read_io_space(CPUState *cpu, PacketData *pd);
+void kd_api_write_io_space(CPUState *cpu, PacketData *pd);
+void kd_api_read_msr(CPUState *cpu, PacketData *pd);
+void kd_api_write_msr(CPUState *cpu, PacketData *pd);
+void kd_api_search_memory(CPUState *cpu, PacketData *pd);
+void kd_api_query_memory(CPUState *cpu, PacketData *pd);
+void kd_api_unsupported(CPUState *cpu, PacketData *pd);
 
 CPU_CTRL_ADDRS         *kd_get_cpu_ctrl_addrs(CPUState *cpu);
 EXCEPTION_STATE_CHANGE *kd_get_exception_sc(CPUState *cpu);
 SizedBuf               *kd_get_load_symbols_sc(CPUState *cpu);
-CPU_CONTEXT            *kd_get_context(CPUState *cpu);
-CPU_KSPECIAL_REGISTERS *kd_get_kspecial_registers(CPUState *cpu);
-
-void kd_set_context(CPUState *cpu, uint8_t *data, int len);
-void kd_set_kspecial_registers(CPUState *cpu, uint8_t *data, int len, int offset);
 
 void windbg_dump(const char *fmt, ...);
 
