@@ -59,13 +59,14 @@
 #define WINDBG_ERROR(...) error_report("WinDbg: " __VA_ARGS__)
 #endif
 
-#define CAST_TO_PTR(type, var) ((type *) &(var))
-#define PTR(var) CAST_TO_PTR(uint8_t, var)
-
-#define UINT8(var, index) (CAST_TO_PTR(uint8_t, var)[index])
-#define UINT32(var, index) (CAST_TO_PTR(uint32_t, var)[index])
+#define TO_PTR(type, par) ((type *) (par))
+#define PTR(var) (TO_PTR(uint8_t, &var))
+#define UINT32P(var) (TO_PTR(uint32_t, &var))
 
 #define M64_SIZE sizeof(DBGKD_MANIPULATE_STATE64)
+
+#define SIZE_OF(type, field) sizeof(((type *) NULL)->field)
+#define TYPE_OF(type, field) typeof(((type *) NULL)->field)
 
 //
 // Structure for DbgKdExceptionStateChange

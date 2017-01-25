@@ -256,10 +256,10 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
     switch (ctx->state) {
     case STATE_LEADER:
         if (byte == PACKET_LEADER_BYTE || byte == CONTROL_PACKET_LEADER_BYTE) {
-            if (ctx->index > 0 && byte != UINT8(ctx->packet.PacketLeader, 0)) {
+            if (ctx->index > 0 && byte != PTR(ctx->packet.PacketLeader)[0]) {
                 ctx->index = 0;
             }
-            UINT8(ctx->packet.PacketLeader, ctx->index) = byte;
+            PTR(ctx->packet.PacketLeader)[ctx->index] = byte;
             ++ctx->index;
             if (ctx->index == sizeof(ctx->packet.PacketLeader)) {
                 ctx->state = STATE_PACKET_TYPE;
@@ -275,7 +275,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
         }
         break;
     case STATE_PACKET_TYPE:
-        UINT8(ctx->packet.PacketType, ctx->index) = byte;
+        PTR(ctx->packet.PacketType)[ctx->index] = byte;
         ++ctx->index;
         if (ctx->index == sizeof(ctx->packet.PacketType)) {
             if (ctx->packet.PacketType >= PACKET_TYPE_MAX) {
@@ -288,7 +288,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
         }
         break;
     case STATE_PACKET_BYTE_COUNT:
-        UINT8(ctx->packet.ByteCount, ctx->index) = byte;
+        PTR(ctx->packet.ByteCount)[ctx->index] = byte;
         ++ctx->index;
         if (ctx->index == sizeof(ctx->packet.ByteCount)) {
             ctx->state = STATE_PACKET_ID;
@@ -296,7 +296,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
         }
         break;
     case STATE_PACKET_ID:
-        UINT8(ctx->packet.PacketId, ctx->index) = byte;
+        PTR(ctx->packet.PacketId)[ctx->index] = byte;
         ++ctx->index;
         if (ctx->index == sizeof(ctx->packet.PacketId)) {
             ctx->state = STATE_PACKET_CHECKSUM;
@@ -304,7 +304,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
         }
         break;
     case STATE_PACKET_CHECKSUM:
-        UINT8(ctx->packet.Checksum, ctx->index) = byte;
+        PTR(ctx->packet.Checksum)[ctx->index] = byte;
         ++ctx->index;
         if (ctx->index == sizeof(ctx->packet.Checksum)) {
             if (ctx->packet.PacketLeader == CONTROL_PACKET_LEADER) {
