@@ -712,7 +712,7 @@ void kd_api_set_context(CPUState *cpu, PacketData *pd)
 void kd_api_write_breakpoint(CPUState *cpu, PacketData *pd)
 {
     DBGKD_WRITE_BREAKPOINT64 *m64cu = &pd->m64->u.WriteBreakPoint;
-    target_ulong addr = m64cu->BreakPointAddress - 1;
+    target_ulong addr = m64cu->BreakPointAddress;
     int i = 0, err = 0;
 
     for (; i < KD_BREAKPOINT_MAX; ++i) {
