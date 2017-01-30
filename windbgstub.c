@@ -1,5 +1,6 @@
 #include "qemu/osdep.h"
 #include "sysemu/char.h"
+#include "sysemu/sysemu.h"
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
@@ -18,20 +19,30 @@ typedef enum ParsingState {
     STATE_TRAILING_BYTE,
 } ParsingState;
 
+typedef enum ParsingResult {
+    RESULT_NONE,
+    RESULT_JUMP,
+    RESULT_JUMP_EXTENDED,
+    RESULT_BREAKIN_PACKET_BYTE,
+    RESULT_UNKNOWN_PACKET,
+    RESULT_CONTROL_PACKET,
+    RESULT_DATA_PACKET,
+    RESULT_ERROR,
+} ParsingResult;
+
 typedef struct ParsingContext {
     // index in the current buffer,
     // which depends on the current state
     int index;
     ParsingState state;
+    ParsingResult result;
     KD_PACKET packet;
-    uint8_t data[PACKET_MAX_SIZE];
+    PacketData data;
 } ParsingContext;
 
 static uint32_t cntrl_packet_id = RESET_PACKET_ID;
 static uint32_t data_packet_id = INITIAL_PACKET_ID;
-static uint8_t lock = 0;
-
-static ParsingContext chr_ctx = { .state = STATE_LEADER };
+static bool is_loaded = false;
 
 static CharDriverState *windbg_chr = NULL;
 
@@ -49,8 +60,7 @@ void windbg_dump(const char *fmt, ...)
     va_end(ap);
 }
 
-static void windbg_send_data_packet(uint8_t *data, uint16_t byte_count,
-                                    uint16_t type)
+static void windbg_send_data_packet(uint8_t *data, uint16_t byte_count, uint16_t type)
 {
     uint8_t trailing_byte = PACKET_TRAILING_BYTE;
 
@@ -87,15 +97,13 @@ static void windbg_send_control_packet(uint16_t type)
 static void windbg_process_manipulate_packet(ParsingContext *ctx)
 {
     PacketData pd;
-    pd.m64 = (DBGKD_MANIPULATE_STATE64 *) ctx->data;
     pd.extra_size = ctx->packet.ByteCount - M64_SIZE;
-    pd.extra = ctx->data + M64_SIZE;
-    pd.m64->ReturnStatus = STATUS_SUCCESS;
+    pd.m64.ReturnStatus = STATUS_SUCCESS;
 
-    CPUState *cpu = qemu_get_cpu(pd.m64->Processor < get_cpu_amount() ?
-                                 pd.m64->Processor : 0);
+    CPUState *cpu = qemu_get_cpu(pd.m64.Processor < get_cpu_amount() ?
+                                 pd.m64.Processor : 0);
 
-    switch(pd.m64->ApiNumber) {
+    switch(pd.m64.ApiNumber) {
 
     case DbgKdReadVirtualMemoryApi:
         kd_api_read_virtual_memory(cpu, &pd);
@@ -179,8 +187,7 @@ static void windbg_process_manipulate_packet(ParsingContext *ctx)
         return;
     }
 
-    windbg_send_data_packet((uint8_t *) pd.m64, pd.extra_size + M64_SIZE,
-                            ctx->packet.PacketType);
+    windbg_send_data_packet(pd.buf, M64_SIZE + pd.extra_size, ctx->packet.PacketType);
 }
 
 static void windbg_process_data_packet(ParsingContext *ctx)
@@ -325,7 +332,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
         }
         break;
     case STATE_PACKET_DATA:
-        ctx->data[ctx->index] = byte;
+        ctx->data.buf[ctx->index] = byte;
         ++ctx->index;
         if (ctx->index == ctx->packet.ByteCount) {
             ctx->state = STATE_TRAILING_BYTE;
@@ -347,10 +354,12 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
 
 static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 {
-    if (lock) {
+    static ParsingContext ctx = { .state = STATE_LEADER };
+
+    if (is_loaded) {
         int i;
         for (i = 0; i < size; i++) {
-            windbg_read_byte(&chr_ctx, buf[i]);
+            windbg_read_byte(&ctx, buf[i]);
         }
     }
 }
@@ -359,7 +368,7 @@ void windbg_start_sync(void)
 {
     windbg_on_init();
 
-    lock = 1;
+    is_loaded = true;
 }
 
 static void windbg_exit(void)

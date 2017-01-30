@@ -1,4 +1,6 @@
 #include "exec/windbgstub-utils.h"
+#include "sysemu/sysemu.h"
+#include "exec/address-spaces.h"
 
 #define IS_LOCAL_BP_ENABLED(dr7, index) (((dr7) >> ((index) * 2)) & 1)
 
@@ -213,7 +215,7 @@ static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
     const bool new_mem = (len != sizeof(CPU_CONTEXT) || offset != 0);
     CPUArchState *env = cpu->env_ptr;
     CPU_CONTEXT *cc;
-    int err = 0;
+    int err = 0, i;
 
     if (new_mem) {
         cc = (CPU_CONTEXT *) g_malloc(sizeof(CPU_CONTEXT));
@@ -250,9 +252,17 @@ static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
     }
 
     if (cc->ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
+        uint32_t swd = 0, twd = 0;
+
+        swd = env->fpus & ~(7 << 11);
+        swd |= (env->fpstt & 7) << 11;
+        for (i = 0; i < 8; ++i) {
+            twd |= (!env->fptags[i]) << i;
+        }
+
         cc->FloatSave.ControlWord    = env->fpuc;
-        cc->FloatSave.StatusWord     = env->fpus;
-        cc->FloatSave.TagWord        = env->fpstt;
+        cc->FloatSave.StatusWord     = swd;
+        cc->FloatSave.TagWord        = twd;
         cc->FloatSave.ErrorOffset    = UINT32P(env->fpip)[0];
         cc->FloatSave.ErrorSelector  = UINT32P(env->fpip)[1];
         cc->FloatSave.DataOffset     = UINT32P(env->fpdp)[0];
@@ -307,171 +317,171 @@ static int windbg_write_context(CPUState *cpu, uint8_t *buf, int len, int offset
   #ifdef TARGET_I386
 
         case offsetof(CPU_CONTEXT, ContextFlags):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, ContextFlags), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, ContextFlags), len);
             break;
 
         case offsetof(CPU_CONTEXT, Dr0):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Dr0), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Dr0), len);
             windbg_set_dr(cpu, 0, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_CONTEXT, Dr1):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Dr1), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Dr1), len);
             windbg_set_dr(cpu, 1, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_CONTEXT, Dr2):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Dr2), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Dr2), len);
             windbg_set_dr(cpu, 2, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_CONTEXT, Dr3):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Dr3), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Dr3), len);
             windbg_set_dr(cpu, 3, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_CONTEXT, Dr6):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Dr6), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Dr6), len);
             windbg_set_dr(cpu, 6, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_CONTEXT, Dr7):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Dr7), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Dr7), len);
             windbg_set_dr(cpu, 7, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_CONTEXT, FloatSave.ControlWord):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, FloatSave.ControlWord), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, FloatSave.ControlWord), len);
             memcpy(PTR(env->fpuc), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, FloatSave.StatusWord):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, FloatSave.StatusWord), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, FloatSave.StatusWord), len);
             memcpy(PTR(env->fpus), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, FloatSave.TagWord):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, FloatSave.TagWord), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, FloatSave.TagWord), len);
             memcpy(PTR(env->fpstt), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, FloatSave.ErrorOffset):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, FloatSave.ErrorOffset), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, FloatSave.ErrorOffset), len);
             memcpy(PTR(env->fpip), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, FloatSave.ErrorSelector):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, FloatSave.ErrorSelector), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, FloatSave.ErrorSelector), len);
             memcpy(PTR(env->fpip) + 4, buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, FloatSave.DataOffset):
-            mem_size = MIN(SIZE_OF( CPU_CONTEXT, FloatSave.DataOffset), len);
+            mem_size = MIN(sizeof_field( CPU_CONTEXT, FloatSave.DataOffset), len);
             memcpy(PTR(env->fpdp), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, FloatSave.DataSelector):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, FloatSave.DataSelector), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, FloatSave.DataSelector), len);
             memcpy(PTR(env->fpdp) + 4, buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, FloatSave.RegisterArea) ...
              offsetof(CPU_CONTEXT, FloatSave.RegisterArea) +
-             SIZE_OF(CPU_CONTEXT,  FloatSave.RegisterArea) - 1:
-            field_size = SIZE_OF(CPU_CONTEXT, FloatSave.RegisterArea);
+             sizeof_field(CPU_CONTEXT,  FloatSave.RegisterArea) - 1:
+            field_size = sizeof_field(CPU_CONTEXT, FloatSave.RegisterArea);
             field_offset = offsetof(CPU_CONTEXT, FloatSave.RegisterArea);
             mem_size = MIN(field_offset + field_size - offset, len);
             break;
 
         case offsetof(CPU_CONTEXT, FloatSave.Cr0NpxState):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, FloatSave.Cr0NpxState), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, FloatSave.Cr0NpxState), len);
             memcpy(PTR(env->cr[0]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, SegGs):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, SegGs), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, SegGs), len);
             memcpy(PTR(env->segs[R_GS].selector), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, SegFs):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, SegFs), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, SegFs), len);
             memcpy(PTR(env->segs[R_FS].selector), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, SegEs):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, SegEs), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, SegEs), len);
             memcpy(PTR(env->segs[R_ES].selector), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, SegDs):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, SegDs), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, SegDs), len);
             memcpy(PTR(env->segs[R_DS].selector), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, Edi):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Edi), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Edi), len);
             memcpy(PTR(env->regs[R_EDI]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, Esi):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Esi), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Esi), len);
             memcpy(PTR(env->regs[R_ESI]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, Ebx):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Ebx), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Ebx), len);
             memcpy(PTR(env->regs[R_EBX]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, Edx):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Edx), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Edx), len);
             memcpy(PTR(env->regs[R_EDX]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, Ecx):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Ecx), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Ecx), len);
             memcpy(PTR(env->regs[R_ECX]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, Eax):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Eax), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Eax), len);
             memcpy(PTR(env->regs[R_EAX]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, Ebp):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Ebp), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Ebp), len);
             memcpy(PTR(env->regs[R_EBP]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, Eip):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Eip), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Eip), len);
             memcpy(PTR(env->eip), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, SegCs):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, SegCs), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, SegCs), len);
             memcpy(PTR(env->segs[R_CS].selector), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, EFlags):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, EFlags), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, EFlags), len);
             memcpy(PTR(env->eflags), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, Esp):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, Esp), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, Esp), len);
             memcpy(PTR(env->regs[R_ESP]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, SegSs):
-            mem_size = MIN(SIZE_OF(CPU_CONTEXT, SegSs), len);
+            mem_size = MIN(sizeof_field(CPU_CONTEXT, SegSs), len);
             memcpy(PTR(env->segs[R_SS].selector), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_CONTEXT, ExtendedRegisters) ...
              offsetof(CPU_CONTEXT, ExtendedRegisters) +
-             SIZE_OF(CPU_CONTEXT,  ExtendedRegisters) - 1:
-            field_size = SIZE_OF(CPU_CONTEXT, ExtendedRegisters);
+             sizeof_field(CPU_CONTEXT,  ExtendedRegisters) - 1:
+            field_size = sizeof_field(CPU_CONTEXT, ExtendedRegisters);
             field_offset = offsetof(CPU_CONTEXT, ExtendedRegisters);
             mem_size = MIN(field_offset + field_size - offset, len);
             break;
@@ -543,99 +553,99 @@ static int windbg_write_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset
   #ifdef TARGET_I386
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Cr0):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Cr0), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Cr0), len);
             memcpy(PTR(env->cr[0]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Cr2):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Cr2), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Cr2), len);
             memcpy(PTR(env->cr[2]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Cr3):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Cr3), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Cr3), len);
             memcpy(PTR(env->cr[3]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Cr4):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Cr4), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Cr4), len);
             memcpy(PTR(env->cr[4]), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, KernelDr0):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, KernelDr0), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, KernelDr0), len);
             windbg_set_dr(cpu, 0, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, KernelDr1):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, KernelDr1), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, KernelDr1), len);
             windbg_set_dr(cpu, 1, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, KernelDr2):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, KernelDr2), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, KernelDr2), len);
             windbg_set_dr(cpu, 2, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, KernelDr3):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, KernelDr3), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, KernelDr3), len);
             windbg_set_dr(cpu, 3, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, KernelDr6):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, KernelDr6), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, KernelDr6), len);
             windbg_set_dr(cpu, 6, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, KernelDr7):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, KernelDr7), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, KernelDr7), len);
             windbg_set_dr(cpu, 7, *TO_PTR(target_ulong, buf + offset));
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Gdtr.Pad):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Gdtr.Pad), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Gdtr.Pad), len);
             memcpy(PTR(env->gdt.selector), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Gdtr.Limit):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Gdtr.Limit), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Gdtr.Limit), len);
             memcpy(PTR(env->gdt.limit), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Gdtr.Base):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Gdtr.Base), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Gdtr.Base), len);
             memcpy(PTR(env->gdt.base), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Idtr.Pad):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Idtr.Pad), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Idtr.Pad), len);
             memcpy(PTR(env->idt.selector), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Idtr.Limit):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Idtr.Limit), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Idtr.Limit), len);
             memcpy(PTR(env->idt.limit), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Idtr.Base):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Idtr.Base), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Idtr.Base), len);
             memcpy(PTR(env->idt.base), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Tr):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Tr), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Tr), len);
             memcpy(PTR(env->tr.selector), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Ldtr):
-            mem_size = MIN(SIZE_OF(CPU_KSPECIAL_REGISTERS, Ldtr), len);
+            mem_size = MIN(sizeof_field(CPU_KSPECIAL_REGISTERS, Ldtr), len);
             memcpy(PTR(env->ldt.selector), buf + offset, mem_size);
             break;
 
         case offsetof(CPU_KSPECIAL_REGISTERS, Reserved) ...
              offsetof(CPU_KSPECIAL_REGISTERS, Reserved) +
-             SIZE_OF(CPU_KSPECIAL_REGISTERS, Reserved) - 1:
-            field_size = SIZE_OF(CPU_KSPECIAL_REGISTERS, Reserved);
+             sizeof_field(CPU_KSPECIAL_REGISTERS, Reserved) - 1:
+            field_size = sizeof_field(CPU_KSPECIAL_REGISTERS, Reserved);
             field_offset = offsetof(CPU_KSPECIAL_REGISTERS, Reserved);
             mem_size = MIN(field_offset + field_size - offset, len);
             break;
@@ -656,7 +666,7 @@ static int windbg_write_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset
 
 void kd_api_read_virtual_memory(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_READ_MEMORY64 *mem = &pd->m64->u.ReadMemory;
+    DBGKD_READ_MEMORY64 *mem = &pd->m64.u.ReadMemory;
 
     mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - M64_SIZE);
     int err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
@@ -664,7 +674,7 @@ void kd_api_read_virtual_memory(CPUState *cpu, PacketData *pd)
     pd->extra_size = mem->ActualBytesRead;
 
     if (err) {
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
 
         // tmp checking
         WINDBG_DEBUG("ReadVirtualMemoryApi: No physical page mapped: " FMT_ADDR,
@@ -674,13 +684,13 @@ void kd_api_read_virtual_memory(CPUState *cpu, PacketData *pd)
 
 void kd_api_write_virtual_memory(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_WRITE_MEMORY64 *mem = &pd->m64->u.WriteMemory;
+    DBGKD_WRITE_MEMORY64 *mem = &pd->m64.u.WriteMemory;
 
     mem->ActualBytesWritten = MIN(pd->extra_size, mem->TransferCount);
     int err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
                                   pd->extra, mem->ActualBytesWritten, 1);
     if (err) {
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     }
     pd->extra_size = 0;
 }
@@ -692,7 +702,7 @@ void kd_api_get_context(CPUState *cpu, PacketData *pd)
 
     if (err) {
         pd->extra_size = 0;
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 }
 
@@ -702,21 +712,20 @@ void kd_api_set_context(CPUState *cpu, PacketData *pd)
     pd->extra_size = 0;
 
     if (err) {
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 }
 
 void kd_api_write_breakpoint(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_WRITE_BREAKPOINT64 *m64cu = &pd->m64->u.WriteBreakPoint;
-    target_ulong addr = m64cu->BreakPointAddress;
+    DBGKD_WRITE_BREAKPOINT64 *m64c = &pd->m64.u.WriteBreakPoint;
+    target_ulong addr = m64c->BreakPointAddress;
     int i = 0, err = 0;
 
     for (; i < KD_BREAKPOINT_MAX; ++i) {
         if (!kd.bps[i].is_init) {
             err = cpu_breakpoint_insert(cpu, addr, BP_GDB, NULL);
             if (!err) {
-                tb_flush(cpu);
                 kd.bps[i].addr = addr;
                 kd.bps[i].is_init = true;
                 WINDBG_DEBUG("write_breakpoint: " FMT_ADDR, addr);
@@ -724,7 +733,7 @@ void kd_api_write_breakpoint(CPUState *cpu, PacketData *pd)
             }
             else {
                 WINDBG_ERROR("write_breakpoint: " FMT_ADDR ", " FMT_ERR, addr, err);
-                pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+                pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
                 return;
             }
         }
@@ -734,19 +743,19 @@ void kd_api_write_breakpoint(CPUState *cpu, PacketData *pd)
     }
 
     if (!err) {
-        m64cu->BreakPointHandle = i + 1;
-        pd->m64->ReturnStatus = STATUS_SUCCESS;
+        m64c->BreakPointHandle = i + 1;
+        pd->m64.ReturnStatus = STATUS_SUCCESS;
     }
     else {
         WINDBG_ERROR("write_breakpoint: All breakpoints occupied");
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 }
 
 void kd_api_restore_breakpoint(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_RESTORE_BREAKPOINT *m64cu = &pd->m64->u.RestoreBreakPoint;
-    uint8_t index = m64cu->BreakPointHandle - 1;
+    DBGKD_RESTORE_BREAKPOINT *m64c = &pd->m64.u.RestoreBreakPoint;
+    uint8_t index = m64c->BreakPointHandle - 1;
     int err = -1;
 
     if (kd.bps[index].is_init) {
@@ -760,17 +769,17 @@ void kd_api_restore_breakpoint(CPUState *cpu, PacketData *pd)
                          kd.bps[index].addr, index, err);
         }
         kd.bps[index].is_init = false;
-        pd->m64->ReturnStatus = STATUS_SUCCESS;
+        pd->m64.ReturnStatus = STATUS_SUCCESS;
     }
     else {
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 }
 
 void kd_api_continue(CPUState *cpu, PacketData *pd)
 {
-    if (NT_SUCCESS(pd->m64->ReturnStatus)) {
-        cpu_single_step(cpu, pd->m64->u.Continue2.ControlSet.TraceFlag ?
+    if (NT_SUCCESS(pd->m64.ReturnStatus)) {
+        cpu_single_step(cpu, pd->m64.u.Continue2.ControlSet.TraceFlag ?
                         SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0);
 
         if (!runstate_needs_reset()) {
@@ -781,7 +790,7 @@ void kd_api_continue(CPUState *cpu, PacketData *pd)
 
 void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_READ_MEMORY64 *mem = &pd->m64->u.ReadMemory;
+    DBGKD_READ_MEMORY64 *mem = &pd->m64.u.ReadMemory;
     int err = -1;
 
     if (mem->TargetBaseAddress < sizeof(CPU_KPROCESSOR_STATE)) {
@@ -805,7 +814,7 @@ void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
 
     if (err) {
         pd->extra_size = mem->ActualBytesRead = 0;
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     }
     else {
         pd->extra_size = mem->ActualBytesRead;
@@ -814,7 +823,7 @@ void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
 
 void kd_api_write_control_space(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_WRITE_MEMORY64 *mem = &pd->m64->u.WriteMemory;
+    DBGKD_WRITE_MEMORY64 *mem = &pd->m64.u.WriteMemory;
     int err = -1;
 
     if (mem->TargetBaseAddress < sizeof(CPU_KPROCESSOR_STATE)) {
@@ -838,14 +847,14 @@ void kd_api_write_control_space(CPUState *cpu, PacketData *pd)
 
     pd->extra_size = 0;
     if (err) {
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
         mem->ActualBytesWritten = 0;
     }
 }
 
 void kd_api_read_physical_memory(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_READ_MEMORY64 *mem = &pd->m64->u.ReadMemory;
+    DBGKD_READ_MEMORY64 *mem = &pd->m64.u.ReadMemory;
 
     mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - M64_SIZE);
     cpu_physical_memory_rw(mem->TargetBaseAddress, pd->extra,
@@ -855,7 +864,7 @@ void kd_api_read_physical_memory(CPUState *cpu, PacketData *pd)
 
 void kd_api_write_physical_memory(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_WRITE_MEMORY64 *mem = &pd->m64->u.WriteMemory;
+    DBGKD_WRITE_MEMORY64 *mem = &pd->m64.u.WriteMemory;
 
     mem->ActualBytesWritten = MIN(pd->extra_size, mem->TransferCount);
     cpu_physical_memory_rw(mem->TargetBaseAddress, pd->extra,
@@ -866,17 +875,17 @@ void kd_api_write_physical_memory(CPUState *cpu, PacketData *pd)
 void kd_api_get_version(CPUState *cpu, PacketData *pd)
 {
     int err = cpu_memory_rw_debug(cpu, kd.cca.Version,
-                                  (uint8_t *) pd->m64 + 0x10,
+                                  PTR(pd->m64) + 0x10,
                                   M64_SIZE - 0x10, 0);
     if (err) {
         WINDBG_ERROR("GetVersionApi: " FMT_ERR, err);
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 }
 
 void kd_api_read_io_space(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_READ_WRITE_IO64 *io = &pd->m64->u.ReadWriteIo;
+    DBGKD_READ_WRITE_IO64 *io = &pd->m64.u.ReadWriteIo;
     CPUArchState *env = cpu->env_ptr;
 
     switch (io->DataSize) {
@@ -893,16 +902,16 @@ void kd_api_read_io_space(CPUState *cpu, PacketData *pd)
                                            cpu_get_mem_attrs(env), NULL);
         break;
     default:
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
         return;
     }
 
-    pd->m64->ReturnStatus = STATUS_SUCCESS;
+    pd->m64.ReturnStatus = STATUS_SUCCESS;
 }
 
 void kd_api_write_io_space(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_READ_WRITE_IO64 *io = &pd->m64->u.ReadWriteIo;
+    DBGKD_READ_WRITE_IO64 *io = &pd->m64.u.ReadWriteIo;
     CPUArchState *env = cpu->env_ptr;
 
     switch (io->DataSize) {
@@ -919,22 +928,22 @@ void kd_api_write_io_space(CPUState *cpu, PacketData *pd)
                           cpu_get_mem_attrs(env), NULL);
         break;
     default:
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
         return;
     }
 
-    pd->m64->ReturnStatus = STATUS_SUCCESS;
+    pd->m64.ReturnStatus = STATUS_SUCCESS;
 }
 
 void kd_api_read_msr(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_READ_WRITE_MSR *m64cu = &pd->m64->u.ReadWriteMsr;
+    DBGKD_READ_WRITE_MSR *m64c = &pd->m64.u.ReadWriteMsr;
     CPUArchState *env = cpu->env_ptr;
     uint64_t val;
 
     cpu_svm_check_intercept_param(env, SVM_EXIT_MSR, 0);
 
-    switch (m64cu->Msr) {
+    switch (m64c->Msr) {
     case MSR_IA32_SYSENTER_CS:
         val = env->sysenter_cs;
         break;
@@ -1073,22 +1082,22 @@ void kd_api_read_msr(CPUState *cpu, PacketData *pd)
         break;
     }
 
-    m64cu->DataValueLow  = UINT32P(val)[0];
-    m64cu->DataValueHigh = UINT32P(val)[1];
-    pd->m64->ReturnStatus = STATUS_SUCCESS;
+    m64c->DataValueLow  = UINT32P(val)[0];
+    m64c->DataValueHigh = UINT32P(val)[1];
+    pd->m64.ReturnStatus = STATUS_SUCCESS;
 }
 
 void kd_api_write_msr(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_READ_WRITE_MSR *m64cu = &pd->m64->u.ReadWriteMsr;
+    DBGKD_READ_WRITE_MSR *m64c = &pd->m64.u.ReadWriteMsr;
     CPUArchState *env = cpu->env_ptr;
     uint64_t val;
 
     cpu_svm_check_intercept_param(env, SVM_EXIT_MSR, 1);
 
-    val = m64cu->DataValueLow | ((uint64_t) m64cu->DataValueHigh) << 32;
+    val = m64c->DataValueLow | ((uint64_t) m64c->DataValueHigh) << 32;
 
-    switch (m64cu->Msr) {
+    switch (m64c->Msr) {
     case MSR_IA32_SYSENTER_CS:
         env->sysenter_cs = val & 0xffff;
         break;
@@ -1237,27 +1246,27 @@ void kd_api_write_msr(CPUState *cpu, PacketData *pd)
         /* XXX: exception? */
         break;
     }
-    pd->m64->ReturnStatus = STATUS_SUCCESS;
+    pd->m64.ReturnStatus = STATUS_SUCCESS;
 }
 
 void kd_api_search_memory(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_SEARCH_MEMORY *m64cu = &pd->m64->u.SearchMemory;
-    int s_len = MAX(1, m64cu->SearchLength);
-    int p_len = MIN(m64cu->PatternLength, pd->extra_size);
+    DBGKD_SEARCH_MEMORY *m64c = &pd->m64.u.SearchMemory;
+    int s_len = MAX(1, m64c->SearchLength);
+    int p_len = MIN(m64c->PatternLength, pd->extra_size);
 
     SizedBuf mem;
     mem.size = s_len - 1 + p_len;
     mem.data = g_malloc0(mem.size);
 
-    int err = cpu_memory_rw_debug(cpu, m64cu->SearchAddress, mem.data, mem.size, 0);
+    int err = cpu_memory_rw_debug(cpu, m64c->SearchAddress, mem.data, mem.size, 0);
     if (!err) {
         int i;
-        pd->m64->ReturnStatus = STATUS_NO_MORE_ENTRIES;
+        pd->m64.ReturnStatus = STATUS_NO_MORE_ENTRIES;
         for (i = 0; i < s_len; ++i) {
             if (memcmp(mem.data + i, pd->extra, p_len) == 0) {
-                m64cu->FoundAddress = m64cu->SearchAddress + i;
-                pd->m64->ReturnStatus = STATUS_SUCCESS;
+                m64c->FoundAddress = m64c->SearchAddress + i;
+                pd->m64.ReturnStatus = STATUS_SUCCESS;
                 break;
             }
         }
@@ -1265,8 +1274,8 @@ void kd_api_search_memory(CPUState *cpu, PacketData *pd)
     else {
         // tmp checking
         WINDBG_DEBUG("search_memory: No physical page mapped: " FMT_ADDR,
-                     (target_ulong) m64cu->SearchAddress);
-        pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+                     (target_ulong) m64c->SearchAddress);
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 
     pd->extra_size = 0;
@@ -1275,7 +1284,7 @@ void kd_api_search_memory(CPUState *cpu, PacketData *pd)
 
 void kd_api_query_memory(CPUState *cpu, PacketData *pd)
 {
-    DBGKD_QUERY_MEMORY *mem = &pd->m64->u.QueryMemory;
+    DBGKD_QUERY_MEMORY *mem = &pd->m64.u.QueryMemory;
 
     if (mem->AddressSpace == DBGKD_QUERY_MEMORY_VIRTUAL) {
         mem->AddressSpace = DBGKD_QUERY_MEMORY_PROCESS;
@@ -1288,8 +1297,8 @@ void kd_api_query_memory(CPUState *cpu, PacketData *pd)
 void kd_api_unsupported(CPUState *cpu, PacketData *pd)
 {
     WINDBG_ERROR("Catched unimplemented api: %s",
-                 KD_API_NAME(pd->m64->ApiNumber));
-    pd->m64->ReturnStatus = STATUS_UNSUCCESSFUL;
+                 KD_API_NAME(pd->m64.ApiNumber));
+    pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
 }
 
 CPU_CTRL_ADDRS *kd_get_cpu_ctrl_addrs(CPUState *cpu)
@@ -1343,7 +1352,7 @@ static void kd_init_common_sc(CPUState *cpu, DBGKD_ANY_WAIT_STATE_CHANGE *sc)
     sc->NewState = DbgKdExceptionStateChange;
     sc->ProcessorLevel = 0x6;
     sc->Processor = 0;
-    sc->NumberProcessors = get_cpu_amount();
+    sc->NumberProcessors = cpu_amount;
     cpu_memory_rw_debug(cpu, kd.cca.KPRCB + OFFSET_KPRCB_CURRTHREAD,
                         PTR(sc->Thread), sizeof(sc->Thread), 0);
     sc->ProgramCounter = env->eip;
@@ -1463,11 +1472,6 @@ void windbg_on_exit(void)
     }
 }
 
-uint8_t get_cpu_amount(void)
-{
-    return cpu_amount;
-}
-
 uint32_t compute_checksum(uint8_t *data, uint16_t length)
 {
     uint32_t checksum = 0;
@@ -1475,4 +1479,9 @@ uint32_t compute_checksum(uint8_t *data, uint16_t length)
         checksum += *data++;
     }
     return checksum;
+}
+
+uint8_t get_cpu_amount(void)
+{
+    return cpu_amount;
 }

@@ -2,13 +2,11 @@
 #define WINDBGSTUB_UTILS_H
 
 #include "qemu/osdep.h"
-#include "cpu.h"
-#include "sysemu/sysemu.h"
-#include "qemu/cutils.h"
 #include "qemu/error-report.h"
-#include "exec/exec-all.h"
-#include "exec/address-spaces.h"
+#include "cpu.h"
 #include "exec/windbgkd.h"
+
+// #include "qemu/cutils.h"
 
 // FOR DEBUG
 
@@ -65,8 +63,7 @@
 
 #define M64_SIZE sizeof(DBGKD_MANIPULATE_STATE64)
 
-#define SIZE_OF(type, field) sizeof(((type *) NULL)->field)
-#define TYPE_OF(type, field) typeof(((type *) NULL)->field)
+#define sizeof_field(type, field) sizeof(((type *) NULL)->field)
 
 //
 // Structure for DbgKdExceptionStateChange
@@ -305,8 +302,13 @@ typedef struct InitedAddr {
 } InitedAddr;
 
 typedef struct PacketData {
-    DBGKD_MANIPULATE_STATE64 *m64;
-    uint8_t *extra;
+    union {
+        struct {
+            DBGKD_MANIPULATE_STATE64 m64;
+            uint8_t extra[PACKET_MAX_SIZE - sizeof(DBGKD_MANIPULATE_STATE64)];
+        };
+        uint8_t buf[PACKET_MAX_SIZE];
+    };
     uint16_t extra_size;
 } PacketData;
 
@@ -339,7 +341,7 @@ void windbg_dump(const char *fmt, ...);
 void windbg_on_init(void);
 void windbg_on_exit(void);
 
-uint8_t get_cpu_amount(void);
 uint32_t compute_checksum(uint8_t *data, uint16_t len);
+uint8_t get_cpu_amount(void);
 
 #endif
