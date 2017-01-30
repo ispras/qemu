@@ -21,8 +21,6 @@ typedef enum ParsingState {
 
 typedef enum ParsingResult {
     RESULT_NONE,
-    RESULT_JUMP,
-    RESULT_JUMP_EXTENDED,
     RESULT_BREAKIN_PACKET_BYTE,
     RESULT_UNKNOWN_PACKET,
     RESULT_CONTROL_PACKET,
@@ -94,84 +92,103 @@ static void windbg_send_control_packet(uint16_t type)
     cntrl_packet_id ^= 1;
 }
 
+static int windbg_chr_can_receive(void *opaque)
+{
+    // We can handle an arbitrarily large amount of data.
+    // Pick the maximum packet size, which is as good as anything.
+    return PACKET_MAX_SIZE;
+}
+
+static void windbg_bp_handler(CPUState *cpu)
+{
+    windbg_send_data_packet((uint8_t *) kd_get_exception_sc(cpu),
+                            sizeof(EXCEPTION_STATE_CHANGE),
+                            PACKET_TYPE_KD_STATE_CHANGE64);
+}
+
+static void windbg_vm_stop(void)
+{
+    vm_stop(RUN_STATE_PAUSED);
+    windbg_bp_handler(qemu_get_cpu(0));
+}
+
 static void windbg_process_manipulate_packet(ParsingContext *ctx)
 {
-    PacketData pd;
-    pd.extra_size = ctx->packet.ByteCount - M64_SIZE;
-    pd.m64.ReturnStatus = STATUS_SUCCESS;
+    ctx->data.extra_size = ctx->packet.ByteCount - M64_SIZE;
+    ctx->data.m64.ReturnStatus = STATUS_SUCCESS;
 
-    CPUState *cpu = qemu_get_cpu(pd.m64.Processor < get_cpu_amount() ?
-                                 pd.m64.Processor : 0);
+    CPUState *cpu = qemu_get_cpu(ctx->data.m64.Processor < get_cpu_amount() ?
+                                 ctx->data.m64.Processor : 0);
 
-    switch(pd.m64.ApiNumber) {
+    switch(ctx->data.m64.ApiNumber) {
 
     case DbgKdReadVirtualMemoryApi:
-        kd_api_read_virtual_memory(cpu, &pd);
+        kd_api_read_virtual_memory(cpu, &ctx->data);
         break;
 
     case DbgKdWriteVirtualMemoryApi:
-        kd_api_write_virtual_memory(cpu, &pd);
+        kd_api_write_virtual_memory(cpu, &ctx->data);
         break;
 
     case DbgKdGetContextApi:
-        kd_api_get_context(cpu, &pd);
+        kd_api_get_context(cpu, &ctx->data);
         break;
 
     case DbgKdSetContextApi:
-        kd_api_set_context(cpu, &pd);
+        kd_api_set_context(cpu, &ctx->data);
         break;
 
     case DbgKdWriteBreakPointApi:
-        kd_api_write_breakpoint(cpu, &pd);
+        kd_api_write_breakpoint(cpu, &ctx->data);
         break;
 
     case DbgKdRestoreBreakPointApi:
-        kd_api_restore_breakpoint(cpu, &pd);
+        kd_api_restore_breakpoint(cpu, &ctx->data);
         break;
 
     case DbgKdReadControlSpaceApi:
-        kd_api_read_control_space(cpu, &pd);
+        kd_api_read_control_space(cpu, &ctx->data);
         break;
 
     case DbgKdWriteControlSpaceApi:
-        kd_api_write_control_space(cpu, &pd);
+        kd_api_write_control_space(cpu, &ctx->data);
         break;
 
     case DbgKdReadIoSpaceApi:
-        kd_api_read_io_space(cpu, &pd);
+        kd_api_read_io_space(cpu, &ctx->data);
         break;
 
     case DbgKdWriteIoSpaceApi:
-        kd_api_write_io_space(cpu, &pd);
+        kd_api_write_io_space(cpu, &ctx->data);
         break;
 
     case DbgKdContinueApi:
     case DbgKdContinueApi2:
-        kd_api_continue(cpu, &pd);
+        kd_api_continue(cpu, &ctx->data);
         return;
 
     case DbgKdReadPhysicalMemoryApi:
-        kd_api_read_physical_memory(cpu, &pd);
+        kd_api_read_physical_memory(cpu, &ctx->data);
         break;
 
     case DbgKdWritePhysicalMemoryApi:
-        kd_api_write_physical_memory(cpu, &pd);
+        kd_api_write_physical_memory(cpu, &ctx->data);
         break;
 
     case DbgKdGetVersionApi:
-        kd_api_get_version(cpu, &pd);
+        kd_api_get_version(cpu, &ctx->data);
         break;
 
     case DbgKdReadMachineSpecificRegister:
-        kd_api_read_msr(cpu, &pd);
+        kd_api_read_msr(cpu, &ctx->data);
         break;
 
     case DbgKdWriteMachineSpecificRegister:
-        kd_api_write_msr(cpu, &pd);
+        kd_api_write_msr(cpu, &ctx->data);
         break;
 
     case DbgKdSearchMemoryApi:
-        kd_api_search_memory(cpu, &pd);
+        kd_api_search_memory(cpu, &ctx->data);
         break;
 
     case DbgKdClearAllInternalBreakpointsApi:
@@ -179,15 +196,16 @@ static void windbg_process_manipulate_packet(ParsingContext *ctx)
         break;
 
     case DbgKdQueryMemoryApi:
-        kd_api_query_memory(cpu, &pd);
+        kd_api_query_memory(cpu, &ctx->data);
         break;
 
     default:
-        kd_api_unsupported(cpu, &pd);
+        kd_api_unsupported(cpu, &ctx->data);
         return;
     }
 
-    windbg_send_data_packet(pd.buf, M64_SIZE + pd.extra_size, ctx->packet.PacketType);
+    windbg_send_data_packet(ctx->data.buf, ctx->data.extra_size + M64_SIZE,
+                            ctx->packet.PacketType);
 }
 
 static void windbg_process_data_packet(ParsingContext *ctx)
@@ -238,30 +256,36 @@ static void windbg_process_control_packet(ParsingContext *ctx)
     }
 }
 
-static int windbg_chr_can_receive(void *opaque)
+static void windbg_context_handler(ParsingContext *ctx)
 {
-    // We can handle an arbitrarily large amount of data.
-    // Pick the maximum packet size, which is as good as anything.
-    return PACKET_MAX_SIZE;
-}
-
-static void windbg_bp_handler(CPUState *cpu)
-{
-    windbg_send_data_packet((uint8_t *) kd_get_exception_sc(cpu),
-                            sizeof(EXCEPTION_STATE_CHANGE),
-                            PACKET_TYPE_KD_STATE_CHANGE64);
-}
-
-static void windbg_vm_stop(void)
-{
-    vm_stop(RUN_STATE_PAUSED);
-    windbg_bp_handler(qemu_get_cpu(0));
+    switch (ctx->result) {
+    case RESULT_NONE:
+        break;
+    case RESULT_BREAKIN_PACKET_BYTE:
+        windbg_vm_stop();
+        break;
+    case RESULT_UNKNOWN_PACKET:
+        break;
+    case RESULT_CONTROL_PACKET:
+        windbg_process_control_packet(ctx);
+        break;
+    case RESULT_DATA_PACKET:
+        windbg_process_data_packet(ctx);
+        break;
+    case RESULT_ERROR:
+        cntrl_packet_id = 0;
+        windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
+        break;
+    default:
+        break;
+    }
 }
 
 static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
 {
     switch (ctx->state) {
     case STATE_LEADER:
+        ctx->result = RESULT_NONE;
         if (byte == PACKET_LEADER_BYTE || byte == CONTROL_PACKET_LEADER_BYTE) {
             if (ctx->index > 0 && byte != PTR(ctx->packet.PacketLeader)[0]) {
                 ctx->index = 0;
@@ -274,7 +298,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
             }
         }
         else if (byte == BREAKIN_PACKET_BYTE) {
-            windbg_vm_stop();
+            ctx->result = RESULT_BREAKIN_PACKET_BYTE;
             ctx->index = 0;
         }
         else {
@@ -287,6 +311,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
         if (ctx->index == sizeof(ctx->packet.PacketType)) {
             if (ctx->packet.PacketType >= PACKET_TYPE_MAX) {
                 ctx->state = STATE_LEADER;
+                ctx->result = RESULT_UNKNOWN_PACKET;
             }
             else {
                 ctx->state = STATE_PACKET_BYTE_COUNT;
@@ -315,14 +340,13 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
         ++ctx->index;
         if (ctx->index == sizeof(ctx->packet.Checksum)) {
             if (ctx->packet.PacketLeader == CONTROL_PACKET_LEADER) {
-                windbg_process_control_packet(ctx);
                 ctx->state = STATE_LEADER;
+                ctx->result = RESULT_CONTROL_PACKET;
             }
             else {
                 if (ctx->packet.ByteCount > PACKET_MAX_SIZE) {
                     ctx->state = STATE_LEADER;
-                    cntrl_packet_id = 0;
-                    windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
+                    ctx->result = RESULT_ERROR;
                 }
                 else {
                     ctx->state = STATE_PACKET_DATA;
@@ -341,11 +365,10 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
         break;
     case STATE_TRAILING_BYTE:
         if (byte == PACKET_TRAILING_BYTE) {
-            windbg_process_data_packet(ctx);
+            ctx->result = RESULT_DATA_PACKET;
         }
         else {
-            cntrl_packet_id = 0;
-            windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
+            ctx->result = RESULT_ERROR;
         }
         ctx->state = STATE_LEADER;
         break;
@@ -360,6 +383,7 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
         int i;
         for (i = 0; i < size; i++) {
             windbg_read_byte(&ctx, buf[i]);
+            windbg_context_handler(&ctx);
         }
     }
 }
