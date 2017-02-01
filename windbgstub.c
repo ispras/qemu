@@ -4,10 +4,11 @@
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
-// windbg.exe -b -k com:pipe,baud=115200,port=\\.\pipe\windbg,resets=0
-// qemu.exe -windbg pipe:windbg
-
-#define WINDBG "windbg"
+#define ENABLE_PARSER        WINDBG_DEBUG_ON && true
+#define ENABLE_WINDBG_PARSER ENABLE_PARSER   && true
+#define ENABLE_KERNEL_PARSER ENABLE_PARSER   && true
+#define ENABLE_FULL_HANDLER  ENABLE_PARSER   && true
+#define ENABLE_API_HANDLER   ENABLE_PARSER   && true
 
 typedef enum ParsingState {
     STATE_LEADER,
@@ -21,7 +22,7 @@ typedef enum ParsingState {
 
 typedef enum ParsingResult {
     RESULT_NONE,
-    RESULT_BREAKIN_PACKET_BYTE,
+    RESULT_BREAKIN_BYTE,
     RESULT_UNKNOWN_PACKET,
     RESULT_CONTROL_PACKET,
     RESULT_DATA_PACKET,
@@ -36,6 +37,7 @@ typedef struct ParsingContext {
     ParsingResult result;
     KD_PACKET packet;
     PacketData data;
+    const char *name;
 } ParsingContext;
 
 static uint32_t cntrl_packet_id = RESET_PACKET_ID;
@@ -45,6 +47,11 @@ static bool is_loaded = false;
 static CharDriverState *windbg_chr = NULL;
 
 static FILE *dump_file;
+
+#if (ENABLE_PARSER)
+static FILE *parsed_packets;
+static FILE *parsed_api;
+#endif
 
 void windbg_dump(const char *fmt, ...)
 {
@@ -256,12 +263,12 @@ static void windbg_process_control_packet(ParsingContext *ctx)
     }
 }
 
-static void windbg_context_handler(ParsingContext *ctx)
+static void windbg_ctx_handler(ParsingContext *ctx)
 {
     switch (ctx->result) {
     case RESULT_NONE:
         break;
-    case RESULT_BREAKIN_PACKET_BYTE:
+    case RESULT_BREAKIN_BYTE:
         windbg_vm_stop();
         break;
     case RESULT_UNKNOWN_PACKET:
@@ -298,7 +305,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
             }
         }
         else if (byte == BREAKIN_PACKET_BYTE) {
-            ctx->result = RESULT_BREAKIN_PACKET_BYTE;
+            ctx->result = RESULT_BREAKIN_BYTE;
             ctx->index = 0;
         }
         else {
@@ -377,15 +384,115 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
 
 static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 {
-    static ParsingContext ctx = { .state = STATE_LEADER };
+    static ParsingContext ctx = { .state = STATE_LEADER,
+                                  .result = RESULT_NONE,
+                                  .name = ""};
 
     if (is_loaded) {
         int i;
         for (i = 0; i < size; i++) {
             windbg_read_byte(&ctx, buf[i]);
-            windbg_context_handler(&ctx);
+            windbg_ctx_handler(&ctx);
         }
     }
+}
+
+#if (ENABLE_PARSER)
+
+static void windbg_debug_ctx_handler(ParsingContext *ctx)
+{
+    FILE *f = parsed_packets;
+
+    fprintf(f, "FROM: %s\n", ctx->name);
+    switch (ctx->result) {
+    case RESULT_BREAKIN_BYTE:
+        fprintf(f, "CATCH BREAKING BYTE\n");
+        break;
+    case RESULT_UNKNOWN_PACKET:
+        fprintf(f, "ERROR: CATCH UNKNOWN PACKET TYPE: 0x%x\n", ctx->packet.PacketType);
+        break;
+    case RESULT_CONTROL_PACKET:
+        fprintf(f, "CATCH CONTROL PACKET: %s\n", kd_get_packet_type_name(ctx->packet.PacketType));
+        break;
+    case RESULT_DATA_PACKET:
+        fprintf(f, "CATCH DATA PACKET: %s\n", kd_get_packet_type_name(ctx->packet.PacketType));
+        fprintf(f, "Byte Count: %d\n", ctx->packet.ByteCount);
+        fprintf(f, "Api: %s\n", kd_get_api_name(UINT32P(ctx->data.buf)[0]));
+
+        int i;
+        for (i = 0; i < ctx->packet.ByteCount; ++i) {
+            if (!(i % 16) && i) {
+                fprintf(f, "\n");
+            }
+            fprintf(f, "%02x ", ctx->data.buf[i]);
+        }
+        fprintf(f, "%saa\n", !(i % 16) ? "\n" : "");
+        break;
+    case RESULT_ERROR:
+        fprintf(f, "ERROR: CATCH ERROR\n");
+        break;
+    default:
+        break;
+    }
+    fprintf(f, "\n");
+    fflush(f);
+}
+
+static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
+{
+    FILE *f = parsed_api;
+
+    switch (ctx->result) {
+    case RESULT_BREAKIN_BYTE:
+        fprintf(f, "BREAKING BYTE\n");
+        break;
+    case RESULT_DATA_PACKET:
+        fprintf(f, "%s: %s\n", ctx->name, kd_get_api_name(UINT32P(ctx->data.buf)[0]));
+        break;
+    default:
+        break;
+    }
+    fflush(f);
+}
+
+static void windbg_debug_parser(ParsingContext *ctx, const uint8_t *buf, int len)
+{
+    int i;
+    for (i = 0; i < len; ++i) {
+        windbg_read_byte(ctx, buf[i]);
+        if (ctx->result != RESULT_NONE) {
+ # if (ENABLE_FULL_HANDLER)
+            windbg_debug_ctx_handler(ctx);
+ # endif
+ # if (ENABLE_API_HANDLER)
+            windbg_debug_ctx_handler_api(ctx);
+ # endif
+        }
+    }
+}
+
+#endif
+
+void windbg_debug_parser_hook(bool is_kernel, const uint8_t *buf, int len)
+{
+ #if (ENABLE_PARSER)
+    if (is_kernel) {
+ # if (ENABLE_KERNEL_PARSER)
+        static ParsingContext ctx = { .state = STATE_LEADER,
+                                      .result = RESULT_NONE,
+                                      .name = "Kernel" };
+        windbg_debug_parser(&ctx, buf, len);
+ # endif
+    }
+    else {
+ # if (ENABLE_WINDBG_PARSER)
+        static ParsingContext ctx = { .state = STATE_LEADER,
+                                      .result = RESULT_NONE,
+                                      .name = "WinDbg" };
+        windbg_debug_parser(&ctx, buf, len);
+ # endif
+    }
+ #endif
 }
 
 void windbg_start_sync(void)
@@ -401,11 +508,23 @@ static void windbg_exit(void)
 
     if (dump_file) {
         fclose(dump_file);
+        dump_file = NULL;
     }
-    dump_file = NULL;
+
+ #if (ENABLE_PARSER)
+    if (parsed_packets) {
+        fclose(parsed_packets);
+        parsed_packets = NULL;
+    }
+
+    if (parsed_api) {
+        fclose(parsed_api);
+        parsed_api = NULL;
+    }
+ #endif
 }
 
-int windbgserver_start(const char *device)
+int windbg_start(const char *device)
 {
     if (windbg_chr) {
         WINDBG_ERROR("Multiple instances are not supported yet");
@@ -429,6 +548,11 @@ int windbgserver_start(const char *device)
 
     // open dump file
     dump_file = fopen(WINDBG ".dump", "wb");
+
+ #if (ENABLE_PARSER)
+    parsed_packets = fopen("parsed_packets.txt", "w");
+    parsed_api = fopen("parsed_api.txt", "w");
+ #endif
 
     atexit(windbg_exit);
 

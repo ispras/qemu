@@ -5,29 +5,35 @@
 #include "qemu/error-report.h"
 #include "cpu.h"
 #include "exec/windbgkd.h"
+#include "exec/windbgstub.h"
 
 // #include "qemu/cutils.h"
 
-// FOR DEBUG
+#define WINDBG_DEBUG(...) COUT_LN("Debug: " __VA_ARGS__)
+#define WINDBG_ERROR(...) COUT_LN("Error: " __VA_ARGS__); \
+                          error_report(WINDBG ": " __VA_ARGS__)
 
+#if (WINDBG_DEBUG_ON)
 #define COUT(...) printf("" __VA_ARGS__)
+#else
+#define COUT(...)
+#endif
+
+// Debug only
 #define COUT_LN(fmt, ...) COUT(fmt "\n", ##__VA_ARGS__)
 #define COUT_COMMON(fmt, var) COUT_LN(#var " = [" fmt "]", var)
 #define COUT_DEC(var) COUT_COMMON("%d", (uint32_t) var)
 #define COUT_HEX(var) COUT_COMMON("0x%x", (uint32_t) var)
 #define COUT_STRING(var) COUT_COMMON("%s", var)
 #define COUT_SIZEOF(var) COUT_COMMON("%lld", sizeof(var))
-
 #define COUT_STRUCT(var) COUT_ARRAY(&var, 1)
 #define COUT_PSTRUCT(var) COUT_ARRAY(var, 1)
 #define COUT_ARRAY(var, count) _COUT_STRUCT(var, sizeof(*(var)), count)
-
 #define _COUT_STRUCT(var, size, count) {                           \
     COUT(#var " ");                                                \
     COUT_LN("[size: %d, count: %d]", (int) (size), (int) (count)); \
     _COUT_BLOCK(var, size * count);                                \
 }
-
 #define _COUT_BLOCK(ptr, size) {     \
     uint8_t *_p = (uint8_t *) (ptr); \
     uint32_t _s = (size);            \
@@ -42,20 +48,8 @@
     COUT_LN();                       \
 }
 
-// FOR DEBUG END
-
 #define FMT_ADDR "addr 0x" TARGET_FMT_lx
 #define FMT_ERR  "Error %d"
-
-#define WINDBG_DEBUG_ON true
-#if (WINDBG_DEBUG_ON)
-#define WINDBG_DEBUG(...) COUT_LN("Debug: " __VA_ARGS__)
-#define WINDBG_ERROR(...) COUT_LN("Error: " __VA_ARGS__); \
-                          error_report("WinDbg: " __VA_ARGS__)
-#else
-#define WINDBG_DEBUG(...)
-#define WINDBG_ERROR(...) error_report("WinDbg: " __VA_ARGS__)
-#endif
 
 #define TO_PTR(type, par) ((type *) (par))
 #define PTR(var) (TO_PTR(uint8_t, &var))
@@ -336,8 +330,10 @@ CPU_CTRL_ADDRS         *kd_get_cpu_ctrl_addrs(CPUState *cpu);
 EXCEPTION_STATE_CHANGE *kd_get_exception_sc(CPUState *cpu);
 SizedBuf               *kd_get_load_symbols_sc(CPUState *cpu);
 
-void windbg_dump(const char *fmt, ...);
+const char *kd_get_api_name(int id);
+const char *kd_get_packet_type_name(int id);
 
+void windbg_dump(const char *fmt, ...);
 void windbg_on_init(void);
 void windbg_on_exit(void);
 

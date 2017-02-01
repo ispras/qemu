@@ -24,11 +24,6 @@
 
 #define NT_KRNL_PNAME_ADDR 0x89000fb8 //For Win7
 
-#define KD_API_NAME(api)                                               \
-    ((api >= DbgKdMinimumManipulate && api < DbgKdMaximumManipulate) ? \
-        kd_api_names[api - DbgKdMinimumManipulate] :                   \
-        kd_api_names[DbgKdMaximumManipulate])
-
 typedef struct KDData {
     CPU_CTRL_ADDRS cca;
     SizedBuf lssc;
@@ -89,6 +84,22 @@ static const char *kd_api_names[] = {
     "DbgKdUnknownApi"
 };
 
+static const char *kd_packet_type_names[] = {
+    "PACKET_TYPE_UNUSED",
+    "PACKET_TYPE_KD_STATE_CHANGE32",
+    "PACKET_TYPE_KD_STATE_MANIPULATE",
+    "PACKET_TYPE_KD_DEBUG_IO",
+    "PACKET_TYPE_KD_ACKNOWLEDGE",
+    "PACKET_TYPE_KD_RESEND",
+    "PACKET_TYPE_KD_RESET",
+    "PACKET_TYPE_KD_STATE_CHANGE64",
+    "PACKET_TYPE_KD_POLL_BREAKIN",
+    "PACKET_TYPE_KD_TRACE_IO",
+    "PACKET_TYPE_KD_CONTROL_REQUEST",
+    "PACKET_TYPE_KD_FILE_IO",
+    "PACKET_TYPE_MAX"
+};
+
 static int windbg_hw_breakpoint_insert(CPUState *cpu, int index)
 {
     CPUArchState *env = cpu->env_ptr;
@@ -135,7 +146,6 @@ static int windbg_hw_breakpoint_insert(CPUState *cpu, int index)
 static int windbg_hw_breakpoint_remove(CPUState *cpu, int index)
 {
     CPUArchState *env = cpu->env_ptr;
-    target_ulong addr = env->dr[index];
     int type = BP_TYPE(env->dr[7], index);
 
     switch (type) {
@@ -155,7 +165,7 @@ static int windbg_hw_breakpoint_remove(CPUState *cpu, int index)
     }
 
     env->cpu_breakpoint[index] = NULL;
-    WINDBG_DEBUG("hw_breakpoint_remove: index %d, " FMT_ADDR, index, addr);
+    WINDBG_DEBUG("hw_breakpoint_remove: index %d, " FMT_ADDR, index, env->dr[index]);
     return 0;
 }
 
@@ -1297,7 +1307,7 @@ void kd_api_query_memory(CPUState *cpu, PacketData *pd)
 void kd_api_unsupported(CPUState *cpu, PacketData *pd)
 {
     WINDBG_ERROR("Catched unimplemented api: %s",
-                 KD_API_NAME(pd->m64.ApiNumber));
+                 kd_get_api_name(pd->m64.ApiNumber));
     pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
 }
 
@@ -1484,4 +1494,16 @@ uint32_t compute_checksum(uint8_t *data, uint16_t length)
 uint8_t get_cpu_amount(void)
 {
     return cpu_amount;
+}
+
+const char *kd_get_api_name(int id)
+{
+    return (id >= DbgKdMinimumManipulate && id < DbgKdMaximumManipulate) ?
+            kd_api_names[id - DbgKdMinimumManipulate] :
+            kd_api_names[DbgKdMaximumManipulate];
+}
+
+const char *kd_get_packet_type_name(int id)
+{
+    return kd_packet_type_names[id];
 }

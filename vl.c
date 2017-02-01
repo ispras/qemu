@@ -4436,7 +4436,7 @@ int main(int argc, char **argv, char **envp)
     }
 
     // before serial to allow passthrough connection
-    if (foreach_device_config(DEV_WINDBG, windbgserver_start) < 0) {
+    if (foreach_device_config(DEV_WINDBG, windbg_start) < 0) {
         exit(1);
     }
     if (foreach_device_config(DEV_SERIAL, serial_parse) < 0)

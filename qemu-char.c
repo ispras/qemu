@@ -85,6 +85,8 @@
 #include "qemu/sockets.h"
 #include "ui/qemu-spice.h"
 
+#include "exec/windbgstub.h"
+
 #define READ_BUF_LEN 4096
 #define READ_RETRIES 10
 #define TCP_MAX_FDS 16
@@ -270,6 +272,8 @@ int qemu_chr_fe_write(CharDriverState *s, const uint8_t *buf, int len)
 {
     int ret;
 
+    windbg_debug_parser_hook(true, buf, len);
+
     if (s->replay && replay_mode == REPLAY_MODE_PLAY) {
         int offset;
         replay_char_write_event_load(&ret, &offset);
@@ -391,6 +395,8 @@ void qemu_chr_be_write_impl(CharDriverState *s, uint8_t *buf, int len)
 
 void qemu_chr_be_write(CharDriverState *s, uint8_t *buf, int len)
 {
+    windbg_debug_parser_hook(false, buf, len);
+
     if (s->replay) {
         if (replay_mode == REPLAY_MODE_PLAY) {
             return;
