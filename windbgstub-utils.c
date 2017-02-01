@@ -687,8 +687,8 @@ void kd_api_read_virtual_memory(CPUState *cpu, PacketData *pd)
         pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
 
         // tmp checking
-        WINDBG_DEBUG("ReadVirtualMemoryApi: No physical page mapped: " FMT_ADDR,
-                        (target_ulong) mem->TargetBaseAddress);
+        WINDBG_DEBUG("read_virtual_memory: No physical page mapped: " FMT_ADDR,
+                     (target_ulong) mem->TargetBaseAddress);
     }
 }
 
@@ -700,6 +700,9 @@ void kd_api_write_virtual_memory(CPUState *cpu, PacketData *pd)
     int err = cpu_memory_rw_debug(cpu, mem->TargetBaseAddress,
                                   pd->extra, mem->ActualBytesWritten, 1);
     if (err) {
+        // tmp checking
+        WINDBG_DEBUG("read_write_memory: No physical page mapped: " FMT_ADDR,
+                     (target_ulong) mem->TargetBaseAddress);
         pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     }
     pd->extra_size = 0;
@@ -888,7 +891,7 @@ void kd_api_get_version(CPUState *cpu, PacketData *pd)
                                   PTR(pd->m64) + 0x10,
                                   M64_SIZE - 0x10, 0);
     if (err) {
-        WINDBG_ERROR("GetVersionApi: " FMT_ERR, err);
+        WINDBG_ERROR("get_version: " FMT_ERR, err);
         pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     }
 }
@@ -1290,6 +1293,33 @@ void kd_api_search_memory(CPUState *cpu, PacketData *pd)
 
     pd->extra_size = 0;
     g_free(mem.data);
+}
+
+void kd_api_fill_memory(CPUState *cpu, PacketData *pd)
+{
+    DBGKD_FILL_MEMORY *m64c = &pd->m64.u.FillMemory;
+
+    // tmp checking
+    if (m64c->Flags != 1) {
+        WINDBG_ERROR("fill_memory: Unknown flag: 0x%x", m64c->Flags);
+    }
+
+    uint8_t *mem = g_malloc0(m64c->Length);
+    int i;
+    for (i = 0; i < m64c->Length; ++i) {
+        mem[i] = pd->extra[i % m64c->PatternLength];
+    }
+
+    int err = cpu_memory_rw_debug(cpu, m64c->Address, mem, m64c->Length, 1);
+    if (err) {
+        // tmp checking
+        WINDBG_DEBUG("fill_memory: No physical page mapped: " FMT_ADDR,
+                     (target_ulong) m64c->Address);
+        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
+    }
+
+    pd->extra_size = 0;
+    g_free(mem);
 }
 
 void kd_api_query_memory(CPUState *cpu, PacketData *pd)

@@ -59,6 +59,12 @@
 
 #define sizeof_field(type, field) sizeof(((type *) NULL)->field)
 
+#define FCLOSE(file)  \
+    if (file) {       \
+        fclose(file); \
+        file = NULL;  \
+    }
+
 //
 // Structure for DbgKdExceptionStateChange
 //
@@ -323,6 +329,7 @@ void kd_api_write_io_space(CPUState *cpu, PacketData *pd);
 void kd_api_read_msr(CPUState *cpu, PacketData *pd);
 void kd_api_write_msr(CPUState *cpu, PacketData *pd);
 void kd_api_search_memory(CPUState *cpu, PacketData *pd);
+void kd_api_fill_memory(CPUState *cpu, PacketData *pd);
 void kd_api_query_memory(CPUState *cpu, PacketData *pd);
 void kd_api_unsupported(CPUState *cpu, PacketData *pd);
 

@@ -202,6 +202,10 @@ static void windbg_process_manipulate_packet(ParsingContext *ctx)
         // Unsupported yet!!! But need for connect
         break;
 
+    case DbgKdFillMemoryApi:
+        kd_api_fill_memory(cpu, &ctx->data);
+        break;
+
     case DbgKdQueryMemoryApi:
         kd_api_query_memory(cpu, &ctx->data);
         break;
@@ -506,21 +510,10 @@ static void windbg_exit(void)
 {
     windbg_on_exit();
 
-    if (dump_file) {
-        fclose(dump_file);
-        dump_file = NULL;
-    }
-
+    FCLOSE(dump_file);
  #if (ENABLE_PARSER)
-    if (parsed_packets) {
-        fclose(parsed_packets);
-        parsed_packets = NULL;
-    }
-
-    if (parsed_api) {
-        fclose(parsed_api);
-        parsed_api = NULL;
-    }
+    FCLOSE(parsed_packets);
+    FCLOSE(parsed_api);
  #endif
 }
 
