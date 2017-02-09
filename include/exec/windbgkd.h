@@ -206,11 +206,12 @@ typedef ntstatus_t *pntstatus_t;
 //
 // NTSTATUS
 //
-#define NT_SUCCESS(status)      ((ntstatus_t) (status) >= 0)
+#define NT_SUCCESS(status)       ((ntstatus_t) (status) >= 0)
 
-#define STATUS_SUCCESS          ((ntstatus_t) 0x00000000)
-#define STATUS_UNSUCCESSFUL     ((ntstatus_t) 0xC0000001L)
-#define STATUS_NO_MORE_ENTRIES  ((ntstatus_t) 0x8000001AL)
+#define STATUS_SUCCESS           ((ntstatus_t) 0x00000000)
+#define STATUS_NO_MORE_ENTRIES   ((ntstatus_t) 0x8000001A)
+#define STATUS_UNSUCCESSFUL      ((ntstatus_t) 0xC0000001)
+// #define STATUS_INVALID_PARAMETER ((ntstatus_t) 0xC000000D)
 
 //
 // KD Packet Structure

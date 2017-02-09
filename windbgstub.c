@@ -212,7 +212,7 @@ static void windbg_process_manipulate_packet(ParsingContext *ctx)
 
     default:
         kd_api_unsupported(cpu, &ctx->data);
-        return;
+        break;
     }
 
     windbg_send_data_packet(ctx->data.buf, ctx->data.extra_size + M64_SIZE,
@@ -421,7 +421,7 @@ static void windbg_debug_ctx_handler(ParsingContext *ctx)
     case RESULT_DATA_PACKET:
         fprintf(f, "CATCH DATA PACKET: %s\n", kd_get_packet_type_name(ctx->packet.PacketType));
         fprintf(f, "Byte Count: %d\n", ctx->packet.ByteCount);
-        fprintf(f, "Api: %s\n", kd_get_api_name(UINT32P(ctx->data.buf)[0]));
+        fprintf(f, "Api: %s\n", kd_get_api_name(UINT32_P(ctx->data.buf)[0]));
 
         int i;
         for (i = 0; i < ctx->packet.ByteCount; ++i) {
@@ -451,7 +451,7 @@ static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
         fprintf(f, "BREAKING BYTE\n");
         break;
     case RESULT_DATA_PACKET:
-        fprintf(f, "%s: %s\n", ctx->name, kd_get_api_name(UINT32P(ctx->data.buf)[0]));
+        fprintf(f, "%s: %s\n", ctx->name, kd_get_api_name(UINT32_P(ctx->data.buf)[0]));
         break;
     default:
         break;

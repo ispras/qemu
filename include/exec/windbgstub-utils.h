@@ -48,12 +48,14 @@
     COUT_LN();                       \
 }
 
-#define FMT_ADDR "addr 0x" TARGET_FMT_lx
-#define FMT_ERR  "Error %d"
+#define FMT_ADDR "addr:0x" TARGET_FMT_lx
+#define FMT_ERR  "Error:%d"
 
 #define TO_PTR(type, par) ((type *) (par))
-#define PTR(var) (TO_PTR(uint8_t, &var))
-#define UINT32P(var) (TO_PTR(uint32_t, &var))
+#define UINT8_P(var) TO_PTR(uint8_t, &var)
+#define UINT32_P(var) TO_PTR(uint32_t, &var)
+#define FIELD_P(type, field, ptr) TO_PTR(typeof_field(type, field), ptr)
+#define PTR(var) UINT8_P(var)
 
 #define M64_SIZE sizeof(DBGKD_MANIPULATE_STATE64)
 
@@ -321,16 +323,36 @@ void kd_api_restore_breakpoint(CPUState *cpu, PacketData *pd);
 void kd_api_continue(CPUState *cpu, PacketData *pd);
 void kd_api_read_control_space(CPUState *cpu, PacketData *pd);
 void kd_api_write_control_space(CPUState *cpu, PacketData *pd);
-void kd_api_read_physical_memory(CPUState *cpu, PacketData *pd);
-void kd_api_write_physical_memory(CPUState *cpu, PacketData *pd);
-void kd_api_get_version(CPUState *cpu, PacketData *pd);
 void kd_api_read_io_space(CPUState *cpu, PacketData *pd);
 void kd_api_write_io_space(CPUState *cpu, PacketData *pd);
+// void kd_api_reboot_api(CPUState *cpu, PacketData *pd);
+void kd_api_read_physical_memory(CPUState *cpu, PacketData *pd);
+void kd_api_write_physical_memory(CPUState *cpu, PacketData *pd);
+// void kd_api_query_special_calls(CPUState *cpu, PacketData *pd);
+// void kd_api_set_special_call(CPUState *cpu, PacketData *pd);
+// void kd_api_clear_special_calls(CPUState *cpu, PacketData *pd);
+// void kd_api_set_internal_breakpoint(CPUState *cpu, PacketData *pd);
+// void kd_api_get_internal_breakpoint(CPUState *cpu, PacketData *pd);
+// void kd_api_read_io_space_extended(CPUState *cpu, PacketData *pd);
+// void kd_api_write_io_space_extended(CPUState *cpu, PacketData *pd);
+void kd_api_get_version(CPUState *cpu, PacketData *pd);
+// void kd_api_write_breakpoint_ex(CPUState *cpu, PacketData *pd);
+// void kd_api_restore_breakpoint_ex(CPUState *cpu, PacketData *pd);
+// void kd_api_cause_bug_check(CPUState *cpu, PacketData *pd);
+// void kd_api_switch_processor(CPUState *cpu, PacketData *pd);
+// void kd_api_page_in(CPUState *cpu, PacketData *pd);
 void kd_api_read_msr(CPUState *cpu, PacketData *pd);
 void kd_api_write_msr(CPUState *cpu, PacketData *pd);
+// void kd_api_old_vlm1(CPUState *cpu, PacketData *pd);
+// void kd_api_old_vlm2(CPUState *cpu, PacketData *pd);
 void kd_api_search_memory(CPUState *cpu, PacketData *pd);
+// void kd_api_get_bus_data(CPUState *cpu, PacketData *pd);
+// void kd_api_set_bus_data(CPUState *cpu, PacketData *pd);
+// void kd_api_check_low_memory(CPUState *cpu, PacketData *pd);
+// void kd_api_clear_all_internal_breakpoints(CPUState *cpu, PacketData *pd);
 void kd_api_fill_memory(CPUState *cpu, PacketData *pd);
 void kd_api_query_memory(CPUState *cpu, PacketData *pd);
+// void kd_api_switch_partition(CPUState *cpu, PacketData *pd);
 void kd_api_unsupported(CPUState *cpu, PacketData *pd);
 
 CPU_CTRL_ADDRS         *kd_get_cpu_ctrl_addrs(CPUState *cpu);
