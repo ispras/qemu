@@ -67,6 +67,8 @@
         file = NULL;  \
     }
 
+#define UNUSED __attribute__ ((unused))
+
 //
 // Structure for DbgKdExceptionStateChange
 //

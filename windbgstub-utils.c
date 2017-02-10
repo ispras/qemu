@@ -1329,23 +1329,29 @@ void kd_api_fill_memory(CPUState *cpu, PacketData *pd)
 {
     DBGKD_FILL_MEMORY *m64c = &pd->m64.u.FillMemory;
 
-    // tmp checking
-    if (m64c->Flags != 1) {
-        WINDBG_ERROR("fill_memory: Unknown flag 0x%x", m64c->Flags);
-    }
-
     uint8_t *mem = g_malloc0(m64c->Length);
-    int i;
+    int i, err;
     for (i = 0; i < m64c->Length; ++i) {
         mem[i] = pd->extra[i % m64c->PatternLength];
     }
 
-    int err = cpu_memory_rw_debug(cpu, m64c->Address, mem, m64c->Length, 1);
-    if (err) {
-        // tmp checking
-        WINDBG_DEBUG("fill_memory: No physical page mapped: " FMT_ADDR,
-                     (target_ulong) m64c->Address);
-        pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
+    switch (m64c->Flags) {
+    case DBGKD_FILL_MEMORY_VIRTUAL:
+        err = cpu_memory_rw_debug(cpu, m64c->Address, mem, m64c->Length, 1);
+        if (err) {
+            // tmp checking
+            WINDBG_DEBUG("fill_memory: No physical page mapped: " FMT_ADDR,
+                        (target_ulong) m64c->Address);
+            pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
+        }
+        break;
+
+    case DBGKD_FILL_MEMORY_PHYSICAL:
+        cpu_physical_memory_rw(m64c->Address, mem, m64c->Length, 1);
+        break;
+
+    default:
+        break;
     }
 
     pd->extra_size = 0;
@@ -1432,7 +1438,7 @@ static void kd_init_common_sc(CPUState *cpu, DBGKD_ANY_WAIT_STATE_CHANGE *sc)
 
     sc->ControlReport.Dr6 = env->dr[6];
     sc->ControlReport.Dr7 = env->dr[7];
-    // sc->ControlReport.ReportFlags = 0x3;
+    sc->ControlReport.ReportFlags = REPORT_INCLUDES_SEGS | REPORT_STANDARD_CS;
     sc->ControlReport.SegCs = env->segs[R_CS].selector;
     sc->ControlReport.SegDs = env->segs[R_DS].selector;
     sc->ControlReport.SegEs = env->segs[R_ES].selector;
@@ -1546,9 +1552,7 @@ void windbg_on_exit(void)
 uint32_t compute_checksum(uint8_t *data, uint16_t length)
 {
     uint32_t checksum = 0;
-    for(; length; --length) {
-        checksum += *data++;
-    }
+    for (; length; --length, checksum += *data++);
     return checksum;
 }
 
