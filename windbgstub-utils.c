@@ -1298,16 +1298,14 @@ void kd_api_search_memory(CPUState *cpu, PacketData *pd)
     int s_len = MAX(1, m64c->SearchLength);
     int p_len = MIN(m64c->PatternLength, pd->extra_size);
 
-    SizedBuf mem;
-    mem.size = s_len - 1 + p_len;
-    mem.data = g_malloc0(mem.size);
+    uint8_t mem[s_len - 1 + p_len];
 
-    int err = cpu_memory_rw_debug(cpu, m64c->SearchAddress, mem.data, mem.size, 0);
+    int err = cpu_memory_rw_debug(cpu, m64c->SearchAddress, mem, sizeof(mem), 0);
     if (!err) {
         int i;
         pd->m64.ReturnStatus = STATUS_NO_MORE_ENTRIES;
         for (i = 0; i < s_len; ++i) {
-            if (memcmp(mem.data + i, pd->extra, p_len) == 0) {
+            if (memcmp(mem + i, pd->extra, p_len) == 0) {
                 m64c->FoundAddress = m64c->SearchAddress + i;
                 pd->m64.ReturnStatus = STATUS_SUCCESS;
                 break;
@@ -1322,14 +1320,13 @@ void kd_api_search_memory(CPUState *cpu, PacketData *pd)
     }
 
     pd->extra_size = 0;
-    g_free(mem.data);
 }
 
 void kd_api_fill_memory(CPUState *cpu, PacketData *pd)
 {
     DBGKD_FILL_MEMORY *m64c = &pd->m64.u.FillMemory;
 
-    uint8_t *mem = g_malloc0(m64c->Length);
+    uint8_t mem[m64c->Length];
     int i, err;
     for (i = 0; i < m64c->Length; ++i) {
         mem[i] = pd->extra[i % m64c->PatternLength];
@@ -1355,7 +1352,6 @@ void kd_api_fill_memory(CPUState *cpu, PacketData *pd)
     }
 
     pd->extra_size = 0;
-    g_free(mem);
 }
 
 void kd_api_query_memory(CPUState *cpu, PacketData *pd)

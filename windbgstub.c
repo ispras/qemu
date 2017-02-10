@@ -4,11 +4,11 @@
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
-#define ENABLE_PARSER        WINDBG_DEBUG_ON && true
-#define ENABLE_WINDBG_PARSER ENABLE_PARSER   && true
-#define ENABLE_KERNEL_PARSER ENABLE_PARSER   && true
-#define ENABLE_FULL_HANDLER  ENABLE_PARSER   && true
-#define ENABLE_API_HANDLER   ENABLE_PARSER   && true
+#define ENABLE_PARSER        WINDBG_DEBUG_ON && (ENABLE_WINDBG_PARSER || ENABLE_KERNEL_PARSER)
+#define ENABLE_WINDBG_PARSER true
+#define ENABLE_KERNEL_PARSER true
+#define ENABLE_FULL_HANDLER  ENABLE_PARSER && true
+#define ENABLE_API_HANDLER   ENABLE_PARSER && true
 
 typedef enum ParsingState {
     STATE_LEADER,
@@ -405,6 +405,7 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 
 static void windbg_debug_ctx_handler(ParsingContext *ctx)
 {
+ #if (ENABLE_FULL_HANDLER)
     FILE *f = parsed_packets;
 
     fprintf(f, "FROM: %s\n", ctx->name);
@@ -440,10 +441,12 @@ static void windbg_debug_ctx_handler(ParsingContext *ctx)
     }
     fprintf(f, "\n");
     fflush(f);
+ #endif
 }
 
 static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
 {
+ #if (ENABLE_API_HANDLER)
     FILE *f = parsed_api;
 
     switch (ctx->result) {
@@ -457,6 +460,7 @@ static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
         break;
     }
     fflush(f);
+ #endif
 }
 
 static void windbg_debug_parser(ParsingContext *ctx, const uint8_t *buf, int len)
@@ -465,12 +469,8 @@ static void windbg_debug_parser(ParsingContext *ctx, const uint8_t *buf, int len
     for (i = 0; i < len; ++i) {
         windbg_read_byte(ctx, buf[i]);
         if (ctx->result != RESULT_NONE) {
- # if (ENABLE_FULL_HANDLER)
             windbg_debug_ctx_handler(ctx);
- # endif
- # if (ENABLE_API_HANDLER)
             windbg_debug_ctx_handler_api(ctx);
- # endif
         }
     }
 }
