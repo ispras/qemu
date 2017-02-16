@@ -225,15 +225,14 @@ static void windbg_process_data_packet(ParsingContext *ctx)
     case PACKET_TYPE_KD_STATE_MANIPULATE:
         windbg_send_control_packet(PACKET_TYPE_KD_ACKNOWLEDGE);
         windbg_process_manipulate_packet(ctx);
-
         break;
+
     default:
         WINDBG_ERROR("Catched unsupported data packet 0x%x",
                      ctx->packet.PacketType);
 
         cntrl_packet_id = 0;
         windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
-
         break;
     }
 }
@@ -253,7 +252,6 @@ static void windbg_process_control_packet(ParsingContext *ctx)
                                 PACKET_TYPE_KD_STATE_CHANGE64);
         windbg_send_control_packet(ctx->packet.PacketType);
         cntrl_packet_id = INITIAL_PACKET_ID;
-
         break;
     }
     default:
@@ -262,7 +260,6 @@ static void windbg_process_control_packet(ParsingContext *ctx)
 
         cntrl_packet_id = 0;
         windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
-
         break;
     }
 }
@@ -272,21 +269,25 @@ static void windbg_ctx_handler(ParsingContext *ctx)
     switch (ctx->result) {
     case RESULT_NONE:
         break;
+
     case RESULT_BREAKIN_BYTE:
         windbg_vm_stop();
         break;
-    case RESULT_UNKNOWN_PACKET:
-        break;
+
     case RESULT_CONTROL_PACKET:
         windbg_process_control_packet(ctx);
         break;
+
     case RESULT_DATA_PACKET:
         windbg_process_data_packet(ctx);
         break;
+
+    case RESULT_UNKNOWN_PACKET:
     case RESULT_ERROR:
         cntrl_packet_id = 0;
         windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
         break;
+
     default:
         break;
     }
@@ -316,6 +317,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
             ctx->index = 0;
         }
         break;
+
     case STATE_PACKET_TYPE:
         PTR(ctx->packet.PacketType)[ctx->index] = byte;
         ++ctx->index;
@@ -330,6 +332,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
             ctx->index = 0;
         }
         break;
+
     case STATE_PACKET_BYTE_COUNT:
         PTR(ctx->packet.ByteCount)[ctx->index] = byte;
         ++ctx->index;
@@ -338,6 +341,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
             ctx->index = 0;
         }
         break;
+
     case STATE_PACKET_ID:
         PTR(ctx->packet.PacketId)[ctx->index] = byte;
         ++ctx->index;
@@ -346,6 +350,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
             ctx->index = 0;
         }
         break;
+
     case STATE_PACKET_CHECKSUM:
         PTR(ctx->packet.Checksum)[ctx->index] = byte;
         ++ctx->index;
@@ -366,6 +371,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
             ctx->index = 0;
         }
         break;
+
     case STATE_PACKET_DATA:
         ctx->data.buf[ctx->index] = byte;
         ++ctx->index;
@@ -374,6 +380,7 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
             ctx->index = 0;
         }
         break;
+
     case STATE_TRAILING_BYTE:
         if (byte == PACKET_TRAILING_BYTE) {
             ctx->result = RESULT_DATA_PACKET;
@@ -390,8 +397,7 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 {
     static ParsingContext ctx = { .state = STATE_LEADER,
                                   .result = RESULT_NONE,
-                                  .name = ""};
-
+                                  .name = "" };
     if (is_loaded) {
         int i;
         for (i = 0; i < size; i++) {
@@ -413,12 +419,15 @@ static void windbg_debug_ctx_handler(ParsingContext *ctx)
     case RESULT_BREAKIN_BYTE:
         fprintf(f, "CATCH BREAKING BYTE\n");
         break;
+
     case RESULT_UNKNOWN_PACKET:
         fprintf(f, "ERROR: CATCH UNKNOWN PACKET TYPE: 0x%x\n", ctx->packet.PacketType);
         break;
+
     case RESULT_CONTROL_PACKET:
         fprintf(f, "CATCH CONTROL PACKET: %s\n", kd_get_packet_type_name(ctx->packet.PacketType));
         break;
+
     case RESULT_DATA_PACKET:
         fprintf(f, "CATCH DATA PACKET: %s\n", kd_get_packet_type_name(ctx->packet.PacketType));
         fprintf(f, "Byte Count: %d\n", ctx->packet.ByteCount);
@@ -433,9 +442,11 @@ static void windbg_debug_ctx_handler(ParsingContext *ctx)
         }
         fprintf(f, "%saa\n", !(i % 16) ? "\n" : "");
         break;
+
     case RESULT_ERROR:
         fprintf(f, "ERROR: CATCH ERROR\n");
         break;
+
     default:
         break;
     }
@@ -453,9 +464,11 @@ static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
     case RESULT_BREAKIN_BYTE:
         fprintf(f, "BREAKING BYTE\n");
         break;
+
     case RESULT_DATA_PACKET:
         fprintf(f, "%s: %s\n", ctx->name, kd_get_api_name(UINT32_P(ctx->data.buf)[0]));
         break;
+
     default:
         break;
     }
@@ -520,7 +533,7 @@ static void windbg_exit(void)
 int windbg_start(const char *device)
 {
     if (windbg_chr) {
-        WINDBG_ERROR("Multiple instances are not supported yet");
+        WINDBG_ERROR("Multiple instances are not supported");
         exit(1);
     }
 

@@ -935,4 +935,11 @@ typedef struct _DBGKD_TRACE_IO
    } u;
 } DBGKD_TRACE_IO, *PDBGKD_TRACE_IO;
 
+#pragma pack(push, 1)
+typedef struct _EXCEPTION_STATE_CHANGE {
+    DBGKD_ANY_WAIT_STATE_CHANGE StateChange;
+    uint32_t value;
+} EXCEPTION_STATE_CHANGE, *PEXCEPTION_STATE_CHANGE;
+#pragma pack(pop)
+
 #endif
