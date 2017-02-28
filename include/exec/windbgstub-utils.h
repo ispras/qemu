@@ -9,23 +9,23 @@
 
 // #include "qemu/cutils.h"
 
-#define WINDBG_DEBUG(...) COUT_LN("Debug: " __VA_ARGS__)
-#define WINDBG_ERROR(...) COUT_LN("Error: " __VA_ARGS__); \
-                          error_report(WINDBG ": " __VA_ARGS__)
-
 #if (WINDBG_DEBUG_ON)
-#define COUT(...) printf("" __VA_ARGS__)
+# define COUT(...) printf("" __VA_ARGS__)
+# define WINDBG_DEBUG(...) COUT_LN("Debug: " __VA_ARGS__)
+# define WINDBG_ERROR(...) COUT_LN("Error: " __VA_ARGS__)
 #else
-#define COUT(...)
+# define COUT(...)
+# define WINDBG_DEBUG(...)
+# define WINDBG_ERROR(...) error_report(WINDBG ": " __VA_ARGS__)
 #endif
 
 // Debug only
 #define COUT_LN(fmt, ...) COUT(fmt "\n", ##__VA_ARGS__)
-#define COUT_COMMON(fmt, var) COUT_LN(#var " = [" fmt "]", var)
-#define COUT_DEC(var) COUT_COMMON("%d", (uint32_t) var)
-#define COUT_HEX(var) COUT_COMMON("0x%x", (uint32_t) var)
-#define COUT_STRING(var) COUT_COMMON("%s", var)
-#define COUT_SIZEOF(var) COUT_COMMON("%lld", sizeof(var))
+#define COUT_FMT(name, fmt, var) COUT_LN(name " = [" fmt "]", var)
+#define COUT_DEC(var) COUT_FMT(#var, "%d", (uint32_t) (var))
+#define COUT_HEX(var) COUT_FMT(#var, "0x%x", (uint32_t) (var))
+#define COUT_BOOL(var) COUT_FMT(#var, "%s", (var) ? "true" : "false")
+#define COUT_SIZEOF(var) COUT_FMT("sizeof " #var, "%lld", sizeof(var))
 #define COUT_STRUCT(var) COUT_ARRAY(&var, 1)
 #define COUT_PSTRUCT(var) COUT_ARRAY(var, 1)
 #define COUT_ARRAY(var, count) _COUT_STRUCT(var, sizeof(*(var)), count)
@@ -115,7 +115,7 @@ void kd_api_get_version(CPUState *cpu, PacketData *pd);
 // void kd_api_write_breakpoint_ex(CPUState *cpu, PacketData *pd);
 // void kd_api_restore_breakpoint_ex(CPUState *cpu, PacketData *pd);
 // void kd_api_cause_bug_check(CPUState *cpu, PacketData *pd);
-// void kd_api_switch_processor(CPUState *cpu, PacketData *pd);
+// void kd_api_switch_processor(CPUState *cpu, PacketData *pd); unused
 // void kd_api_page_in(CPUState *cpu, PacketData *pd);
 void kd_api_read_msr(CPUState *cpu, PacketData *pd);
 void kd_api_write_msr(CPUState *cpu, PacketData *pd);
@@ -125,7 +125,7 @@ void kd_api_search_memory(CPUState *cpu, PacketData *pd);
 // void kd_api_get_bus_data(CPUState *cpu, PacketData *pd);
 // void kd_api_set_bus_data(CPUState *cpu, PacketData *pd);
 // void kd_api_check_low_memory(CPUState *cpu, PacketData *pd);
-// void kd_api_clear_all_internal_breakpoints(CPUState *cpu, PacketData *pd);
+// void kd_api_clear_all_internal_breakpoints(CPUState *cpu, PacketData *pd); unused
 void kd_api_fill_memory(CPUState *cpu, PacketData *pd);
 void kd_api_query_memory(CPUState *cpu, PacketData *pd);
 // void kd_api_switch_partition(CPUState *cpu, PacketData *pd);

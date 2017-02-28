@@ -10,6 +10,8 @@
 #define ENABLE_FULL_HANDLER  ENABLE_PARSER && true
 #define ENABLE_API_HANDLER   ENABLE_PARSER && true
 
+#define WINDBG_DIR CONFIG_QEMU_DATADIR "/" WINDBG "_"
+
 typedef enum ParsingState {
     STATE_LEADER,
     STATE_PACKET_TYPE,
@@ -199,8 +201,7 @@ static void windbg_process_manipulate_packet(ParsingContext *ctx)
         break;
 
     case DbgKdClearAllInternalBreakpointsApi:
-        // Unsupported yet!!! But need for connect
-        break;
+        return;
 
     case DbgKdFillMemoryApi:
         kd_api_fill_memory(cpu, &ctx->data);
@@ -431,7 +432,10 @@ static void windbg_debug_ctx_handler(ParsingContext *ctx)
     case RESULT_DATA_PACKET:
         fprintf(f, "CATCH DATA PACKET: %s\n", kd_get_packet_type_name(ctx->packet.PacketType));
         fprintf(f, "Byte Count: %d\n", ctx->packet.ByteCount);
-        fprintf(f, "Api: %s\n", kd_get_api_name(UINT32_P(ctx->data.buf)[0]));
+
+        if (ctx->packet.PacketType == PACKET_TYPE_KD_STATE_MANIPULATE) {
+            fprintf(f, "Api: %s\n", kd_get_api_name(ctx->data.m64.ApiNumber));
+        }
 
         int i;
         for (i = 0; i < ctx->packet.ByteCount; ++i) {
@@ -466,7 +470,9 @@ static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
         break;
 
     case RESULT_DATA_PACKET:
-        fprintf(f, "%s: %s\n", ctx->name, kd_get_api_name(UINT32_P(ctx->data.buf)[0]));
+        if (ctx->packet.PacketType == PACKET_TYPE_KD_STATE_MANIPULATE) {
+            fprintf(f, "%s: %s\n", ctx->name, kd_get_api_name(UINT32_P(ctx->data.buf)[0]));
+        }
         break;
 
     default:
@@ -553,11 +559,11 @@ int windbg_start(const char *device)
                           windbg_chr_receive, NULL, NULL);
 
     // open dump file
-    dump_file = fopen(WINDBG ".dump", "wb");
+    dump_file = fopen(WINDBG_DIR "dump.txt", "wb");
 
  #if (ENABLE_PARSER)
-    parsed_packets = fopen("parsed_packets.txt", "w");
-    parsed_api = fopen("parsed_api.txt", "w");
+    parsed_packets = fopen(WINDBG_DIR "parsed_packets.txt", "w");
+    parsed_api = fopen(WINDBG_DIR "parsed_api.txt", "w");
  #endif
 
     atexit(windbg_exit);

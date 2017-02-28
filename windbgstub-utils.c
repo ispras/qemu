@@ -1034,7 +1034,7 @@ void kd_api_restore_breakpoint(CPUState *cpu, PacketData *pd)
 
 void kd_api_continue(CPUState *cpu, PacketData *pd)
 {
-    if (NT_SUCCESS(pd->m64.ReturnStatus)) {
+    if (NT_SUCCESS(pd->m64.u.Continue2.ContinueStatus)) {
         cpu_single_step(cpu, pd->m64.u.Continue2.ControlSet.TraceFlag ?
                         SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0);
 
@@ -1585,6 +1585,8 @@ void kd_api_unsupported(CPUState *cpu, PacketData *pd)
                  kd_get_api_name(pd->m64.ApiNumber));
     pd->m64.ReturnStatus = STATUS_UNSUCCESSFUL;
     pd->extra_size = 0;
+
+    exit(1);
 }
 
 static void kd_breakpoint_remove_range(CPUState *cpu, target_ulong base, target_ulong limit)
