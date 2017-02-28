@@ -520,9 +520,10 @@ void windbg_debug_parser_hook(bool is_kernel, const uint8_t *buf, int len)
 
 void windbg_start_sync(void)
 {
-    windbg_on_init();
-
-    is_loaded = true;
+    if (windbg_chr) {
+        windbg_on_init();
+        is_loaded = true;
+    }
 }
 
 static void windbg_exit(void)
