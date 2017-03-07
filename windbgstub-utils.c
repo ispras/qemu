@@ -17,6 +17,7 @@
     (_len == 2) ? 8 : _len + 1;                                  \
 })
 
+#define OFFSET_SELF_PCR         0x1C
 #define OFFSET_KPRCB            0x20
 #define OFFSET_KPRCB_CURRTHREAD 0x4
 #define OFFSET_VERSION          0x34
@@ -1717,20 +1718,24 @@ SizedBuf *kd_get_load_symbols_sc(CPUState *cpu)
     return &kd.lssc;
 }
 
-void windbg_on_init(void)
+bool windbg_on_loaded(void)
 {
-    CPUState *cpu;
-
-    // init cpu_amount
-    CPU_FOREACH(cpu) {
-        ++cpu_amount;
-    }
-    WINDBG_DEBUG("windbg_on_init: cpu_amount:%d", cpu_amount);
-
-    cpu = qemu_get_cpu(0);
+    static target_ulong old_KPCR = 0;
+    CPUState *cpu = qemu_get_cpu(0);
     CPUArchState *env = cpu->env_ptr;
 
     kd.KPCR = env->segs[R_FS].base;
+    if (!kd.KPCR || old_KPCR == kd.KPCR) {
+        return false;
+    }
+    old_KPCR = kd.KPCR;
+
+    target_ulong self;
+    cpu_memory_rw_debug(cpu, kd.KPCR + OFFSET_SELF_PCR, PTR(self),
+                        sizeof(self), 0);
+    if (self != kd.KPCR) {
+        return false;
+    }
 
     cpu_memory_rw_debug(cpu, kd.KPCR + OFFSET_KPRCB, PTR(kd.KPRCB),
                         sizeof(kd.KPRCB), 0);
@@ -1744,6 +1749,14 @@ void windbg_on_init(void)
     WINDBG_DEBUG("windbg_on_init: KPCR " FMT_ADDR, kd.KPCR);
     WINDBG_DEBUG("windbg_on_init: KPRCB " FMT_ADDR, kd.KPRCB);
     WINDBG_DEBUG("windbg_on_init: KernelBase " FMT_ADDR, kd.kernel_base);
+
+    // init cpu_amount
+    CPU_FOREACH(cpu) {
+        ++cpu_amount;
+    }
+    WINDBG_DEBUG("windbg_on_init: cpu_amount:%d", cpu_amount);
+
+    return true;
 }
 
 void windbg_on_exit(void)

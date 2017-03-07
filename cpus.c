@@ -81,15 +81,12 @@ static unsigned int throttle_percentage;
 #define CPU_THROTTLE_PCT_MAX 99
 #define CPU_THROTTLE_TIMESLICE_NS 10000000
 
-void (*excp_debug_handler)(CPUState *cpu);
+static void (*excp_debug_handler)(CPUState *cpu);
 
-bool register_excp_debug_handler(void (*new_excp_debug_handler)(CPUState *cpu))
+bool register_excp_debug_handler(void (*handler)(CPUState *cpu))
 {
     if (excp_debug_handler == NULL) {
-        excp_debug_handler = new_excp_debug_handler;
-        return true;
-    }
-    else if (excp_debug_handler == new_excp_debug_handler) {
+        excp_debug_handler = handler;
         return true;
     }
     else {

@@ -21,7 +21,7 @@
 
 // Debug only
 #define COUT_LN(fmt, ...) COUT(fmt "\n", ##__VA_ARGS__)
-#define COUT_FMT(name, fmt, var) COUT_LN(name " = [" fmt "]", var)
+#define COUT_FMT(name, fmt, ...) COUT_LN(name " = [" fmt "]", ##__VA_ARGS__)
 #define COUT_DEC(var) COUT_FMT(#var, "%d", (uint32_t) (var))
 #define COUT_HEX(var) COUT_FMT(#var, "0x%x", (uint32_t) (var))
 #define COUT_BOOL(var) COUT_FMT(#var, "%s", (var) ? "true" : "false")
@@ -138,7 +138,7 @@ const char *kd_get_api_name(int id);
 const char *kd_get_packet_type_name(int id);
 
 void windbg_dump(const char *fmt, ...);
-void windbg_on_init(void);
+bool windbg_on_loaded(void);
 void windbg_on_exit(void);
 
 uint32_t compute_checksum(uint8_t *data, uint16_t len);

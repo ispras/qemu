@@ -42,27 +42,31 @@ typedef struct ParsingContext {
     const char *name;
 } ParsingContext;
 
-static uint32_t cntrl_packet_id = RESET_PACKET_ID;
-static uint32_t data_packet_id = INITIAL_PACKET_ID;
-static bool is_loaded = false;
+typedef struct WindbgState {
+    CharDriverState *chr;
 
-static CharDriverState *windbg_chr = NULL;
+    uint32_t ctrl_packet_id;
+    uint32_t data_packet_id;
+    bool is_loaded;
 
-static FILE *dump_file;
+    FILE *dump_file;
 
-#if (ENABLE_PARSER)
-static FILE *parsed_packets;
-static FILE *parsed_api;
-#endif
+ #if (ENABLE_PARSER)
+    FILE *parsed_packets;
+    FILE *parsed_api;
+ #endif
+} WindbgState;
+
+static WindbgState *windbg_state;
 
 void windbg_dump(const char *fmt, ...)
 {
     va_list ap;
 
     va_start(ap, fmt);
-    if (dump_file) {
-        vfprintf(dump_file, fmt, ap);
-        fflush(dump_file);
+    if (windbg_state->dump_file) {
+        vfprintf(windbg_state->dump_file, fmt, ap);
+        fflush(windbg_state->dump_file);
     }
     va_end(ap);
 }
@@ -75,15 +79,15 @@ static void windbg_send_data_packet(uint8_t *data, uint16_t byte_count, uint16_t
         .PacketLeader = PACKET_LEADER,
         .PacketType = type,
         .ByteCount = byte_count,
-        .PacketId = data_packet_id,
+        .PacketId = windbg_state->data_packet_id,
         .Checksum = compute_checksum(data, byte_count)
     };
 
-    qemu_chr_fe_write(windbg_chr, PTR(packet), sizeof(packet));
-    qemu_chr_fe_write(windbg_chr, data, byte_count);
-    qemu_chr_fe_write(windbg_chr, &trailing_byte, sizeof(trailing_byte));
+    qemu_chr_fe_write(windbg_state->chr, PTR(packet), sizeof(packet));
+    qemu_chr_fe_write(windbg_state->chr, data, byte_count);
+    qemu_chr_fe_write(windbg_state->chr, &trailing_byte, sizeof(trailing_byte));
 
-    data_packet_id ^= 1;
+    windbg_state->data_packet_id ^= 1;
 }
 
 static void windbg_send_control_packet(uint16_t type)
@@ -92,19 +96,17 @@ static void windbg_send_control_packet(uint16_t type)
         .PacketLeader = CONTROL_PACKET_LEADER,
         .PacketType = type,
         .ByteCount = 0,
-        .PacketId = cntrl_packet_id,
+        .PacketId = windbg_state->ctrl_packet_id,
         .Checksum = 0
     };
 
-    qemu_chr_fe_write(windbg_chr, PTR(packet), sizeof(packet));
+    qemu_chr_fe_write(windbg_state->chr, PTR(packet), sizeof(packet));
 
-    cntrl_packet_id ^= 1;
+    windbg_state->ctrl_packet_id ^= 1;
 }
 
 static int windbg_chr_can_receive(void *opaque)
 {
-    // We can handle an arbitrarily large amount of data.
-    // Pick the maximum packet size, which is as good as anything.
     return PACKET_MAX_SIZE;
 }
 
@@ -232,7 +234,7 @@ static void windbg_process_data_packet(ParsingContext *ctx)
         WINDBG_ERROR("Catched unsupported data packet 0x%x",
                      ctx->packet.PacketType);
 
-        cntrl_packet_id = 0;
+        windbg_state->ctrl_packet_id = 0;
         windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
         break;
     }
@@ -242,24 +244,23 @@ static void windbg_process_control_packet(ParsingContext *ctx)
 {
     switch (ctx->packet.PacketType) {
     case PACKET_TYPE_KD_ACKNOWLEDGE:
-
         break;
+
     case PACKET_TYPE_KD_RESET:
     {
-        //TODO: For all processors
         SizedBuf *lssc = kd_get_load_symbols_sc(qemu_get_cpu(0));
 
         windbg_send_data_packet(lssc->data, lssc->size,
                                 PACKET_TYPE_KD_STATE_CHANGE64);
         windbg_send_control_packet(ctx->packet.PacketType);
-        cntrl_packet_id = INITIAL_PACKET_ID;
+        windbg_state->ctrl_packet_id = INITIAL_PACKET_ID;
         break;
     }
     default:
         WINDBG_ERROR("Catched unsupported control packet 0x%x",
                      ctx->packet.PacketType);
 
-        cntrl_packet_id = 0;
+        windbg_state->ctrl_packet_id = 0;
         windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
         break;
     }
@@ -285,7 +286,7 @@ static void windbg_ctx_handler(ParsingContext *ctx)
 
     case RESULT_UNKNOWN_PACKET:
     case RESULT_ERROR:
-        cntrl_packet_id = 0;
+        windbg_state->ctrl_packet_id = 0;
         windbg_send_control_packet(PACKET_TYPE_KD_RESEND);
         break;
 
@@ -399,7 +400,7 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
     static ParsingContext ctx = { .state = STATE_LEADER,
                                   .result = RESULT_NONE,
                                   .name = "" };
-    if (is_loaded) {
+    if (windbg_state->is_loaded) {
         int i;
         for (i = 0; i < size; i++) {
             windbg_read_byte(&ctx, buf[i]);
@@ -413,7 +414,7 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 static void windbg_debug_ctx_handler(ParsingContext *ctx)
 {
  #if (ENABLE_FULL_HANDLER)
-    FILE *f = parsed_packets;
+    FILE *f = windbg_state->parsed_packets;
 
     fprintf(f, "FROM: %s\n", ctx->name);
     switch (ctx->result) {
@@ -462,7 +463,7 @@ static void windbg_debug_ctx_handler(ParsingContext *ctx)
 static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
 {
  #if (ENABLE_API_HANDLER)
-    FILE *f = parsed_api;
+    FILE *f = windbg_state->parsed_api;
 
     switch (ctx->result) {
     case RESULT_BREAKIN_BYTE:
@@ -471,7 +472,7 @@ static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
 
     case RESULT_DATA_PACKET:
         if (ctx->packet.PacketType == PACKET_TYPE_KD_STATE_MANIPULATE) {
-            fprintf(f, "%s: %s\n", ctx->name, kd_get_api_name(UINT32_P(ctx->data.buf)[0]));
+            fprintf(f, "%s: %s\n", ctx->name, kd_get_api_name(ctx->data.m64.ApiNumber));
         }
         break;
 
@@ -520,9 +521,8 @@ void windbg_debug_parser_hook(bool is_kernel, const uint8_t *buf, int len)
 
 void windbg_start_sync(void)
 {
-    if (windbg_chr) {
-        windbg_on_init();
-        is_loaded = true;
+    if (windbg_state && !windbg_state->is_loaded) {
+        windbg_state->is_loaded = windbg_on_loaded();
     }
 }
 
@@ -530,19 +530,24 @@ static void windbg_exit(void)
 {
     windbg_on_exit();
 
-    FCLOSE(dump_file);
+    FCLOSE(windbg_state->dump_file);
  #if (ENABLE_PARSER)
-    FCLOSE(parsed_packets);
-    FCLOSE(parsed_api);
+    FCLOSE(windbg_state->parsed_packets);
+    FCLOSE(windbg_state->parsed_api);
  #endif
+    g_free(windbg_state);
 }
 
 int windbg_start(const char *device)
 {
-    if (windbg_chr) {
+    if (windbg_state) {
         WINDBG_ERROR("Multiple instances are not supported");
         exit(1);
     }
+
+    windbg_state = g_malloc0(sizeof(WindbgState));
+    windbg_state->ctrl_packet_id = RESET_PACKET_ID;
+    windbg_state->data_packet_id = INITIAL_PACKET_ID;
 
     if (!register_excp_debug_handler(windbg_bp_handler)) {
         WINDBG_ERROR("Another debugger stub has already been registered");
@@ -550,24 +555,23 @@ int windbg_start(const char *device)
     }
 
     // open external pipe for listening to windbg
-    windbg_chr = qemu_chr_new(WINDBG, device, NULL);
-    if (!windbg_chr) {
+    windbg_state->chr = qemu_chr_new(WINDBG, device, NULL);
+    if (!windbg_state->chr) {
         return -1;
     }
 
-    qemu_chr_fe_claim_no_fail(windbg_chr);
-    qemu_chr_add_handlers(windbg_chr, windbg_chr_can_receive,
+    qemu_chr_fe_claim_no_fail(windbg_state->chr);
+    qemu_chr_add_handlers(windbg_state->chr, windbg_chr_can_receive,
                           windbg_chr_receive, NULL, NULL);
 
     // open dump file
-    dump_file = fopen(WINDBG_DIR "dump.txt", "wb");
+    windbg_state->dump_file = fopen(WINDBG_DIR "dump.txt", "wb");
 
  #if (ENABLE_PARSER)
-    parsed_packets = fopen(WINDBG_DIR "parsed_packets.txt", "w");
-    parsed_api = fopen(WINDBG_DIR "parsed_api.txt", "w");
+    windbg_state->parsed_packets = fopen(WINDBG_DIR "parsed_packets.txt", "w");
+    windbg_state->parsed_api = fopen(WINDBG_DIR "parsed_api.txt", "w");
  #endif
 
     atexit(windbg_exit);
-
     return 0;
 }
