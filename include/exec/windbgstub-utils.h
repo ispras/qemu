@@ -24,6 +24,7 @@
 #define COUT_FMT(name, fmt, ...) COUT_LN(name " = [" fmt "]", ##__VA_ARGS__)
 #define COUT_DEC(var) COUT_FMT(#var, "%d", (uint32_t) (var))
 #define COUT_HEX(var) COUT_FMT(#var, "0x%x", (uint32_t) (var))
+#define COUT_STRING(var) COUT_FMT(#var, "%s", var)
 #define COUT_BOOL(var) COUT_FMT(#var, "%s", (var) ? "true" : "false")
 #define COUT_SIZEOF(var) COUT_FMT("sizeof " #var, "%lld", sizeof(var))
 #define COUT_STRUCT(var) COUT_ARRAY(&var, 1)
@@ -51,11 +52,11 @@
 #define FMT_ADDR "addr:0x" TARGET_FMT_lx
 #define FMT_ERR  "Error:%d"
 
-#define TO_PTR(type, par) ((type *) (par))
-#define UINT8_P(var) TO_PTR(uint8_t, &var)
-#define UINT32_P(var) TO_PTR(uint32_t, &var)
-#define FIELD_P(type, field, ptr) TO_PTR(typeof_field(type, field), ptr)
-#define PTR(var) UINT8_P(var)
+#define CAST(type, par) ((type) (par))
+#define UINT8_P(ptr) CAST(uint8_t *, ptr)
+#define UINT32_P(ptr) CAST(uint32_t *, ptr)
+#define FIELD_P(type, field, ptr) CAST(typeof_field(type, field) *, ptr)
+#define PTR(var) CAST(uint8_t *, &var)
 
 #define M64_SIZE sizeof(DBGKD_MANIPULATE_STATE64)
 
@@ -73,6 +74,15 @@ typedef struct SizedBuf {
     uint8_t *data;
     size_t size;
 } SizedBuf;
+
+#define SBUF_INIT(buf, mem_ptr, len) \
+    buf.data = mem_ptr;              \
+    buf.size = len
+#define SBUF_MALLOC(buf, size) SBUF_INIT(buf, g_malloc0(size), size)
+#define SBUF_FREE(buf) \
+    g_free(buf.data);  \
+    buf.data = NULL;   \
+    buf.size = 0
 
 typedef struct InitedAddr {
     target_ulong addr;
@@ -131,8 +141,8 @@ void kd_api_query_memory(CPUState *cpu, PacketData *pd);
 // void kd_api_switch_partition(CPUState *cpu, PacketData *pd);
 void kd_api_unsupported(CPUState *cpu, PacketData *pd);
 
-EXCEPTION_STATE_CHANGE *kd_get_exception_sc(CPUState *cpu);
-SizedBuf               *kd_get_load_symbols_sc(CPUState *cpu);
+SizedBuf kd_gen_exception_sc(CPUState *cpu);
+SizedBuf kd_gen_load_symbols_sc(CPUState *cpu);
 
 const char *kd_get_api_name(int id);
 const char *kd_get_packet_type_name(int id);

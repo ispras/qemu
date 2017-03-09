@@ -112,9 +112,9 @@ static int windbg_chr_can_receive(void *opaque)
 
 static void windbg_bp_handler(CPUState *cpu)
 {
-    windbg_send_data_packet((uint8_t *) kd_get_exception_sc(cpu),
-                            sizeof(EXCEPTION_STATE_CHANGE),
-                            PACKET_TYPE_KD_STATE_CHANGE64);
+    SizedBuf buf = kd_gen_exception_sc(cpu);
+    windbg_send_data_packet(buf.data, buf.size, PACKET_TYPE_KD_STATE_CHANGE64);
+    SBUF_FREE(buf);
 }
 
 static void windbg_vm_stop(void)
@@ -248,12 +248,13 @@ static void windbg_process_control_packet(ParsingContext *ctx)
 
     case PACKET_TYPE_KD_RESET:
     {
-        SizedBuf *lssc = kd_get_load_symbols_sc(qemu_get_cpu(0));
+        SizedBuf buf = kd_gen_load_symbols_sc(qemu_get_cpu(0));
 
-        windbg_send_data_packet(lssc->data, lssc->size,
+        windbg_send_data_packet(buf.data, buf.size,
                                 PACKET_TYPE_KD_STATE_CHANGE64);
         windbg_send_control_packet(ctx->packet.PacketType);
         windbg_state->ctrl_packet_id = INITIAL_PACKET_ID;
+        SBUF_FREE(buf);
         break;
     }
     default:

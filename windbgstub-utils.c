@@ -20,10 +20,8 @@
 #define OFFSET_SELF_PCR         0x1C
 #define OFFSET_KPRCB            0x20
 #define OFFSET_KPRCB_CURRTHREAD 0x4
-#define OFFSET_VERSION          0x34
-#define OFFSET_KRNL_BASE        0x10
-
-#define NT_KRNL_PNAME_ADDR 0x89000fb8 //For Win7
+#define OFFSET_VERS             0x34
+#define OFFSET_VERS_KBASE       0x10
 
 #if defined(TARGET_I386)
 
@@ -240,8 +238,8 @@ typedef struct KDData {
     target_ulong version;
     target_ulong kernel_base;
 
-    SizedBuf lssc;
-    EXCEPTION_STATE_CHANGE esc;
+    char kernel_name[128];
+
     InitedAddr bps[KD_BREAKPOINT_MAX];
 } KDData;
 
@@ -504,10 +502,10 @@ static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
         cc->FloatSave.ControlWord    = env->fpuc;
         cc->FloatSave.StatusWord     = swd;
         cc->FloatSave.TagWord        = twd;
-        cc->FloatSave.ErrorOffset    = UINT32_P(env->fpip)[0]; // ?
-        cc->FloatSave.ErrorSelector  = UINT32_P(env->fpip)[1]; // ?
-        cc->FloatSave.DataOffset     = UINT32_P(env->fpdp)[0]; // ?
-        cc->FloatSave.DataSelector   = UINT32_P(env->fpdp)[1]; // ?
+        cc->FloatSave.ErrorOffset    = UINT32_P(&env->fpip)[0]; // ?
+        cc->FloatSave.ErrorSelector  = UINT32_P(&env->fpip)[1]; // ?
+        cc->FloatSave.DataOffset     = UINT32_P(&env->fpdp)[0]; // ?
+        cc->FloatSave.DataSelector   = UINT32_P(&env->fpdp)[1]; // ?
         cc->FloatSave.Cr0NpxState    = env->xcr0; // ?
 
         for (i = 0; i < 8; ++i) {
@@ -526,14 +524,13 @@ static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
     }
 
     if (cc->ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
-        uint8_t *ptr = PTR(cc->ExtendedRegisters[160]);
+        uint8_t *ptr = cc->ExtendedRegisters + 160;
         for (i = 0; i < 8; ++i, ptr += 16) {
             memcpy(ptr,     &env->xmm_regs[i].ZMM_Q(0), 8);
             memcpy(ptr + 8, &env->xmm_regs[i].ZMM_Q(1), 8);
         }
 
-        // offset 24
-        UINT32_P(cc->ExtendedRegisters)[6] = env->mxcsr;
+        UINT32_P(cc->ExtendedRegisters + 24)[0] = env->mxcsr;
     }
 
     //cc->ExtendedRegisters[0] = 0xaa;
@@ -738,7 +735,7 @@ static int windbg_write_context(CPUState *cpu, uint8_t *buf, int len, int offset
                 memcpy(&env->xmm_regs[i].ZMM_Q(1), ptr + 8, 8);
             }
 
-            cpu_set_mxcsr(env, *TO_PTR(uint32_t, mem_ptr + 24));
+            cpu_set_mxcsr(env, UINT32_P(mem_ptr + 24)[0]);
             break;
 
   #endif
@@ -1609,15 +1606,14 @@ static void kd_breakpoint_remove_range(CPUState *cpu, target_ulong base, target_
     }
 }
 
-static void kd_init_common_sc(CPUState *cpu, DBGKD_ANY_WAIT_STATE_CHANGE *sc)
+static void kd_init_state_change(CPUState *cpu, DBGKD_ANY_WAIT_STATE_CHANGE *sc)
 {
     CPUArchState *env = cpu->env_ptr;
     int err = 0;
 
     // HEADER
 
-    sc->NewState = DbgKdExceptionStateChange;
-    sc->ProcessorLevel = 0x6;
+    // sc->ProcessorLevel = 0x6;
     sc->Processor = 0;
     sc->NumberProcessors = cpu_amount;
     cpu_memory_rw_debug(cpu, kd.KPRCB + OFFSET_KPRCB_CURRTHREAD,
@@ -1645,16 +1641,18 @@ static void kd_init_common_sc(CPUState *cpu, DBGKD_ANY_WAIT_STATE_CHANGE *sc)
     }
 }
 
-EXCEPTION_STATE_CHANGE *kd_get_exception_sc(CPUState *cpu)
+SizedBuf kd_gen_exception_sc(CPUState *cpu)
 {
     CPUArchState *env = cpu->env_ptr;
+    SizedBuf buf;
+    SBUF_MALLOC(buf, sizeof(DBGKD_ANY_WAIT_STATE_CHANGE) + sizeof(int));
 
-    memset(&kd.esc, 0, sizeof(kd.esc));
+    DBGKD_ANY_WAIT_STATE_CHANGE *sc = (DBGKD_ANY_WAIT_STATE_CHANGE *) buf.data;
+    kd_init_state_change(cpu, sc);
 
-    DBGKD_ANY_WAIT_STATE_CHANGE *sc = &kd.esc.StateChange;
-    kd_init_common_sc(cpu, sc);
+    sc->NewState = DbgKdExceptionStateChange;
 
-    sc->u.Exception.ExceptionRecord.ExceptionCode = 0x80000003; // Need get it
+    // sc->u.Exception.ExceptionRecord.ExceptionCode = 0x80000003;
     // sc->u.Exception.ExceptionRecord.ExceptionFlags = 0x0;
     // sc->u.Exception.ExceptionRecord.ExceptionRecord = 0x0;
     sc->u.Exception.ExceptionRecord.ExceptionAddress = env->eip;
@@ -1674,48 +1672,31 @@ EXCEPTION_STATE_CHANGE *kd_get_exception_sc(CPUState *cpu)
     // sc->u.Exception.ExceptionRecord.ExceptionInformation[12] = 0xffffffff82959adc;
     // sc->u.Exception.ExceptionRecord.ExceptionInformation[13] = 0xffffffff82959aa4;
     // sc->u.Exception.ExceptionRecord.ExceptionInformation[14] = 0xffffffff828d9d15;
-    sc->u.Exception.FirstChance = 0x1; // Need get it
+    // sc->u.Exception.FirstChance = 0x1;
 
-    kd.esc.value = 0x1; // Need get it
+    // UINT32_P(buf.data + sizeof(DBGKD_ANY_WAIT_STATE_CHANGE))[0] = 0x1;
 
-    return &kd.esc;
+    return buf;
 }
 
-SizedBuf *kd_get_load_symbols_sc(CPUState *cpu)
+SizedBuf kd_gen_load_symbols_sc(CPUState *cpu)
 {
-    int i;
-    uint8_t path_name[128]; //For Win7
-    size_t size = sizeof(DBGKD_ANY_WAIT_STATE_CHANGE),
-           count = sizeof(path_name);
+    SizedBuf buf;
+    SBUF_MALLOC(buf, sizeof(DBGKD_ANY_WAIT_STATE_CHANGE));
 
-    DBGKD_ANY_WAIT_STATE_CHANGE sc;
-    kd_init_common_sc(cpu, &sc);
+    DBGKD_ANY_WAIT_STATE_CHANGE *sc = (DBGKD_ANY_WAIT_STATE_CHANGE *) buf.data;
+    kd_init_state_change(cpu, sc);
 
-    cpu_memory_rw_debug(cpu, NT_KRNL_PNAME_ADDR, path_name, count, 0);
-    for (i = 0; i < count; i += 2) {
-        if((path_name[i / 2] = path_name[i]) == '\0') {
-            break;
-        }
-    }
-    count = i / 2 + 1;
-    kd.lssc.size = size + count;
+    sc->NewState = DbgKdLoadSymbolsStateChange;
 
-    sc.NewState = DbgKdLoadSymbolsStateChange;
-    sc.u.LoadSymbols.PathNameLength = count;
-    // sc.u.LoadSymbols.BaseOfDll = cca.KernelBase << 8 | ;
-    // sc.u.LoadSymbols.ProcessId = -1;
-    // sc.u.LoadSymbols.CheckSum = ;
-    // sc.u.LoadSymbols.SizeOfImage = ;
-    // sc.u.LoadSymbols.UnloadSymbols = false;
+    sc->u.LoadSymbols.PathNameLength = 0;
+    // sc->u.LoadSymbols.BaseOfDll = cca.KernelBase << 8 | ;
+    // sc->u.LoadSymbols.ProcessId = -1;
+    // sc->u.LoadSymbols.CheckSum = ;
+    // sc->u.LoadSymbols.SizeOfImage = ;
+    // sc->u.LoadSymbols.UnloadSymbols = false;
 
-    if (kd.lssc.data) {
-        g_free(kd.lssc.data);
-    }
-    kd.lssc.data = g_malloc0(kd.lssc.size);
-    memcpy(kd.lssc.data, &sc, size);
-    memcpy(kd.lssc.data + size, path_name, count);
-
-    return &kd.lssc;
+    return buf;
 }
 
 bool windbg_on_loaded(void)
@@ -1733,22 +1714,39 @@ bool windbg_on_loaded(void)
     target_ulong self;
     cpu_memory_rw_debug(cpu, kd.KPCR + OFFSET_SELF_PCR, PTR(self),
                         sizeof(self), 0);
+
     if (self != kd.KPCR) {
+        WINDBG_DEBUG("windbg_on_init: KPCR " FMT_ADDR " != self " FMT_ADDR,
+                     kd.KPCR, self);
         return false;
     }
 
     cpu_memory_rw_debug(cpu, kd.KPCR + OFFSET_KPRCB, PTR(kd.KPRCB),
                         sizeof(kd.KPRCB), 0);
 
-    cpu_memory_rw_debug(cpu, kd.KPCR + OFFSET_VERSION, PTR(kd.version),
+    cpu_memory_rw_debug(cpu, kd.KPCR + OFFSET_VERS, PTR(kd.version),
                         sizeof(kd.version), 0);
 
-    cpu_memory_rw_debug(cpu, kd.version + OFFSET_KRNL_BASE, PTR(kd.kernel_base),
+    cpu_memory_rw_debug(cpu, kd.version + OFFSET_VERS_KBASE, PTR(kd.kernel_base),
                         sizeof(kd.kernel_base), 0);
 
     WINDBG_DEBUG("windbg_on_init: KPCR " FMT_ADDR, kd.KPCR);
     WINDBG_DEBUG("windbg_on_init: KPRCB " FMT_ADDR, kd.KPRCB);
     WINDBG_DEBUG("windbg_on_init: KernelBase " FMT_ADDR, kd.kernel_base);
+
+    /*int str_size = sizeof(kd.kernel_name);
+    cpu_memory_rw_debug(cpu, NT_KNAME_ADDR, (uint8_t *) kd.kernel_name, str_size, 0);
+    int i;
+    for (i = 0; i < str_size; i += 2) {
+        if((kd.kernel_name[i / 2] = kd.kernel_name[i]) == '\0') {
+            break;
+        }
+    }
+    COUT_LN("%s", kd.kernel_name);*/
+
+    /*do {
+		*ptr++ = *src;
+	} while (*src++ != 0);*/
 
     // init cpu_amount
     CPU_FOREACH(cpu) {
@@ -1761,11 +1759,7 @@ bool windbg_on_loaded(void)
 
 void windbg_on_exit(void)
 {
-    // clear lssc
-    if (kd.lssc.data) {
-        g_free(kd.lssc.data);
-        kd.lssc.data = NULL;
-    }
+
 }
 
 uint32_t compute_checksum(uint8_t *data, uint16_t length)
