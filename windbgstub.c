@@ -50,14 +50,13 @@ typedef struct WindbgState {
     bool is_loaded;
 
     FILE *dump_file;
-
- #if (ENABLE_PARSER)
-    FILE *parsed_packets;
-    FILE *parsed_api;
- #endif
 } WindbgState;
 
-static WindbgState *windbg_state;
+static WindbgState *windbg_state = NULL;
+#if (ENABLE_PARSER)
+    FILE *parsed_packets;
+    FILE *parsed_api;
+#endif
 
 void windbg_dump(const char *fmt, ...)
 {
@@ -415,7 +414,7 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 static void windbg_debug_ctx_handler(ParsingContext *ctx)
 {
  #if (ENABLE_FULL_HANDLER)
-    FILE *f = windbg_state->parsed_packets;
+    FILE *f = parsed_packets;
 
     fprintf(f, "FROM: %s\n", ctx->name);
     switch (ctx->result) {
@@ -464,7 +463,7 @@ static void windbg_debug_ctx_handler(ParsingContext *ctx)
 static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
 {
  #if (ENABLE_API_HANDLER)
-    FILE *f = windbg_state->parsed_api;
+    FILE *f = parsed_api;
 
     switch (ctx->result) {
     case RESULT_BREAKIN_BYTE:
@@ -501,6 +500,10 @@ static void windbg_debug_parser(ParsingContext *ctx, const uint8_t *buf, int len
 void windbg_debug_parser_hook(bool is_kernel, const uint8_t *buf, int len)
 {
  #if (ENABLE_PARSER)
+    if (!windbg_state) {
+        return;
+    }
+
     if (is_kernel) {
  # if (ENABLE_KERNEL_PARSER)
         static ParsingContext ctx = { .state = STATE_LEADER,
@@ -533,8 +536,8 @@ static void windbg_exit(void)
 
     FCLOSE(windbg_state->dump_file);
  #if (ENABLE_PARSER)
-    FCLOSE(windbg_state->parsed_packets);
-    FCLOSE(windbg_state->parsed_api);
+    FCLOSE(parsed_packets);
+    FCLOSE(parsed_api);
  #endif
     g_free(windbg_state);
 }
@@ -569,8 +572,8 @@ int windbg_start(const char *device)
     windbg_state->dump_file = fopen(WINDBG_DIR "dump.txt", "wb");
 
  #if (ENABLE_PARSER)
-    windbg_state->parsed_packets = fopen(WINDBG_DIR "parsed_packets.txt", "w");
-    windbg_state->parsed_api = fopen(WINDBG_DIR "parsed_api.txt", "w");
+    parsed_packets = fopen(WINDBG_DIR "parsed_packets.txt", "w");
+    parsed_api = fopen(WINDBG_DIR "parsed_api.txt", "w");
  #endif
 
     atexit(windbg_exit);
