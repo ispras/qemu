@@ -411,75 +411,75 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 
 #if (ENABLE_PARSER)
 
-static void windbg_debug_ctx_handler(ParsingContext *ctx)
+static void windbg_debug_ctx_handler(ParsingContext *ctx, FILE *out)
 {
  #if (ENABLE_FULL_HANDLER)
-    FILE *f = parsed_packets;
+    if (ctx->result == RESULT_NONE) {
+        return;
+    }
 
-    fprintf(f, "FROM: %s\n", ctx->name);
+    fprintf(out, "FROM: %s\n", ctx->name);
     switch (ctx->result) {
     case RESULT_BREAKIN_BYTE:
-        fprintf(f, "CATCH BREAKING BYTE\n");
+        fprintf(out, "CATCH BREAKING BYTE\n");
         break;
 
     case RESULT_UNKNOWN_PACKET:
-        fprintf(f, "ERROR: CATCH UNKNOWN PACKET TYPE: 0x%x\n", ctx->packet.PacketType);
+        fprintf(out, "ERROR: CATCH UNKNOWN PACKET TYPE: 0x%x\n", ctx->packet.PacketType);
         break;
 
     case RESULT_CONTROL_PACKET:
-        fprintf(f, "CATCH CONTROL PACKET: %s\n", kd_get_packet_type_name(ctx->packet.PacketType));
+        fprintf(out, "CATCH CONTROL PACKET: %s\n", kd_get_packet_type_name(ctx->packet.PacketType));
         break;
 
     case RESULT_DATA_PACKET:
-        fprintf(f, "CATCH DATA PACKET: %s\n", kd_get_packet_type_name(ctx->packet.PacketType));
-        fprintf(f, "Byte Count: %d\n", ctx->packet.ByteCount);
+        fprintf(out, "CATCH DATA PACKET: %s\n", kd_get_packet_type_name(ctx->packet.PacketType));
+        fprintf(out, "Byte Count: %d\n", ctx->packet.ByteCount);
 
         if (ctx->packet.PacketType == PACKET_TYPE_KD_STATE_MANIPULATE) {
-            fprintf(f, "Api: %s\n", kd_get_api_name(ctx->data.m64.ApiNumber));
+            fprintf(out, "Api: %s\n", kd_get_api_name(ctx->data.m64.ApiNumber));
         }
 
         int i;
         for (i = 0; i < ctx->packet.ByteCount; ++i) {
             if (!(i % 16) && i) {
-                fprintf(f, "\n");
+                fprintf(out, "\n");
             }
-            fprintf(f, "%02x ", ctx->data.buf[i]);
+            fprintf(out, "%02x ", ctx->data.buf[i]);
         }
-        fprintf(f, "%saa\n", !(i % 16) ? "\n" : "");
+        fprintf(out, "%saa\n", !(i % 16) ? "\n" : "");
         break;
 
     case RESULT_ERROR:
-        fprintf(f, "ERROR: CATCH ERROR\n");
+        fprintf(out, "ERROR: CATCH ERROR\n");
         break;
 
     default:
         break;
     }
-    fprintf(f, "\n");
-    fflush(f);
+    fprintf(out, "\n");
+    fflush(out);
  #endif
 }
 
-static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
+static void windbg_debug_ctx_handler_api(ParsingContext *ctx, FILE *out)
 {
  #if (ENABLE_API_HANDLER)
-    FILE *f = parsed_api;
-
     switch (ctx->result) {
     case RESULT_BREAKIN_BYTE:
-        fprintf(f, "BREAKING BYTE\n");
+        fprintf(out, "BREAKING BYTE\n");
         break;
 
     case RESULT_DATA_PACKET:
         if (ctx->packet.PacketType == PACKET_TYPE_KD_STATE_MANIPULATE) {
-            fprintf(f, "%s: %s\n", ctx->name, kd_get_api_name(ctx->data.m64.ApiNumber));
+            fprintf(out, "%s: %s\n", ctx->name, kd_get_api_name(ctx->data.m64.ApiNumber));
         }
         break;
 
     default:
         break;
     }
-    fflush(f);
+    fflush(out);
  #endif
 }
 
@@ -489,8 +489,8 @@ static void windbg_debug_parser(ParsingContext *ctx, const uint8_t *buf, int len
     for (i = 0; i < len; ++i) {
         windbg_read_byte(ctx, buf[i]);
         if (ctx->result != RESULT_NONE) {
-            windbg_debug_ctx_handler(ctx);
-            windbg_debug_ctx_handler_api(ctx);
+            windbg_debug_ctx_handler(ctx, parsed_packets);
+            windbg_debug_ctx_handler_api(ctx, parsed_api);
         }
     }
 }
@@ -526,7 +526,7 @@ void windbg_debug_parser_hook(bool is_kernel, const uint8_t *buf, int len)
 void windbg_start_sync(void)
 {
     if (windbg_state && !windbg_state->is_loaded) {
-        windbg_state->is_loaded = windbg_on_loaded();
+        windbg_state->is_loaded = windbg_on_load();
     }
 }
 

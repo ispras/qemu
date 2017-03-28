@@ -3,11 +3,16 @@
 
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
+#include "qemu/cutils.h"
 #include "cpu.h"
 #include "exec/windbgkd.h"
 #include "exec/windbgstub.h"
 
-// #include "qemu/cutils.h"
+#ifndef TARGET_I386
+#error Unsupported Architecture
+#endif
+
+#define WINDBG "windbg"
 
 #if (WINDBG_DEBUG_ON)
 # define COUT(...) printf("" __VA_ARGS__)
@@ -61,6 +66,12 @@
 #define M64_SIZE sizeof(DBGKD_MANIPULATE_STATE64)
 
 #define sizeof_field(type, field) sizeof(((type *) NULL)->field)
+
+#define FROM_VADDR(cpu, addr, type) ({                         \
+        type _t;                                                   \
+        cpu_memory_rw_debug(cpu, addr, PTR( _t), sizeof(type), 0); \
+        _t;                                                        \
+    })
 
 #define FCLOSE(file)  \
     if (file) {       \
@@ -148,7 +159,7 @@ const char *kd_get_api_name(int id);
 const char *kd_get_packet_type_name(int id);
 
 void windbg_dump(const char *fmt, ...);
-bool windbg_on_loaded(void);
+bool windbg_on_load(void);
 void windbg_on_exit(void);
 
 uint32_t compute_checksum(uint8_t *data, uint16_t len);
