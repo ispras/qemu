@@ -44,11 +44,11 @@
 #define CPU_CONTEXT_ALL \
     (CPU_CONTEXT_FULL | CPU_CONTEXT_SEGMENTS | CPU_CONTEXT_DEBUG_REGISTERS)
 
-typedef struct _CPU_KDESCRIPTOR {
+typedef struct _CPU_DESCRIPTOR {
 	uint16_t Pad[3];
 	uint16_t Limit;
-	uint64_t *Base;
-} CPU_KDESCRIPTOR, *PCPU_KDESCRIPTOR;
+	uint64_t Base;
+} CPU_DESCRIPTOR, *PCPU_DESCRIPTOR;
 
 typedef struct _CPU_KSPECIAL_REGISTERS {
 	uint64_t Cr0;
@@ -61,8 +61,8 @@ typedef struct _CPU_KSPECIAL_REGISTERS {
 	uint64_t KernelDr3;
 	uint64_t KernelDr6;
 	uint64_t KernelDr7;
-	CPU_KDESCRIPTOR Gdtr;
-	CPU_KDESCRIPTOR Idtr;
+	CPU_DESCRIPTOR Gdtr;
+	CPU_DESCRIPTOR Idtr;
 	uint16_t Tr;
 	uint16_t Ldtr;
 	uint32_t MxCsr;
@@ -490,7 +490,6 @@ static void windbg_set_sr(CPUState *cpu, int sr, uint16_t selector)
     }
 }
 
-UNUSED
 static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
 {
     const bool new_mem = (len != sizeof(CPU_CONTEXT) || offset != 0);
@@ -507,15 +506,127 @@ static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
 
     memset(cc, 0, len);
 
+    cc->ContextFlags = CPU_CONTEXT_ALL;
+
+    if (cc->ContextFlags & CPU_CONTEXT_SEGMENTS) {
+        cc->SegCs = env->segs[R_CS].selector;
+        cc->SegDs = env->segs[R_DS].selector;
+        cc->SegEs = env->segs[R_ES].selector;
+        cc->SegFs = env->segs[R_FS].selector;
+        cc->SegGs = env->segs[R_GS].selector;
+        cc->SegSs = env->segs[R_SS].selector;
+    }
+
+    if (cc->ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
+        cc->Dr0 = env->dr[0];
+        cc->Dr1 = env->dr[1];
+        cc->Dr2 = env->dr[2];
+        cc->Dr3 = env->dr[3];
+        cc->Dr6 = env->dr[6];
+        cc->Dr7 = env->dr[7];
+    }
+
   #ifdef TARGET_X86_64
 
-    err = -1;
+    cc->P1Home = 0;
+    cc->P2Home = 0;
+    cc->P3Home = 0;
+    cc->P4Home = 0;
+    cc->P5Home = 0;
+    cc->P6Home = 0;
+
+    if (cc->ContextFlags & CPU_CONTEXT_INTEGER) {
+        cc->MxCsr  = env->mxcsr;
+        cc->EFlags = env->eflags;
+
+        cc->Rax = env->regs[0];
+        cc->Rcx = env->regs[1];
+        cc->Rdx = env->regs[2];
+        cc->Rbx = env->regs[3];
+        cc->Rsp = env->regs[4];
+        cc->Rbp = env->regs[5];
+        cc->Rsi = env->regs[6];
+        cc->Rdi = env->regs[7];
+        cc->R8  = env->regs[8];
+        cc->R9  = env->regs[9];
+        cc->R10 = env->regs[10];
+        cc->R11 = env->regs[11];
+        cc->R12 = env->regs[12];
+        cc->R13 = env->regs[13];
+        cc->R14 = env->regs[14];
+        cc->R15 = env->regs[15];
+        cc->Rip = env->eip;
+    }
+
+    if (cc->ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
+
+    }
+
+    cc->VectorControl        = 0;
+    cc->DebugControl         = 0;
+    cc->LastBranchToRip      = 0;
+    cc->LastBranchFromRip    = 0;
+    cc->LastExceptionToRip   = 0;
+    cc->LastExceptionFromRip = 0;
+
+
+/*
+
+typedef struct _CPU_M128A {
+    uint64_t Low;
+    int64_t High;
+} CPU_M128A, *PCPU_M128A;
+
+typedef struct _CPU_XMM_SAVE_AREA32 {
+    uint16_t ControlWord;
+    uint16_t StatusWord;
+    uint8_t TagWord;
+    uint8_t Reserved1;
+    uint16_t ErrorOpcode;
+    uint32_t ErrorOffset;
+    uint16_t ErrorSelector;
+    uint16_t Reserved2;
+    uint32_t DataOffset;
+    uint16_t DataSelector;
+    uint16_t Reserved3;
+    uint32_t MxCsr;
+    uint32_t MxCsr_Mask;
+    CPU_M128A FloatRegisters[8];
+    CPU_M128A XmmRegisters[16];
+    uint8_t Reserved4[96];
+} CPU_XMM_SAVE_AREA32, *PCPU_XMM_SAVE_AREA32;
+
+    union {
+        CPU_XMM_SAVE_AREA32 FltSave;
+        CPU_XMM_SAVE_AREA32 FloatSave;
+        struct {
+            CPU_M128A Header[2];
+            CPU_M128A Legacy[8];
+            CPU_M128A Xmm0;
+            CPU_M128A Xmm1;
+            CPU_M128A Xmm2;
+            CPU_M128A Xmm3;
+            CPU_M128A Xmm4;
+            CPU_M128A Xmm5;
+            CPU_M128A Xmm6;
+            CPU_M128A Xmm7;
+            CPU_M128A Xmm8;
+            CPU_M128A Xmm9;
+            CPU_M128A Xmm10;
+            CPU_M128A Xmm11;
+            CPU_M128A Xmm12;
+            CPU_M128A Xmm13;
+            CPU_M128A Xmm14;
+            CPU_M128A Xmm15;
+        };
+    };
+    CPU_M128A VectorRegister[26];
+
+  */
 
   #else
 
-    cc->ContextFlags = CPU_CONTEXT_ALL;
-
-    if (cc->ContextFlags & CPU_CONTEXT_FULL) {
+    if (cc->ContextFlags & CPU_CONTEXT_INTEGER) {
         cc->Edi    = env->regs[R_EDI];
         cc->Esi    = env->regs[R_ESI];
         cc->Ebx    = env->regs[R_EBX];
@@ -527,13 +638,6 @@ static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
 
         cc->Eip    = env->eip;
         cc->EFlags = env->eflags;
-
-        cc->SegGs  = env->segs[R_GS].selector;
-        cc->SegFs  = env->segs[R_FS].selector;
-        cc->SegEs  = env->segs[R_ES].selector;
-        cc->SegDs  = env->segs[R_DS].selector;
-        cc->SegCs  = env->segs[R_CS].selector;
-        cc->SegSs  = env->segs[R_SS].selector;
     }
 
     if (cc->ContextFlags & CPU_CONTEXT_FLOATING_POINT) {
@@ -559,15 +663,6 @@ static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
         }
     }
 
-    if (cc->ContextFlags & CPU_CONTEXT_DEBUG_REGISTERS) {
-        cc->Dr0 = env->dr[0];
-        cc->Dr1 = env->dr[1];
-        cc->Dr2 = env->dr[2];
-        cc->Dr3 = env->dr[3];
-        cc->Dr6 = env->dr[6];
-        cc->Dr7 = env->dr[7];
-    }
-
     if (cc->ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
         uint8_t *ptr = cc->ExtendedRegisters + 160;
         for (i = 0; i < 8; ++i, ptr += 16) {
@@ -578,7 +673,7 @@ static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
         UINT32_P(cc->ExtendedRegisters + 24)[0] = env->mxcsr;
     }
 
-    //cc->ExtendedRegisters[0] = 0xaa;
+    // cc->ExtendedRegisters[0] = 0xaa;
 
   #endif
 
@@ -589,12 +684,15 @@ static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
     return err;
 }
 
-UNUSED
 static int windbg_write_context(CPUState *cpu, uint8_t *buf, int len, int offset)
 {
     UNUSED CPUArchState *env = cpu->env_ptr;
     UNUSED int mem_size, i, tmp;
     uint8_t *mem_ptr = buf;
+
+  #ifdef TARGET_X86_64
+    return 0;
+  #endif
 
     while (len > 0 && offset < sizeof(CPU_CONTEXT)) {
         mem_size = 1;
@@ -798,15 +896,8 @@ static int windbg_write_context(CPUState *cpu, uint8_t *buf, int len, int offset
     return 0;
 }
 
-UNUSED
 static int windbg_read_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset)
 {
-  #ifdef TARGET_X86_64
-
-    return -1;
-
-  #else
-
     CPUArchState *env = cpu->env_ptr;
     const bool new_mem = (len != sizeof(CPU_KSPECIAL_REGISTERS) || offset != 0);
     CPU_KSPECIAL_REGISTERS *ckr;
@@ -831,30 +922,53 @@ static int windbg_read_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset)
     ckr->KernelDr6 = env->dr[6];
     ckr->KernelDr7 = env->dr[7];
 
+  #ifdef TARGET_X86_64
+    // *UINT32_P(ckr->Gdtr.Pad) = env->gdt.selector;
+    // *UINT32_P(ckr->Idtr.Pad) = env->idt.selector;
+  #else
     ckr->Gdtr.Pad   = env->gdt.selector;
+    ckr->Idtr.Pad   = env->idt.selector;
+  #endif
+
     ckr->Gdtr.Limit = env->gdt.limit;
     ckr->Gdtr.Base  = env->gdt.base;
-    ckr->Idtr.Pad   = env->idt.selector;
     ckr->Idtr.Limit = env->idt.limit;
     ckr->Idtr.Base  = env->idt.base;
     ckr->Tr         = env->tr.selector;
     ckr->Ldtr       = env->ldt.selector;
+
+  #ifdef TARGET_X86_64
+
+    // ckr->MxCsr                = env->mxcsr;
+    // ckr->DebugControl         = 0;
+    // ckr->LastBranchToRip      = 0;
+    // ckr->LastBranchFromRip    = 0;
+    // ckr->LastExceptionToRip   = 0;
+    // ckr->LastExceptionFromRip = 0;
+    // ckr->Cr8                  = 0;
+    // ckr->MsrGsBase            = 0;
+    // ckr->MsrGsSwap            = 0;
+    // ckr->MsrStar              = 0;
+    // ckr->MsrLStar             = 0;
+    // ckr->MsrCStar             = 0;
+    // ckr->MsrSyscallMask       = 0;
+    // ckr->Xcr0                 = 0;
+    // ckr->Cr8                  = 0;
+
+  #endif
 
     if (new_mem) {
         memcpy(buf, (uint8_t *) ckr + offset, len);
         g_free(ckr);
     }
     return 0;
-
-  #endif
 }
 
-UNUSED
 static int windbg_write_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset)
 {
   #ifdef TARGET_X86_64
 
-    return -1;
+    return 0;
 
   #else
 
@@ -1012,15 +1126,7 @@ void kd_api_write_virtual_memory(CPUState *cpu, PacketData *pd)
 void kd_api_get_context(CPUState *cpu, PacketData *pd)
 {
     pd->extra_size = sizeof(CPU_CONTEXT);
-    int err = 0;
-
-  #ifdef TARGET_X86_64
-
-  #else
-
-    err = windbg_read_context(cpu, pd->extra, pd->extra_size, 0);
-
-  #endif
+    int err = windbg_read_context(cpu, pd->extra, pd->extra_size, 0);
 
     if (err) {
         pd->extra_size = 0;
@@ -1030,16 +1136,7 @@ void kd_api_get_context(CPUState *cpu, PacketData *pd)
 
 void kd_api_set_context(CPUState *cpu, PacketData *pd)
 {
-    int err = 0;
-
-  #ifdef TARGET_X86_64
-
-  #else
-
-    err = windbg_write_context(cpu, pd->extra, pd->extra_size, 0);
-
-  #endif
-
+    int err = windbg_write_context(cpu, pd->extra, pd->extra_size, 0);
     pd->extra_size = 0;
 
     if (err) {
@@ -1122,11 +1219,14 @@ void kd_api_continue(CPUState *cpu, PacketData *pd)
 void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
 {
     DBGKD_READ_MEMORY64 *mem = &pd->m64.u.ReadMemory;
-    int err = 0;
+    int err = -1;
+
+    mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - M64_SIZE);
 
   #ifdef TARGET_X86_64
 
-    mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - M64_SIZE);
+    memset(pd->extra, 0, pd->extra_size);
+    return;
 
     target_ulong from = 0;
     switch (mem->TargetBaseAddress) {
@@ -1141,6 +1241,7 @@ void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
         break;
 
     case AMD64_DEBUG_CONTROL_SPACE_KSPECIAL:
+        mem->ActualBytesRead = MIN(mem->ActualBytesRead, sizeof(CPU_KSPECIAL_REGISTERS));
         err = windbg_read_ks_regs(cpu, pd->extra, 0, mem->ActualBytesRead);
         break;
 
@@ -1148,10 +1249,6 @@ void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
         from = FROM_VADDR(cpu, kd.KPCR + OFFSET_KPRCB, target_ulong);
         from = FROM_VADDR(cpu, from + OFFSET_KPRCB_CURRTHREAD, target_ulong);
         mem->ActualBytesRead = sizeof(target_ulong);
-        break;
-
-    default:
-        err = -1;
         break;
     }
 
@@ -1162,7 +1259,6 @@ void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
   #else
 
     if (mem->TargetBaseAddress < sizeof(CPU_KPROCESSOR_STATE)) {
-        mem->ActualBytesRead = MIN(mem->TransferCount, PACKET_MAX_SIZE - M64_SIZE);
         mem->ActualBytesRead = MIN(mem->ActualBytesRead,
                                    sizeof(CPU_KPROCESSOR_STATE) - mem->TargetBaseAddress);
 
@@ -1194,11 +1290,16 @@ void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
 void kd_api_write_control_space(CPUState *cpu, PacketData *pd)
 {
     DBGKD_WRITE_MEMORY64 *mem = &pd->m64.u.WriteMemory;
-    int err = 0;
+    int err = -1;
+
+    mem->ActualBytesWritten = MIN(pd->extra_size, mem->TransferCount);
 
   #ifdef TARGET_X86_64
 
-    mem->ActualBytesWritten = MIN(pd->extra_size, mem->TransferCount);
+    if (mem->TargetBaseAddress == AMD64_DEBUG_CONTROL_SPACE_KSPECIAL) {
+        mem->ActualBytesWritten = MIN(mem->ActualBytesWritten, sizeof(CPU_KSPECIAL_REGISTERS));
+        err = windbg_write_ks_regs(cpu, pd->extra, 0, mem->ActualBytesWritten);
+    }
 
   #else
 
@@ -1743,6 +1844,7 @@ static void kd_init_state_change(CPUState *cpu, DBGKD_ANY_WAIT_STATE_CHANGE *sc)
     target_ulong KPRCB = FROM_VADDR(cpu, kd.KPCR + OFFSET_KPRCB, target_ulong);
     sc->Thread = FROM_VADDR(cpu, KPRCB + OFFSET_KPRCB_CURRTHREAD, target_ulong);
     sc->ProgramCounter = env->eip;
+    COUT_HEX(sc->ProgramCounter);
 
     // CONTROL REPORT
 
@@ -1825,8 +1927,6 @@ SizedBuf kd_gen_load_symbols_sc(CPUState *cpu)
 
 bool windbg_on_load(void)
 {
-    COUT_SIZEOF(CPU_KSPECIAL_REGISTERS);
-
     CPUState *cpu = qemu_get_cpu(0);
     CPUArchState *env = cpu->env_ptr;
 
