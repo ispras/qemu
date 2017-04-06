@@ -1,0 +1,81 @@
+include ../config-host.mak
+include config-target.mak
+include $(SRC_PATH)/rules.mak
+
+# Makefile.target copy-paste
+QEMU_CFLAGS += -I.. -I$(SRC_PATH)/target/$(TARGET_BASE_ARCH) -DNEED_CPU_H
+QEMU_CFLAGS+=-I$(SRC_PATH)/include
+
+# Plugin-specific settings
+ifeq ($(CONFIG_WIN32), y) 
+    LDFLAGS += $(LDFLAGS_SHARED)
+    LIBS += -L . -lqemuplugins
+else 
+    LDFLAGS += $(LDFLAGS_SHARED) -rdynamic
+endif
+
+QEMU_CFLAGS += -fno-PIE -fPIC
+
+PLUGIN_SRC := $(SRC_PATH)/plugins/plugins_src/
+PLUGIN_DIR := $(PLUGIN_PREFIX)$(PLUGIN)/
+
+# List of the files in the plugins
+contexts-files              := contexts.o
+
+syscalls_linux-flags        := -DGUEST_OS_LINUX
+syscalls_linux-files        := syscalls_linux.o syscall_lin.o guest_string.o syscall_processing.o
+
+syscalls_windows_xp-flags   := -DGUEST_OS_WINDOWS -DGUEST_OS_WINXP
+syscalls_windows_xp-files   := syscalls_windows.o syscall_win.o guest_string.o
+syscalls_windows_xp-files   += syscall_processing.o
+
+syscalls_windows_7-flags    := -DGUEST_OS_WINDOWS -DGUEST_OS_WIN7
+syscalls_windows_7-files    := syscalls_windows.o syscall_win.o guest_string.o
+syscalls_windows_7-files    += syscall_processing.o
+
+syscalls_windows_8-flags    := -DGUEST_OS_WINDOWS -DGUEST_OS_WIN8
+syscalls_windows_8-files    := syscalls_windows.o syscall_win.o guest_string.o
+syscalls_windows_8-files    += syscall_processing.o
+
+syscalls_windows_8.1-flags  := -DGUEST_OS_WINDOWS -DGUEST_OS_WIN81
+syscalls_windows_8.1-files  := syscalls_windows.o syscall_win.o guest_string.o
+syscalls_windows_8.1-files  += syscall_processing.o
+
+
+# Objects and binaries
+FILES := $($(PLUGIN)-files)
+OBJS := $(addprefix $(PLUGIN_DIR),$(FILES))
+BIN := $(PLUGIN_PREFIX)$(PLUGIN)-$(TARGET_NAME).plugin
+
+DEPS := $(OBJS:.o=.d)
+
+-include $(DEPS)
+
+ifeq "$(strip $(OBJS))" ""
+$(error Don't know how to build $(PLUGIN) plugin))
+endif
+
+# Plugin-specific flags
+QEMU_CFLAGS += $($(PLUGIN)-flags)
+
+# Don't delete temporary files
+.SECONDARY: $(OBJS)
+
+.PHONY: all clean install
+
+all: $(BIN)
+	@true
+
+clean:
+	rm $(BIN)
+	rm -r $(PLUGIN_DIR)
+
+install:
+	$(INSTALL_PROG) $(BIN) "$(DESTDIR)$(libexecdir)"
+
+$(PLUGIN_DIR)%.o: $(PLUGIN_SRC)%.c
+	@mkdir -p $(@D)
+	$(call COMPILE_CC)
+
+$(BIN): $(OBJS)
+	$(call LINK,$^)

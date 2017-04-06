@@ -55,7 +55,47 @@ STEXI
 @findex quit
 Quit the emulator.
 ETEXI
+    {
+        .name       = "load_plugin",
+        .args_type  = "name:s",
+        .params     = "name",
+        .help       = "start instrumenting",
+        .cmd        = do_load_plugin,
+    },
 
+STEXI
+@item load_plugin
+@findex load_plugin
+Start instrumenting process. To stop it use unload_plugin.
+ETEXI
+
+    {
+        .name       = "unload_plugin",
+        .args_type  = "name:s?",
+        .params     = "[name]",
+        .help       = "stop instrumenting",
+        .cmd        = do_unload_plugin,
+    },
+
+STEXI
+@item unload_plugin
+@findex unload_plugin
+Stop instrumenting process.
+ETEXI
+
+    {
+        .name       = "list_plugins",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show list of loaded plugins",
+        .cmd        = do_list_plugins,
+    },
+
+STEXI
+@item list_plugins
+@findex list_plugins
+Show list of loaded plugins.
+ETEXI
     {
         .name       = "block_resize",
         .args_type  = "device:B,size:o",

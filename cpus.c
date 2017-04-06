@@ -37,6 +37,7 @@
 #include "sysemu/kvm.h"
 #include "sysemu/hax.h"
 #include "qmp-commands.h"
+#include "plugins/plugin.h"
 #include "exec/exec-all.h"
 
 #include "qemu/thread.h"
@@ -1407,6 +1408,11 @@ void pause_all_vcpus(void)
             qemu_cpu_kick(cpu);
         }
     }
+#ifdef CONFIG_PLUGIN
+    CPU_FOREACH(cpu) {
+        plugin_cpu_paused(cpu);
+    }
+#endif
 }
 
 void cpu_resume(CPUState *cpu)

@@ -2689,6 +2689,19 @@ static const QEMUOption *lookup_opt(int argc, char **argv,
     return popt;
 }
 
+/* Provide a forward declaration since "plugins/plugin.h" can't be
+ * included here. */
+#ifdef CONFIG_PLUGIN
+extern void plugins_load(const char *);
+extern void plugins_init(void);
+extern void plugins_set_os(const char *);
+#else
+#define plugins_load(a)
+#define plugins_init()
+#define plugins_set_os(a)
+#endif
+
+
 static MachineClass *select_machine(void)
 {
     MachineClass *machine_class = find_default_machine();
@@ -2940,6 +2953,8 @@ int main(int argc, char **argv, char **envp)
     const char *pid_file = NULL;
     const char *incoming = NULL;
     bool defconfig = true;
+    const char *plugin_filename = NULL;
+    const char *os_version = NULL;
     bool userconfig = true;
     bool nographic = false;
     DisplayType display_type = DT_DEFAULT;
@@ -3823,6 +3838,14 @@ int main(int argc, char **argv, char **envp)
                     tcg_tb_size = 0;
                 }
                 break;
+#ifdef CONFIG_PLUGIN
+            case QEMU_OPTION_plugin:
+                plugin_filename = optarg;
+                break;
+            case QEMU_OPTION_os_version:
+                os_version = optarg;
+                break;
+#endif /* CONFIG_PLUGIN */
             case QEMU_OPTION_icount:
                 icount_opts = qemu_opts_parse_noisily(qemu_find_opts("icount"),
                                                       optarg, true);
@@ -4100,6 +4123,12 @@ int main(int argc, char **argv, char **envp)
                      "supported by machine '%s' (%d)", max_cpus,
                      machine_class->name, machine_class->max_cpus);
         exit(1);
+    }
+
+    plugins_init();
+
+    if (os_version) {
+        plugins_set_os(os_version);
     }
 
     /*
@@ -4473,6 +4502,13 @@ int main(int argc, char **argv, char **envp)
     current_machine->cpu_model = cpu_model;
 
     machine_class->init(current_machine);
+
+    if (!plugin_filename) {
+        plugin_filename = getenv("PLUGIN");
+    }
+    if (plugin_filename) {
+        plugins_load(plugin_filename);
+    }
 
     realtime_init();
 

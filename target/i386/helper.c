@@ -22,6 +22,7 @@
 #include "exec/exec-all.h"
 #include "sysemu/kvm.h"
 #include "kvm_i386.h"
+#include "plugins/plugin.h" //needed this to set info about cr3 updates
 #ifndef CONFIG_USER_ONLY
 #include "sysemu/sysemu.h"
 #include "sysemu/hw_accel.h"
@@ -643,6 +644,9 @@ void cpu_x86_update_cr3(CPUX86State *env, target_ulong new_cr3)
         qemu_log_mask(CPU_LOG_MMU,
                         "CR3 update: CR3=" TARGET_FMT_lx "\n", new_cr3);
         tlb_flush(CPU(cpu));
+#ifdef CONFIG_PLUGIN
+        plugin_page_dir_update(env, env->cr[3]);
+#endif
     }
 }
 

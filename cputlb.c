@@ -27,6 +27,7 @@
 #include "exec/memory-internal.h"
 #include "exec/ram_addr.h"
 #include "tcg/tcg.h"
+#include "plugins/plugin.h"
 #include "qemu/error-report.h"
 #include "exec/log.h"
 #include "exec/helper-proto.h"
@@ -406,6 +407,9 @@ void tlb_set_page_with_attrs(CPUState *cpu, target_ulong vaddr,
     } else {
         te->addr_write = -1;
     }
+#ifdef CONFIG_PLUGIN
+    plugin_tlb_set_page(cpu, vaddr, paddr, prot, mmu_idx, size);
+#endif
 }
 
 /* Add a new TLB entry, but without specifying the memory

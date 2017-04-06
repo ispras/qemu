@@ -29,6 +29,7 @@
 #include "exec/helper-gen.h"
 
 #include "trace-tcg.h"
+#include "plugins/plugin.h"
 #include "exec/log.h"
 
 
@@ -8445,7 +8446,9 @@ void gen_intermediate_code(CPUX86State *env, TranslationBlock *tb)
         if (num_insns == max_insns && (tb->cflags & CF_LAST_IO)) {
             gen_io_start();
         }
-
+#ifdef CONFIG_PLUGIN
+        plugin_instr_translate(pc_ptr, cs, tb);
+#endif
         pc_ptr = disas_insn(env, dc, pc_ptr);
         /* stop translation if indicated */
         if (dc->is_jmp)

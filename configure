@@ -231,6 +231,7 @@ kvm="no"
 hax="no"
 rdma=""
 gprof="no"
+plugin="no"
 debug_tcg="no"
 debug="no"
 fortify_source=""
@@ -859,6 +860,10 @@ for opt do
   ;;
   --block-drv-ro-whitelist=*) block_drv_ro_whitelist=$(echo "$optarg" | sed -e 's/,/ /g')
   ;;
+  --enable-plugin) plugin="yes"
+  ;;
+  --disable-plugin) plugin="no"
+  ;;
   --enable-debug-tcg) debug_tcg="yes"
   ;;
   --disable-debug-tcg) debug_tcg="no"
@@ -1304,6 +1309,9 @@ Advanced options (experts only):
   --bindir=PATH            install binaries in PATH
   --libdir=PATH            install libraries in PATH
   --sysconfdir=PATH        install config in PATH$confsuffix
+  --libexecdir=PATH        install TCG plugins in PATH"
+  --enable-plugin          enable plugin support"
+  --disable-plugin         disable plugin support (default)"
   --localstatedir=PATH     install local state in PATH (set at runtime on win32)
   --with-confsuffix=SUFFIX suffix for QEMU data inside datadir/libdir/sysconfdir [$confsuffix]
   --enable-debug           enable common debug build options
@@ -5010,6 +5018,7 @@ echo "module support    $modules"
 echo "host CPU          $cpu"
 echo "host big endian   $bigendian"
 echo "target list       $target_list"
+echo "plugin support    $plugin"
 echo "tcg debug enabled $debug_tcg"
 echo "gprof enabled     $gprof"
 echo "sparse enabled    $sparse"
@@ -5148,6 +5157,17 @@ echo "qemu_localedir=$qemu_localedir" >> $config_host_mak
 echo "libs_softmmu=$libs_softmmu" >> $config_host_mak
 
 echo "ARCH=$ARCH" >> $config_host_mak
+
+if test "$plugin" = "yes" ; then
+  echo "CONFIG_PLUGIN=y" >> $config_host_mak
+  if test "$mingw32" = "yes" ; then
+    LIBS="-lpsapi -ldl -lregex $LIBS"
+    LDFLAGS="-Wl,--export-all-symbols $LDFLAGS"
+  else
+  LIBS="-ldl $LIBS"
+    LDFLAGS="-rdynamic $LDFLAGS"
+  fi
+fi
 
 if test "$debug_tcg" = "yes" ; then
   echo "CONFIG_DEBUG_TCG=y" >> $config_host_mak

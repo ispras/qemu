@@ -383,6 +383,32 @@ void tcg_context_init(TCGContext *s)
     }
 }
 
+void* tcg_context_register_helper (
+        TCGContext *s,
+        void *func,
+        const char *name,
+        unsigned flags,
+        unsigned sizemask)
+{
+    TCGHelperInfo *helper_info = g_new(TCGHelperInfo, 1);
+    helper_info->func = func;
+    helper_info->name = name;
+    helper_info->flags = flags;
+    helper_info->sizemask = sizemask;
+
+    g_hash_table_insert(s->helpers, (gpointer)func, (gpointer)helper_info);
+
+    return (void*)helper_info;
+}
+
+void tcg_context_unregister_helper (
+        TCGContext *s,
+        void *opaque)
+{
+    TCGHelperInfo *helper_info = (TCGHelperInfo *) opaque;
+    g_hash_table_remove(s->helpers, (gpointer)helper_info->func);
+}
+
 void tcg_prologue_init(TCGContext *s)
 {
     size_t prologue_size, total_size;

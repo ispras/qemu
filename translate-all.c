@@ -55,6 +55,7 @@
 #include "translate-all.h"
 #include "qemu/bitmap.h"
 #include "qemu/timer.h"
+#include "plugins/plugin.h"
 #include "exec/log.h"
 
 /* #define DEBUG_TB_INVALIDATE */
@@ -364,7 +365,9 @@ bool cpu_restore_state(CPUState *cpu, uintptr_t retaddr)
 {
     TranslationBlock *tb;
     bool r = false;
-
+#ifdef CONFIG_PLUGIN
+    plugin_instruction_exception(cpu);
+#endif
     tb_lock();
     tb = tb_find_pc(retaddr);
     if (tb) {
@@ -1308,7 +1311,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
 #endif
 
     tcg_func_start(&tcg_ctx);
-
+#ifdef CONFIG_PLUGIN
+    plugin_before_gen_tb(ENV_GET_CPU(env), tb);
+#endif
     tcg_ctx.cpu = ENV_GET_CPU(env);
     gen_intermediate_code(env, tb);
     tcg_ctx.cpu = NULL;

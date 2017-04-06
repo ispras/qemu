@@ -1,0 +1,7 @@
+plugin_register_syscall_callback(syscall_open_cb, VMI_SYS_OPEN);
+plugin_register_syscall_callback(syscall_create_cb, VMI_SYS_CREATE);
+plugin_register_syscall_callback(syscall_read_cb, VMI_SYS_READ);
+plugin_register_syscall_callback(syscall_write_cb, VMI_SYS_WRITE);
+plugin_register_syscall_callback(syscall_close_cb, VMI_SYS_CLOSE);
+plugin_register_syscall_callback(syscall_create_section_cb, VMI_SYS_CREATE_SECTION);
+plugin_register_syscall_callback(syscall_map_view_of_section_cb, VMI_SYS_MAP_VIEW_OF_SECTION);

@@ -8,6 +8,8 @@
 
 extern Monitor *cur_mon;
 
+typedef struct mon_cmd_t mon_cmd_t;
+
 /* flags for monitor_init */
 /* 0x01 unused */
 #define MONITOR_USE_READLINE  0x02
@@ -52,4 +54,21 @@ int monitor_fdset_dup_fd_add(int64_t fdset_id, int dup_fd);
 void monitor_fdset_dup_fd_remove(int dup_fd);
 int monitor_fdset_dup_fd_find(int dup_fd);
 
+const mon_cmd_t *monitor_parse_command(Monitor *mon, const char **cmdp, mon_cmd_t *table);
+void help_cmd_dump(Monitor *mon, const mon_cmd_t *cmds, char **args, int nb_args, int arg_index);
+void monitor_find_completion_by_table(Monitor *mon, const mon_cmd_t *cmd_table, char **args, int nb_args);
+
+typedef struct mon_cmd_t {
+    const char *name;
+    const char *args_type;
+    const char *params;
+    const char *help;
+    void (*cmd)(Monitor *mon, const QDict *qdict);
+    /* @sub_table is a list of 2nd level of commands. If it do not exist,
+     * mhandler should be used. If it exist, sub_table[?].mhandler should be
+     * used, and mhandler of 1st level plays the role of help function.
+     */
+    struct mon_cmd_t *sub_table;
+    void (*command_completion)(ReadLineState *rs, int nb_args, const char *str);
+} mon_cmd_t;
 #endif /* MONITOR_H */

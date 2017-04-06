@@ -786,6 +786,15 @@ static inline void *tcg_malloc(int size)
 void tcg_context_init(TCGContext *s);
 void tcg_prologue_init(TCGContext *s);
 void tcg_func_start(TCGContext *s);
+void *tcg_context_register_helper (
+        TCGContext *s,
+        void *func,
+        const char *name,
+        unsigned flags,
+        unsigned sizemask);
+void tcg_context_unregister_helper (
+        TCGContext *s,
+        void *opaque);
 
 int tcg_gen_code(TCGContext *s, TranslationBlock *tb);
 

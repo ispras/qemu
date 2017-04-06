@@ -19963,7 +19963,9 @@ void gen_intermediate_code(CPUMIPSState *env, struct TranslationBlock *tb)
         if (num_insns == max_insns && (tb->cflags & CF_LAST_IO)) {
             gen_io_start();
         }
-
+#ifdef CONFIG_PLUGIN
+        plugin_instr_translate(ctx.pc, cs, tb);
+#endif
         is_slot = ctx.hflags & MIPS_HFLAG_BMASK;
         if (!(ctx.hflags & MIPS_HFLAG_M16)) {
             ctx.opcode = cpu_ldl_code(env, ctx.pc);

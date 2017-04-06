@@ -35,6 +35,7 @@
 
 #include "trace-tcg.h"
 #include "exec/log.h"
+#include "plugins/plugin.h"
 
 
 #define ENABLE_ARCH_4T    arm_dc_feature(s, ARM_FEATURE_V4T)
@@ -11855,7 +11856,9 @@ void gen_intermediate_code(CPUARMState *env, TranslationBlock *tb)
         if (num_insns == max_insns && (tb->cflags & CF_LAST_IO)) {
             gen_io_start();
         }
-
+#ifdef CONFIG_PLUGIN
+        plugin_instr_translate(dc->pc, cs, tb);
+#endif        
         if (dc->ss_active && !dc->pstate_ss) {
             /* Singlestep state is Active-pending.
              * If we're in this state at the start of a TB then either

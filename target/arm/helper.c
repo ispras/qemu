@@ -16,6 +16,7 @@
 #include "exec/semihost.h"
 #include "sysemu/kvm.h"
 
+#include "plugins/plugin.h" //needed this to set info about cr3 updates
 #define ARM_CPU_FREQ 1000000000 /* FIXME: 1 GHz, should be configurable */
 
 #ifndef CONFIG_USER_ONLY
@@ -2532,6 +2533,9 @@ static void vmsa_ttbr_write(CPUARMState *env, const ARMCPRegInfo *ri,
         tlb_flush(CPU(cpu));
     }
     raw_write(env, ri, value);
+#ifdef CONFIG_PLUGIN
+    plugin_page_dir_update(env, value);
+#endif
 }
 
 static void vttbr_write(CPUARMState *env, const ARMCPRegInfo *ri,

@@ -21,6 +21,7 @@
 #include "qemu/error-report.h"
 #include "qemu/cutils.h"
 #include "cpu.h"
+#include "plugins/plugin.h"
 #ifdef CONFIG_USER_ONLY
 #include "qemu.h"
 #else
@@ -1590,7 +1591,9 @@ void gdb_exit(CPUArchState *env, int code)
 #ifndef CONFIG_USER_ONLY
   Chardev *chr;
 #endif
-
+#ifdef CONFIG_PLUGIN
+  plugin_cpus_stopped();
+#endif
   s = gdbserver_state;
   if (!s) {
       return;
@@ -1673,7 +1676,9 @@ void gdb_signalled(CPUArchState *env, int sig)
 {
     GDBState *s;
     char buf[4];
-
+#ifdef CONFIG_PLUGIN
+    plugin_cpus_stopped();
+#endif
     s = gdbserver_state;
     if (gdbserver_fd < 0 || s->fd < 0) {
         return;

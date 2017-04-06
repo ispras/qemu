@@ -3556,6 +3556,29 @@ STEXI
 Set TB size.
 ETEXI
 
+#ifdef CONFIG_PLUGIN
+DEF("plugin", HAS_ARG, QEMU_OPTION_plugin, \
+    "-plugin dso load the dynamic shared object as a plugin\n", QEMU_ARCH_ALL)
+STEXI
+@item -plugin @var{dso}
+@findex -plugin
+The plugin support allows an external shared library to be
+notified each time a basic block is translated into the TCG internal
+representation, in the aim of instrumenting the emulated code to
+produce program analysis, à la Valgrind or DynamoRIO for instance.
+ETEXI
+#endif
+
+#ifdef CONFIG_PLUGIN
+DEF("os-version", HAS_ARG, QEMU_OPTION_os_version, \
+    "-os-version str define os version for plugins\n", QEMU_ARCH_ALL)
+STEXI
+@item -os-version @var{str}
+@findex -os-version
+Define os version to make plugins work correctly
+ETEXI
+#endif
+
 DEF("incoming", HAS_ARG, QEMU_OPTION_incoming, \
     "-incoming tcp:[host]:port[,to=maxport][,ipv4][,ipv6]\n" \
     "-incoming rdma:host:port[,ipv4][,ipv6]\n" \

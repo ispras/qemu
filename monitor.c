@@ -66,6 +66,7 @@
 #ifdef CONFIG_TRACE_SIMPLE
 #include "trace/simple.h"
 #endif
+#include "plugins/plugin.h"
 #include "exec/memory.h"
 #include "exec/exec-all.h"
 #include "qemu/log.h"
@@ -118,19 +119,6 @@
  *
  */
 
-typedef struct mon_cmd_t {
-    const char *name;
-    const char *args_type;
-    const char *params;
-    const char *help;
-    void (*cmd)(Monitor *mon, const QDict *qdict);
-    /* @sub_table is a list of 2nd level of commands. If it does not exist,
-     * cmd should be used. If it exists, sub_table[?].cmd should be
-     * used, and cmd of 1st level plays the role of help function.
-     */
-    struct mon_cmd_t *sub_table;
-    void (*command_completion)(ReadLineState *rs, int nb_args, const char *str);
-} mon_cmd_t;
 
 /* file descriptors passed via SCM_RIGHTS */
 typedef struct mon_fd_t mon_fd_t;
@@ -789,7 +777,7 @@ static void help_cmd_dump_one(Monitor *mon,
 }
 
 /* @args[@arg_index] is the valid command need to find in @cmds */
-static void help_cmd_dump(Monitor *mon, const mon_cmd_t *cmds,
+void help_cmd_dump(Monitor *mon, const mon_cmd_t *cmds,
                           char **args, int nb_args, int arg_index)
 {
     const mon_cmd_t *cmd;
@@ -842,13 +830,52 @@ static void help_cmd(Monitor *mon, const char *name)
 
     /* 2. dump the contents according to parsed args */
     help_cmd_dump(mon, mon->cmd_table, args, nb_args, 0);
-
+#ifdef CONFIG_PLUGIN
+    plugin_help_cmd_dump(mon, args, nb_args, 0);
+#endif
     free_cmdline_args(args, nb_args);
 }
 
 static void do_help_cmd(Monitor *mon, const QDict *qdict)
 {
     help_cmd(mon, qdict_get_try_str(qdict, "name"));
+}
+
+static void do_load_plugin(Monitor *mon, const QDict *qdict)
+{
+#ifdef CONFIG_PLUGIN
+    CPUState *cpu;
+    for (cpu = first_cpu ; cpu != NULL ; cpu = CPU_NEXT(cpu)) {
+        tb_flush(cpu);
+    }
+    const char *name = qdict_get_try_str(qdict, "name");
+    bool loaded = plugin_load(name);
+    monitor_printf(mon, loaded ? "%s plugin loaded successfully!\n" : "Couldn't load %s plugin.\n", name);
+#endif /* !CONFIG_PLUGIN */
+}
+
+static void do_unload_plugin(Monitor *mon, const QDict *qdict)
+{
+    //TODO: Add an another function to stop all plugins at once
+#ifdef CONFIG_PLUGIN
+    CPUState *cpu;
+    for (cpu = first_cpu ; cpu != NULL ; cpu = CPU_NEXT(cpu)) {
+        tb_flush(cpu);
+    }
+    const char *name = qdict_get_try_str(qdict, "name");
+    bool unloaded = plugin_unload(name);
+    if (name)
+        monitor_printf(mon, unloaded ? "%s plugin unloaded successfully!\n" : "Couldn't unload %s plugin.\n", name);
+    else
+        monitor_printf(mon, unloaded ? "Plugins unloaded successfully\n" : "Couldn't unload plugins\n");
+#endif /* !CONFIG_PLUGIN */
+}
+
+static void do_list_plugins(Monitor *mon, const QDict *qdict)
+{
+#ifdef CONFIG_PLUGIN
+    plugin_list(mon);
+#endif /* !CONFIG_PLUGIN */
 }
 
 static void hmp_trace_event(Monitor *mon, const QDict *qdict)
@@ -2528,7 +2555,7 @@ static const mon_cmd_t *search_dispatch_table(const mon_cmd_t *disp_table,
  * Do not assume the return value points into @table!  It doesn't when
  * the command is found in a sub-command table.
  */
-static const mon_cmd_t *monitor_parse_command(Monitor *mon,
+const mon_cmd_t *monitor_parse_command(Monitor *mon,
                                               const char **cmdp,
                                               mon_cmd_t *table)
 {
@@ -2936,10 +2963,21 @@ static void handle_hmp_command(Monitor *mon, const char *cmdline)
 {
     QDict *qdict;
     const mon_cmd_t *cmd;
+    const char *start = cmdline;
 
     cmd = monitor_parse_command(mon, &cmdline, mon->cmd_table);
     if (!cmd) {
-        return;
+        const char *end = cmdline;
+#ifdef CONFIG_PLUGIN
+        cmdline = start;
+        cmd = plugin_parse_command(mon, &cmdline);
+        end = cmdline;
+        if (!cmd)
+#endif
+        {
+            monitor_printf(mon, "unknown command: '%.*s'\n", (int)(end - start), start);
+            return;
+        }
     }
 
     qdict = monitor_parse_arguments(mon, &cmdline, cmd);
@@ -3529,7 +3567,7 @@ void loadvm_completion(ReadLineState *rs, int nb_args, const char *str)
     }
 }
 
-static void monitor_find_completion_by_table(Monitor *mon,
+void monitor_find_completion_by_table(Monitor *mon,
                                              const mon_cmd_t *cmd_table,
                                              char **args,
                                              int nb_args)
@@ -3606,6 +3644,9 @@ static void monitor_find_completion_by_table(Monitor *mon,
             if (!strcmp(cmd->name, "help|?")) {
                 monitor_find_completion_by_table(mon, cmd_table,
                                                  &args[1], nb_args - 1);
+#ifdef CONFIG_PLUGIN
+                plugin_find_completion_by_table(mon, &args[1], nb_args - 1);
+#endif
             }
             break;
         default:
@@ -3638,7 +3679,9 @@ static void monitor_find_completion(void *opaque,
 
     /* 2. auto complete according to args */
     monitor_find_completion_by_table(mon, mon->cmd_table, args, nb_args);
-
+#ifdef CONFIG_PLUGIN
+    plugin_find_completion_by_table(mon, args, nb_args);
+#endif
 cleanup:
     free_cmdline_args(args, nb_args);
 }

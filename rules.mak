@@ -34,6 +34,14 @@ QEMU_DGFLAGS += -MMD -MP -MT $@ -MF $(@D)/$(*F).d
 # different for target-dependent ones.
 QEMU_LOCAL_INCLUDES = -I$(BUILD_DIR)/$(@D) -I$(@D)
 
+%.o: %.c
+    $(call COMPILE_CC)
+
+%.o: %.rc
+    $(call quiet-command,$(WINDRES) -I. -o $@ $<,"  RC    $(TARGET_DIR)$@")
+
+COMPILE_CC = $(call quiet-command,$(CC) $(QEMU_INCLUDES) $(QEMU_CFLAGS) $(QEMU_DGFLAGS) $(CFLAGS) -c -o $@ $<,"  CC    $(TARGET_DIR)$@")
+
 WL_U := -Wl,-u,
 find-symbols = $(if $1, $(sort $(shell $(NM) -P -g $1 | $2)))
 defined-symbols = $(call find-symbols,$1,awk '$$2!="U"{print $$1}')

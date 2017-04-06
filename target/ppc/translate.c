@@ -7030,6 +7030,9 @@ void gen_intermediate_code(CPUPPCState *env, struct TranslationBlock *tb)
                   ctx.nip, ctx.mem_idx, (int)msr_ir);
         if (num_insns == max_insns && (tb->cflags & CF_LAST_IO))
             gen_io_start();
+#ifdef CONFIG_PLUGIN
+        plugin_instr_translate(ctx.nip, cs, tb);
+#endif
         if (unlikely(need_byteswap(&ctx))) {
             ctx.opcode = bswap32(cpu_ldl_code(env, ctx.nip));
         } else {

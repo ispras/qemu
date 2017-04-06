@@ -25,6 +25,7 @@
 #include "qemu/atomic.h"
 #include "sysemu/qtest.h"
 #include "qemu/timer.h"
+#include "plugins/plugin.h"
 #include "exec/address-spaces.h"
 #include "qemu/rcu.h"
 #include "exec/tb-hash.h"
@@ -425,6 +426,7 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
             cpu->exception_index = -1;
             return true;
         } else {
+            plugin_exception(cpu);
 #if defined(CONFIG_USER_ONLY)
             /* if user mode only, we simulate a fake exception
                which will be handled outside the cpu execution
@@ -432,6 +434,7 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
 #if defined(TARGET_I386)
             CPUClass *cc = CPU_GET_CLASS(cpu);
             cc->do_interrupt(cpu);
+            plugin_exception_handler(cpu);
 #endif
             *ret = cpu->exception_index;
             cpu->exception_index = -1;
@@ -440,6 +443,7 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
             if (replay_exception()) {
                 CPUClass *cc = CPU_GET_CLASS(cpu);
                 cc->do_interrupt(cpu);
+                plugin_exception_handler(cpu);
                 cpu->exception_index = -1;
             } else if (!replay_has_interrupt()) {
                 /* give a chance to iothread in replay mode */
@@ -510,6 +514,7 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
         else {
             if (cc->cpu_exec_interrupt(cpu, interrupt_request)) {
                 replay_interrupt();
+                plugin_interrupt(cpu);
                 *last_tb = NULL;
             }
             /* The target hook may have updated the 'cpu->interrupt_request';
