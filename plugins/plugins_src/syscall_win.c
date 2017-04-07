@@ -142,38 +142,7 @@ Parameters_oc *syscall_open_os(CPUArchState *env)
         printf_log("\t\t\tObjectName 0x%x\n", ldl_p(&data_struct[8]));
         {
             addr = ldl_p(&data_struct[8]);
-            /*uint8_t data_oname[8];
-            cpu_memory_rw_debug(first_cpu, addr, data_oname, sizeof(data_oname), 0);
-            printf_log("\t\t\t\tLength 0x%x\n", lduw_p(data_oname));
-            printf_log("\t\t\t\tMaximumLength 0x%x\n", lduw_p(&data_oname[2]));
-            printf_log("\t\t\t\tpBuffer 0x%x\n", ldl_p(&data_oname[4]));
-            {
-                uint32_t addr = ldl_p(&data_oname[4]);
-                if (addr)
-                {
-                    uint16_t len = lduw_p(data_oname);
-                    uint16_t buf[len / 2];
-                    cpu_memory_rw_debug(first_cpu, addr, (uint8_t*)buf, sizeof(buf), 0);
-                    printf_log("\t\t\t\t\tname: ");
-                    char name[len / 2 + 1];
-                    int j = 0;
-                    params->name = g_malloc(len / 2 + 1);
-                    for (i = 0; i < len / 2; i++)
-                    {
-                        printf_log("%lc", buf[i]);
-                        if (buf[i] == '\\')
-                            j = 0;
-                        else
-                            name[j++] = buf[i];
-                        params->name[i] = buf[i];
-                    }
-                    name[j] = 0;
-                    params->name[i] = 0;
-                    printf_log("\n\t\t\t\t\tname = %s\n", name);
-                }
-            }
-            */
-            //printf_log("\t\t\t\t\t");
+
             if (addr)
                 params->name = printf_unicode_string(addr);
         }
@@ -193,7 +162,6 @@ Parameters_oc *syscall_create_os(CPUArchState *env)
 {
     Parameters_oc *params = g_malloc0(sizeof(Parameters_oc));
     
-    //fprintf(log, "syscall CREATE\n");
     uint8_t data[44];
     write_prolog(env, data, sizeof(data));
     printf_log("\tNtCreateFile addr_arg = 0x"TARGET_FMT_lx"\n", env->regs[R_EDX] + 8);
@@ -223,39 +191,7 @@ Parameters_oc *syscall_create_os(CPUArchState *env)
         printf_log("\t\t\tObjectName 0x%x\n", ldl_p(&data_struct[8]));
         {
             addr = ldl_p(&data_struct[8]);
-            /*
-            uint8_t data_oname[8];
-            cpu_memory_rw_debug(first_cpu, addr, data_oname, sizeof(data_oname), 0);
-            printf_log("\t\t\t\tLength 0x%x\n", lduw_p(data_oname));
-            printf_log("\t\t\t\tMaximumLength 0x%x\n", lduw_p(&data_oname[2]));
-            printf_log("\t\t\t\tpBuffer 0x%x\n", ldl_p(&data_oname[4]));
-            {
-                uint32_t addr = ldl_p(&data_oname[4]);
-                if (addr)
-                {
-                    uint16_t len = lduw_p(data_oname);
-                    uint16_t buf[len / 2];
-                    cpu_memory_rw_debug(first_cpu, addr, (uint8_t*)buf, sizeof(buf), 0);
-                    printf_log("\t\t\t\t\tname: ");
-                    char name[len / 2 + 1];
-                    int j = 0;
-                    params->name = g_malloc(len / 2 + 1);
-                    for (i = 0; i < len / 2; i++)
-                    {
-                        printf_log("%lc", buf[i]);
-                        if (buf[i] == '\\')
-                            j = 0;
-                        else
-                            name[j++] = buf[i];
-                        params->name[i] = buf[i];
-                    }
-                    name[j] = 0;
-                    params->name[i] = 0;
-                    printf_log("\n\t\t\t\t\tname = %s\n", name);
-                }
-            }
-            */
-            //printf_log("\t\t\t\t\t");
+            
             if (addr)
                 params->name = printf_unicode_string(addr);
         }
@@ -343,7 +279,6 @@ Parameters_rw *syscall_write_os(CPUArchState *env)
 Parameters_c *syscall_close_os(CPUArchState *env)
 {
     Parameters_c *params = g_malloc0(sizeof(Parameters_c));
-    //fprintf(log, "syscall CLOSE\n");
     uint8_t data[4];
     write_prolog(env, data, sizeof(data));
     printf_log("\tNtClose addr_arg = 0x"TARGET_FMT_lx"\n", env->regs[R_EDX] + 8);
@@ -357,7 +292,6 @@ Parameters_cs *syscall_create_section_os(CPUArchState *env)
 {
     Parameters_cs *params = g_malloc0(sizeof(Parameters_cs));
     
-    //fprintf(log, "syscall CREATE_SECTION\n");
     uint8_t data[44];
     write_prolog(env, data, sizeof(data));
     printf_log("\tNtCreateSection addr_arg = 0x"TARGET_FMT_lx"\n", env->regs[R_EDX] + 8);
@@ -384,28 +318,7 @@ Parameters_cs *syscall_create_section_os(CPUArchState *env)
         printf_log("\t\t\tObjectName 0x%x\n", ldl_p(&data_struct[8]));
         {
             addr = ldl_p(&data_struct[8]);
-            /*uint8_t data_oname[8];
-            cpu_memory_rw_debug(first_cpu, addr, data_oname, sizeof(data_oname), 0);
-            printf_log("\t\t\t\tLength 0x%x\n", lduw_p(data_oname));
-            printf_log("\t\t\t\tMaximumLength 0x%x\n", lduw_p(&data_oname[2]));
-            printf_log("\t\t\t\tpBuffer 0x%x\n", ldl_p(&data_oname[4]));
-            {
-                uint32_t addr = ldl_p(&data_oname[4]);
-                if (addr)
-                {
-                    uint16_t len = lduw_p(data_oname);
-                    uint16_t buf[len / 2];
-                    cpu_memory_rw_debug(first_cpu, addr, (uint8_t*)buf, sizeof(buf), 0);
-                    printf_log("\t\t\t\t\tname: ");
-                    for (i = 0; i < len / 2; i++)
-                    {
-                        printf_log("%lc", buf[i]);
-                    }
-                    printf_log("\n");
-                }
-            }
-            */
-            //printf_log("\t\t\t\t");
+            
             if (addr)
                 params->name = printf_unicode_string(addr);
         }
@@ -434,9 +347,7 @@ Parameters_map *syscall_map_view_of_section_os(CPUArchState *env)
     printf_log("\t\tProcessHandle 0x%x\n", ldl_p(&data[4]));
     printf_log("\t\t*BaseAddress 0x%x\n", ldl_p(&data[8]));
     params->pBaseAddress = ldl_p(&data[8]);
-    //uint8_t data2[4];
-    //cpu_memory_rw_debug(first_cpu, params->pBaseAddress, data2, 4, 0);
-    //printf_log("\t\tBaseAddress 0x%x\n", ldl_p(data2));
+
     printf_log("\t\tZeroBits 0x%x\n", ldl_p(&data[12]));
     printf_log("\t\tCommitSize 0x%x\n", ldl_p(&data[16]));
     printf_log("\t\tpSectionOffset 0x%x\n", ldl_p(&data[20]));
@@ -447,7 +358,6 @@ Parameters_map *syscall_map_view_of_section_os(CPUArchState *env)
         uint8_t data[4];
         cpu_memory_rw_debug(first_cpu, params->viewSize, data, 4, 0);
         uint32_t viewSize = ldl_p(data);
-        //params->viewSize = ldl_p(data);
         printf_log("!!view size: 0x%x\n", viewSize);
     }
     printf_log("\t\tInheritDisposition 0x%x\n", ldl_p(&data[28]));
@@ -507,7 +417,6 @@ Parameters_os *syscall_open_section_os(CPUArchState *env)
         printf_log("\t\t\tObjectName 0x%x\n", ldl_p(&data_struct[8]));
         {
             addr = ldl_p(&data_struct[8]);
-            //printf_log("\t\t\t\t");
             if (addr)
                 params->name = printf_unicode_string(addr);
         }
@@ -577,10 +486,6 @@ Parameters_do *syscall_duplicate_object_os(CPUArchState *env)
 
 int syscall_init_log(void)
 {
-    //log = fopen("log_sys_ret.log", "w");
-    //if (!log)
-    //    printf("Can\'t read file %s\n", "log_sys_ret.log");
-
     const char *fname = "syscall.log";
     syscallfile = fopen(fname, "w");
     if (!syscallfile) {

@@ -14,7 +14,6 @@
 #include "guest_string.h"
 
 static FILE *syscallfile;
-static FILE *log;
 
 
 void printf_log(const char *format, ...)
@@ -167,10 +166,6 @@ Parameters_c *syscall_close_os(CPUArchState *env)
 
 int syscall_init_log(void)
 {
-    log = fopen("log_sys_ret.log", "w");
-    if (!log)
-        printf("Can\'t read file %s\n", "log_sys_ret.log");
-
     const char *fname = "syscall.log";
     syscallfile = fopen(fname, "w");
     if (!syscallfile) {

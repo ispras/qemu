@@ -860,9 +860,9 @@ for opt do
   ;;
   --block-drv-ro-whitelist=*) block_drv_ro_whitelist=$(echo "$optarg" | sed -e 's/,/ /g')
   ;;
-  --enable-plugin) plugin="yes"
+  --enable-plugins) plugin="yes"
   ;;
-  --disable-plugin) plugin="no"
+  --disable-plugins) plugin="no"
   ;;
   --enable-debug-tcg) debug_tcg="yes"
   ;;
@@ -1309,9 +1309,9 @@ Advanced options (experts only):
   --bindir=PATH            install binaries in PATH
   --libdir=PATH            install libraries in PATH
   --sysconfdir=PATH        install config in PATH$confsuffix
-  --libexecdir=PATH        install TCG plugins in PATH"
-  --enable-plugin          enable plugin support"
-  --disable-plugin         disable plugin support (default)"
+  --libexecdir=PATH        install plugins in PATH"
+  --enable-plugins          enable plugin support"
+  --disable-plugins         disable plugin support (default)"
   --localstatedir=PATH     install local state in PATH (set at runtime on win32)
   --with-confsuffix=SUFFIX suffix for QEMU data inside datadir/libdir/sysconfdir [$confsuffix]
   --enable-debug           enable common debug build options

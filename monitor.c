@@ -2570,8 +2570,7 @@ const mon_cmd_t *monitor_parse_command(Monitor *mon,
 
     cmd = search_dispatch_table(table, cmdname);
     if (!cmd) {
-        monitor_printf(mon, "unknown command: '%.*s'\n",
-                       (int)(p - *cmdp), *cmdp);
+        *cmdp = p;
         return NULL;
     }
 
@@ -2972,8 +2971,8 @@ static void handle_hmp_command(Monitor *mon, const char *cmdline)
         cmdline = start;
         cmd = plugin_parse_command(mon, &cmdline);
         end = cmdline;
-        if (!cmd)
 #endif
+        if (!cmd)
         {
             monitor_printf(mon, "unknown command: '%.*s'\n", (int)(end - start), start);
             return;
