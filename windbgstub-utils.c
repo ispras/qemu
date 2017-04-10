@@ -108,7 +108,7 @@ typedef struct _CPU_XMM_SAVE_AREA32 {
 } CPU_XMM_SAVE_AREA32, *PCPU_XMM_SAVE_AREA32;
 
 #pragma pack(push, 2)
-typedef struct _CPU_CONTEXT {
+typedef struct _CPU_CONTEXT { // sizeof = 1232
     uint64_t P1Home;
     uint64_t P2Home;
     uint64_t P3Home;
@@ -237,7 +237,7 @@ typedef struct _CPU_FLOATING_SAVE_AREA {
     uint32_t Cr0NpxState;
 } CPU_FLOATING_SAVE_AREA, *PCPU_FLOATING_SAVE_AREA;
 
-typedef struct _CPU_CONTEXT {
+typedef struct _CPU_CONTEXT { // sizeof = 716
     uint32_t ContextFlags;
     uint32_t Dr0;
     uint32_t Dr1;
@@ -274,8 +274,8 @@ typedef struct _CPU_KPROCESSOR_STATE {
 #endif
 
 typedef struct KDData {
-    target_ulong KPCR;
-    target_ulong version;
+    InitedAddr KPCR;
+    InitedAddr version;
 
     InitedAddr bps[KD_BREAKPOINT_MAX];
 } KDData;
@@ -418,6 +418,8 @@ static int windbg_hw_breakpoint_remove(CPUState *cpu, int index)
     return 0;
 }
 
+#ifndef TARGET_X86_64 // Temporarily it isn't used in TARGET_X86_64
+
 static void windbg_set_dr7(CPUState *cpu, target_ulong new_dr7)
 {
     CPUArchState *env = cpu->env_ptr;
@@ -446,7 +448,6 @@ static void windbg_set_dr7(CPUState *cpu, target_ulong new_dr7)
     env->hflags = (env->hflags & ~HF_IOBPT_MASK) | iobpt;
 }
 
-UNUSED
 static void windbg_set_dr(CPUState *cpu, int index, target_ulong value)
 {
     CPUArchState *env = cpu->env_ptr;
@@ -471,7 +472,6 @@ static void windbg_set_dr(CPUState *cpu, int index, target_ulong value)
     }
 }
 
-UNUSED
 static void windbg_set_sr(CPUState *cpu, int sr, uint16_t selector)
 {
     CPUArchState *env = cpu->env_ptr;
@@ -490,12 +490,14 @@ static void windbg_set_sr(CPUState *cpu, int sr, uint16_t selector)
     }
 }
 
+#endif
+
 static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
 {
     const bool new_mem = (len != sizeof(CPU_CONTEXT) || offset != 0);
-    UNUSED CPUArchState *env = cpu->env_ptr;
+    CPUArchState *env = cpu->env_ptr;
     CPU_CONTEXT *cc;
-    UNUSED int err = 0, i;
+    int err = 0;
 
     if (new_mem) {
         cc = (CPU_CONTEXT *) g_malloc(sizeof(CPU_CONTEXT));
@@ -569,61 +571,6 @@ static int windbg_read_context(CPUState *cpu, uint8_t *buf, int len, int offset)
     cc->LastExceptionToRip   = 0;
     cc->LastExceptionFromRip = 0;
 
-
-/*
-
-typedef struct _CPU_M128A {
-    uint64_t Low;
-    int64_t High;
-} CPU_M128A, *PCPU_M128A;
-
-typedef struct _CPU_XMM_SAVE_AREA32 {
-    uint16_t ControlWord;
-    uint16_t StatusWord;
-    uint8_t TagWord;
-    uint8_t Reserved1;
-    uint16_t ErrorOpcode;
-    uint32_t ErrorOffset;
-    uint16_t ErrorSelector;
-    uint16_t Reserved2;
-    uint32_t DataOffset;
-    uint16_t DataSelector;
-    uint16_t Reserved3;
-    uint32_t MxCsr;
-    uint32_t MxCsr_Mask;
-    CPU_M128A FloatRegisters[8];
-    CPU_M128A XmmRegisters[16];
-    uint8_t Reserved4[96];
-} CPU_XMM_SAVE_AREA32, *PCPU_XMM_SAVE_AREA32;
-
-    union {
-        CPU_XMM_SAVE_AREA32 FltSave;
-        CPU_XMM_SAVE_AREA32 FloatSave;
-        struct {
-            CPU_M128A Header[2];
-            CPU_M128A Legacy[8];
-            CPU_M128A Xmm0;
-            CPU_M128A Xmm1;
-            CPU_M128A Xmm2;
-            CPU_M128A Xmm3;
-            CPU_M128A Xmm4;
-            CPU_M128A Xmm5;
-            CPU_M128A Xmm6;
-            CPU_M128A Xmm7;
-            CPU_M128A Xmm8;
-            CPU_M128A Xmm9;
-            CPU_M128A Xmm10;
-            CPU_M128A Xmm11;
-            CPU_M128A Xmm12;
-            CPU_M128A Xmm13;
-            CPU_M128A Xmm14;
-            CPU_M128A Xmm15;
-        };
-    };
-    CPU_M128A VectorRegister[26];
-
-  */
-
   #else
 
     if (cc->ContextFlags & CPU_CONTEXT_INTEGER) {
@@ -644,6 +591,7 @@ typedef struct _CPU_XMM_SAVE_AREA32 {
         uint32_t swd = 0, twd = 0;
         swd = env->fpus & ~(7 << 11);
         swd |= (env->fpstt & 7) << 11;
+        int i;
         for (i = 0; i < 8; ++i) {
             twd |= (!env->fptags[i]) << i;
         }
@@ -665,6 +613,7 @@ typedef struct _CPU_XMM_SAVE_AREA32 {
 
     if (cc->ContextFlags & CPU_CONTEXT_EXTENDED_REGISTERS) {
         uint8_t *ptr = cc->ExtendedRegisters + 160;
+        int i;
         for (i = 0; i < 8; ++i, ptr += 16) {
             memcpy(ptr,     &env->xmm_regs[i].ZMM_Q(0), 8);
             memcpy(ptr + 8, &env->xmm_regs[i].ZMM_Q(1), 8);
@@ -686,21 +635,17 @@ typedef struct _CPU_XMM_SAVE_AREA32 {
 
 static int windbg_write_context(CPUState *cpu, uint8_t *buf, int len, int offset)
 {
+  #ifdef TARGET_X86_64 // Unimplemented yet
+    return 0;
+  #else
+
     UNUSED CPUArchState *env = cpu->env_ptr;
     UNUSED int mem_size, i, tmp;
     uint8_t *mem_ptr = buf;
 
-  #ifdef TARGET_X86_64
-    return 0;
-  #endif
-
     while (len > 0 && offset < sizeof(CPU_CONTEXT)) {
         mem_size = 1;
         switch (offset) {
-
-  #ifdef TARGET_X86_64
-
-  #else
 
         case offsetof(CPU_CONTEXT, ContextFlags):
             mem_size = sizeof_field(CPU_CONTEXT, ContextFlags);
@@ -881,7 +826,6 @@ static int windbg_write_context(CPUState *cpu, uint8_t *buf, int len, int offset
 
             cpu_set_mxcsr(env, UINT32_P(mem_ptr + 24)[0]);
             break;
-  #endif
 
         default:
             WINDBG_ERROR("write_context: Unknown offset %d", offset);
@@ -894,6 +838,7 @@ static int windbg_write_context(CPUState *cpu, uint8_t *buf, int len, int offset
     }
 
     return 0;
+  #endif
 }
 
 static int windbg_read_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset)
@@ -923,8 +868,8 @@ static int windbg_read_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset)
     ckr->KernelDr7 = env->dr[7];
 
   #ifdef TARGET_X86_64
-    // *UINT32_P(ckr->Gdtr.Pad) = env->gdt.selector;
-    // *UINT32_P(ckr->Idtr.Pad) = env->idt.selector;
+    *UINT32_P(ckr->Gdtr.Pad) = env->gdt.selector;
+    *UINT32_P(ckr->Idtr.Pad) = env->idt.selector;
   #else
     ckr->Gdtr.Pad   = env->gdt.selector;
     ckr->Idtr.Pad   = env->idt.selector;
@@ -939,21 +884,21 @@ static int windbg_read_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset)
 
   #ifdef TARGET_X86_64
 
-    // ckr->MxCsr                = env->mxcsr;
-    // ckr->DebugControl         = 0;
-    // ckr->LastBranchToRip      = 0;
-    // ckr->LastBranchFromRip    = 0;
-    // ckr->LastExceptionToRip   = 0;
-    // ckr->LastExceptionFromRip = 0;
-    // ckr->Cr8                  = 0;
-    // ckr->MsrGsBase            = 0;
-    // ckr->MsrGsSwap            = 0;
-    // ckr->MsrStar              = 0;
-    // ckr->MsrLStar             = 0;
-    // ckr->MsrCStar             = 0;
-    // ckr->MsrSyscallMask       = 0;
-    // ckr->Xcr0                 = 0;
-    // ckr->Cr8                  = 0;
+    ckr->MxCsr                = env->mxcsr;
+    ckr->DebugControl         = 0;
+    ckr->LastBranchToRip      = 0;
+    ckr->LastBranchFromRip    = 0;
+    ckr->LastExceptionToRip   = 0;
+    ckr->LastExceptionFromRip = 0;
+    ckr->Cr8                  = 0;
+    ckr->MsrGsBase            = 0;
+    ckr->MsrGsSwap            = 0;
+    ckr->MsrStar              = 0;
+    ckr->MsrLStar             = 0;
+    ckr->MsrCStar             = 0;
+    ckr->MsrSyscallMask       = 0;
+    ckr->Xcr0                 = 0;
+    ckr->Cr8                  = 0;
 
   #endif
 
@@ -966,10 +911,8 @@ static int windbg_read_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset)
 
 static int windbg_write_ks_regs(CPUState *cpu, uint8_t *buf, int len, int offset)
 {
-  #ifdef TARGET_X86_64
-
+  #ifdef TARGET_X86_64 // Unimplemented yet
     return 0;
-
   #else
 
     CPUArchState *env = cpu->env_ptr;
@@ -1231,12 +1174,12 @@ void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
     target_ulong from = 0;
     switch (mem->TargetBaseAddress) {
     case AMD64_DEBUG_CONTROL_SPACE_KPCR:
-        from = kd.KPCR;
+        from = kd.KPCR.addr;
         mem->ActualBytesRead = sizeof(target_ulong);
         break;
 
     case AMD64_DEBUG_CONTROL_SPACE_KPRCB:
-        from = FROM_VADDR(cpu, kd.KPCR + OFFSET_KPRCB, target_ulong);
+        from = FROM_VADDR(cpu, kd.KPCR.addr + OFFSET_KPRCB, target_ulong);
         mem->ActualBytesRead = sizeof(target_ulong);
         break;
 
@@ -1246,7 +1189,7 @@ void kd_api_read_control_space(CPUState *cpu, PacketData *pd)
         break;
 
     case AMD64_DEBUG_CONTROL_SPACE_KTHREAD:
-        from = FROM_VADDR(cpu, kd.KPCR + OFFSET_KPRCB, target_ulong);
+        from = FROM_VADDR(cpu, kd.KPCR.addr + OFFSET_KPRCB, target_ulong);
         from = FROM_VADDR(cpu, from + OFFSET_KPRCB_CURRTHREAD, target_ulong);
         mem->ActualBytesRead = sizeof(target_ulong);
         break;
@@ -1405,7 +1348,7 @@ void kd_api_write_physical_memory(CPUState *cpu, PacketData *pd)
 
 void kd_api_get_version(CPUState *cpu, PacketData *pd)
 {
-    int err = cpu_memory_rw_debug(cpu, kd.version,
+    int err = cpu_memory_rw_debug(cpu, kd.version.addr,
                                   PTR(pd->m64) + 0x10,
                                   M64_SIZE - 0x10, 0);
     if (err) {
@@ -1841,10 +1784,9 @@ static void kd_init_state_change(CPUState *cpu, DBGKD_ANY_WAIT_STATE_CHANGE *sc)
     // sc->ProcessorLevel = 0x6;
     sc->Processor = 0;
     sc->NumberProcessors = cpu_amount;
-    target_ulong KPRCB = FROM_VADDR(cpu, kd.KPCR + OFFSET_KPRCB, target_ulong);
+    target_ulong KPRCB = FROM_VADDR(cpu, kd.KPCR.addr + OFFSET_KPRCB, target_ulong);
     sc->Thread = FROM_VADDR(cpu, KPRCB + OFFSET_KPRCB_CURRTHREAD, target_ulong);
     sc->ProgramCounter = env->eip;
-    COUT_HEX(sc->ProgramCounter);
 
     // CONTROL REPORT
 
@@ -1878,7 +1820,7 @@ SizedBuf kd_gen_exception_sc(CPUState *cpu)
 
     sc->NewState = DbgKdExceptionStateChange;
 
-    // sc->u.Exception.ExceptionRecord.ExceptionCode = 0x80000003;
+    sc->u.Exception.ExceptionRecord.ExceptionCode = 0x80000003;
     // sc->u.Exception.ExceptionRecord.ExceptionFlags = 0x0;
     // sc->u.Exception.ExceptionRecord.ExceptionRecord = 0x0;
     sc->u.Exception.ExceptionRecord.ExceptionAddress = env->eip;
@@ -1930,39 +1872,35 @@ bool windbg_on_load(void)
     CPUState *cpu = qemu_get_cpu(0);
     CPUArchState *env = cpu->env_ptr;
 
-    if (!kd.KPCR) {
+    if (!kd.KPCR.is_init) {
 
  #ifdef TARGET_X86_64
-        kd.KPCR = env->segs[R_GS].base;
+        kd.KPCR.addr = env->segs[R_GS].base;
  #else
-        kd.KPCR = env->segs[R_FS].base;
+        kd.KPCR.addr = env->segs[R_FS].base;
  #endif
 
         static target_ulong prev_KPCR = 0;
-        if (!kd.KPCR || prev_KPCR == kd.KPCR) {
+        if (!kd.KPCR.addr || prev_KPCR == kd.KPCR.addr) {
             return false;
         }
-        prev_KPCR = kd.KPCR;
+        prev_KPCR = kd.KPCR.addr;
 
-        if (kd.KPCR != FROM_VADDR(cpu, kd.KPCR + OFFSET_SELF_PCR, target_ulong)) {
+        if (kd.KPCR.addr != FROM_VADDR(cpu, kd.KPCR.addr + OFFSET_SELF_PCR, target_ulong)) {
             return false;
         }
+
+        kd.KPCR.is_init = true;
     }
 
-    kd.version = FROM_VADDR(cpu, kd.KPCR + OFFSET_VERS, target_ulong);
-
-    static bool once_version = false;
-    if (!kd.version) {
-        if (!once_version) {
-            once_version = true;
-            WINDBG_DEBUG("windbg_on_load: version " FMT_ADDR, kd.version);
-        }
+    kd.version.addr = FROM_VADDR(cpu, kd.KPCR.addr + OFFSET_VERS, target_ulong);
+    if (!kd.version.addr) {
         return false;
     }
-    once_version = false;
+    kd.version.is_init = true;
 
-    WINDBG_DEBUG("windbg_on_load: KPCR " FMT_ADDR, kd.KPCR);
-    WINDBG_DEBUG("windbg_on_load: version " FMT_ADDR, kd.version);
+    WINDBG_DEBUG("windbg_on_load: KPCR " FMT_ADDR, kd.KPCR.addr);
+    WINDBG_DEBUG("windbg_on_load: version " FMT_ADDR, kd.version.addr);
 
     cpu_amount = 0;
     CPU_FOREACH(cpu) {
@@ -1975,7 +1913,6 @@ bool windbg_on_load(void)
 
 void windbg_on_exit(void)
 {
-
 }
 
 uint32_t compute_checksum(uint8_t *data, uint16_t length)

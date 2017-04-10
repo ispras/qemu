@@ -3,6 +3,7 @@
 #include "sysemu/sysemu.h"
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
+#include "exec/address-spaces.h"
 
 #define ENABLE_PARSER        WINDBG_DEBUG_ON && (ENABLE_WINDBG_PARSER || ENABLE_KERNEL_PARSER)
 #define ENABLE_WINDBG_PARSER true
@@ -397,9 +398,12 @@ static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
 
 static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 {
-    static ParsingContext ctx = { .state = STATE_LEADER,
-                                  .result = RESULT_NONE,
-                                  .name = "" };
+    static ParsingContext ctx = {
+        .state = STATE_LEADER,
+        .result = RESULT_NONE,
+        .name = ""
+    };
+
     if (windbg_state->is_loaded) {
         int i;
         for (i = 0; i < size; i++) {
@@ -410,6 +414,16 @@ static void windbg_chr_receive(void *opaque, const uint8_t *buf, int size)
 }
 
 #if (ENABLE_PARSER)
+
+static void windbg_debug_open_files(void)
+{
+    if (!parsed_packets) {
+        parsed_packets = fopen(WINDBG_DIR "parsed_packets.txt", "w");
+    }
+    if (!parsed_api) {
+        parsed_api = fopen(WINDBG_DIR "parsed_api.txt", "w");
+    }
+}
 
 static void windbg_debug_ctx_handler(ParsingContext *ctx, FILE *out)
 {
@@ -457,8 +471,13 @@ static void windbg_debug_ctx_handler(ParsingContext *ctx, FILE *out)
     default:
         break;
     }
+
     fprintf(out, "\n");
     fflush(out);
+
+    if (ctx->data.m64.ApiNumber == DbgKdSetContextApi) {
+        vm_stop(RUN_STATE_PAUSED);
+    }
  #endif
 }
 
@@ -489,6 +508,7 @@ static void windbg_debug_parser(ParsingContext *ctx, const uint8_t *buf, int len
     for (i = 0; i < len; ++i) {
         windbg_read_byte(ctx, buf[i]);
         if (ctx->result != RESULT_NONE) {
+            windbg_debug_open_files();
             windbg_debug_ctx_handler(ctx, parsed_packets);
             windbg_debug_ctx_handler_api(ctx, parsed_api);
         }
@@ -500,23 +520,23 @@ static void windbg_debug_parser(ParsingContext *ctx, const uint8_t *buf, int len
 void windbg_debug_parser_hook(bool is_kernel, const uint8_t *buf, int len)
 {
  #if (ENABLE_PARSER)
-    if (!windbg_state) {
-        return;
-    }
-
     if (is_kernel) {
  # if (ENABLE_KERNEL_PARSER)
-        static ParsingContext ctx = { .state = STATE_LEADER,
-                                      .result = RESULT_NONE,
-                                      .name = "Kernel" };
+        static ParsingContext ctx = {
+            .state = STATE_LEADER,
+            .result = RESULT_NONE,
+            .name = "Kernel"
+        };
         windbg_debug_parser(&ctx, buf, len);
  # endif
     }
     else {
  # if (ENABLE_WINDBG_PARSER)
-        static ParsingContext ctx = { .state = STATE_LEADER,
-                                      .result = RESULT_NONE,
-                                      .name = "WinDbg" };
+        static ParsingContext ctx = {
+            .state = STATE_LEADER,
+            .result = RESULT_NONE,
+            .name = "WinDbg"
+        };
         windbg_debug_parser(&ctx, buf, len);
  # endif
     }
@@ -572,8 +592,7 @@ int windbg_start(const char *device)
     windbg_state->dump_file = fopen(WINDBG_DIR "dump.txt", "wb");
 
  #if (ENABLE_PARSER)
-    parsed_packets = fopen(WINDBG_DIR "parsed_packets.txt", "w");
-    parsed_api = fopen(WINDBG_DIR "parsed_api.txt", "w");
+    windbg_debug_open_files();
  #endif
 
     atexit(windbg_exit);

@@ -11,6 +11,9 @@
 #ifndef TARGET_I386
 #error Unsupported Architecture
 #endif
+#ifdef TARGET_X86_64 // Unimplemented yet
+#error Unsupported Architecture
+#endif
 
 #define WINDBG "windbg"
 
