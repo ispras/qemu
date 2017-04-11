@@ -7,6 +7,7 @@ export PLUGIN_PREFIX
 
 PLUGINS :=
 PLUGINS += contexts
+PLUGINS += example1 example2
 ifeq ($(TARGET_NAME), $(filter $(TARGET_NAME), i386 x86_64))
 PLUGINS += syscalls_windows_xp syscalls_windows_7 syscalls_windows_8 syscalls_windows_8.1
 PLUGINS += syscalls_linux

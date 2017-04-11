@@ -116,7 +116,6 @@ void pi_start(PluginInterface *pi)
     pi->exit = cpus_exit;
     cb = plugin_reg_signal("syscall");
     plugin_subscribe(decode_instr, "qemu", "PLUGIN_QEMU_INSTR_TRANSLATE");
-    //tcg_plugin_subscribe(syscall_exception, "qemu", "PLUGIN_QEMU_EXCEPTION");
     plugin_subscribe(syscall_tlb_add_page, "qemu", "PLUGIN_QEMU_TLB_SET_PAGE");
     tcg_context_register_helper(
             &tcg_ctx,
