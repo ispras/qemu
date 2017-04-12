@@ -50,7 +50,9 @@ typedef struct WindbgState {
     uint32_t data_packet_id;
     bool is_loaded;
 
+  #if (WINDBG_DEBUG_ON)
     FILE *dump_file;
+  #endif
 } WindbgState;
 
 static WindbgState *windbg_state = NULL;
@@ -61,6 +63,7 @@ static WindbgState *windbg_state = NULL;
 
 void windbg_dump(const char *fmt, ...)
 {
+  #if (WINDBG_DEBUG_ON)
     va_list ap;
 
     va_start(ap, fmt);
@@ -69,6 +72,7 @@ void windbg_dump(const char *fmt, ...)
         fflush(windbg_state->dump_file);
     }
     va_end(ap);
+  #endif
 }
 
 static void windbg_send_data_packet(uint8_t *data, uint16_t byte_count, uint16_t type)
@@ -119,8 +123,10 @@ static void windbg_bp_handler(CPUState *cpu)
 
 static void windbg_vm_stop(void)
 {
+    CPUState *cpu = qemu_get_cpu(0);
     vm_stop(RUN_STATE_PAUSED);
-    windbg_bp_handler(qemu_get_cpu(0));
+    cpu_single_step(cpu, 0);
+    windbg_bp_handler(cpu);
 }
 
 static void windbg_process_manipulate_packet(ParsingContext *ctx)
@@ -553,8 +559,9 @@ void windbg_start_sync(void)
 static void windbg_exit(void)
 {
     windbg_on_exit();
-
+ #if (WINDBG_DEBUG_ON)
     FCLOSE(windbg_state->dump_file);
+ #endif
  #if (ENABLE_PARSER)
     FCLOSE(parsed_packets);
     FCLOSE(parsed_api);
@@ -588,9 +595,9 @@ int windbg_start(const char *device)
     qemu_chr_add_handlers(windbg_state->chr, windbg_chr_can_receive,
                           windbg_chr_receive, NULL, NULL);
 
-    // open dump file
+ #if (WINDBG_DEBUG_ON)
     windbg_state->dump_file = fopen(WINDBG_DIR "dump.txt", "wb");
-
+ #endif
  #if (ENABLE_PARSER)
     windbg_debug_open_files();
  #endif
