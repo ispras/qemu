@@ -28,7 +28,7 @@ void printf_log(const char *format, ...)
 
 void syscall_printf_all_calls(int syscallnum)
 {
-    printf_log("syscall number = %i\n", syscallnum);
+    printf_log("syscall number = %d context=0x%"PRIx64"\n", syscallnum, get_current_context());
 }
 
 /* syscall functions */
@@ -63,7 +63,6 @@ Parameters_oc *syscall_open_os(CPUArchState *env)
     // edx[2] - int 
     int access = env->regs[R_ECX];
 
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_open\n");
     printf_log("\t\tpfilename 0x%x\n", (int) env->regs[R_EBX]);
     uint8_t buf[128];
@@ -90,7 +89,6 @@ Parameters_oc *syscall_create_os(CPUArchState *env)
 {
     Parameters_oc *params = g_malloc0(sizeof(Parameters_oc));
     int access = env->regs[R_ECX];
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_creat\n");
     printf_log("\t\tpfilename 0x%x\n", (int) env->regs[R_EBX]);
     uint8_t buf[128];
@@ -119,7 +117,6 @@ Parameters_rw *syscall_read_os(CPUArchState *env)
     // ebx[3] - unsigned int
     // ecx[1] - char*
     // edx[2] - size_t 
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_read\n");
     printf_log("\t\thandle 0x%x\n", (int) env->regs[R_EBX]);
     params->handle = env->regs[R_EBX];
@@ -134,7 +131,6 @@ Parameters_rw *syscall_read_os(CPUArchState *env)
 Parameters_rw *syscall_write_os(CPUArchState *env)
 {
     Parameters_rw *params = g_malloc0(sizeof(Parameters_rw));
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_write\n");
     printf_log("\t\thandle 0x%x\n", (int) env->regs[R_EBX]);
     params->handle = env->regs[R_EBX];
@@ -156,7 +152,6 @@ Parameters_rw *syscall_write_os(CPUArchState *env)
 Parameters_c *syscall_close_os(CPUArchState *env)
 {
     Parameters_c *params = g_malloc0(sizeof(Parameters_c));
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_close\n");
     printf_log("\t\thandle 0x%x\n", (int) env->regs[R_EBX]);
     params->handle = env->regs[R_EBX];
@@ -274,6 +269,18 @@ void syscall_free_memory(void *param, int event)
             g_free(params->target);
             break;
         }
+        case VMI_SYS_EXECVE:
+        {
+            Parameters_execve *params = param;
+            g_free(params->name);
+            char **arg = params->argv;
+            while (*arg) {
+                g_free(*arg);
+                ++arg;
+            }
+            g_free(params->argv);
+            break;
+        }
         //case VMI_SYS_CREATE_SECTION: 
         //    break;
         //case VMI_SYS_MAP_VIEW_OF_SECTION: 
@@ -294,22 +301,34 @@ void syscall_ret_f_os(void *param, CPUArchState *env)
         params->ret = 1;
 }
 
-void syscall_clone_os(CPUArchState *env)
+Parameters_clone *syscall_clone_os(CPUArchState *env)
 {
+    Parameters_clone *params = g_new0(Parameters_clone, 1);
+    params->flags = env->regs[R_EBX];
+    // this will be another process memory
+    //params->ctid = env->regs[R_EDI];
     //printf("CLONE\n");
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_clone\n");
-    printf_log("\t\tflag = 0x%x\n", (int) env->regs[R_EBX]);
+    printf_log("\t\tflags = 0x%x\n", (int) params->flags);
+    printf_log("\t\tchild_stack = 0x%x\n", (int) env->regs[R_ECX]);
+    printf_log("\t\tptid = 0x%x\n", (int) env->regs[R_EDX]);
+    printf_log("\t\tnewtls = 0x%x\n", (int) env->regs[R_ESI]);
+    printf_log("\t\tctid = 0x%x\n", (int) env->regs[R_EDI]);
     printf_log("\t\tcontext = 0x%x\n", (int) get_current_context());
-    
-    printf_log("ppid = 0x%x\n", (int) env->regs[R_EDX]);
-    printf_log("pid = 0x%x\n", (int) env->regs[R_ESI]);
+
+    return params;
+}
+
+void syscall_ret_clone_os(void *param, CPUArchState *env)
+{
+    Parameters_clone *params = param;
+    params->ret = env->regs[R_EAX];
+    printf_log("\tclone ret = 0x%x\n", params->ret);
 }
 
 ParametersFork *syscall_fork_os(CPUArchState *env)
 {
     ParametersFork *params = g_malloc0(sizeof(ParametersFork));
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_fork\n");
     
     return params;
@@ -321,6 +340,11 @@ Parameters_mount *syscall_mount_os(CPUArchState *env)
     params->source = guest_strdup(env, env->regs[R_EBX]);
     params->target = guest_strdup(env, env->regs[R_ECX]);
     params->filesystemtype = guest_strdup(env, env->regs[R_EDX]);
+
+    printf_log("\tsys_mount\n");
+    printf_log("\t\tsource = %s\n", params->source);
+    printf_log("\t\ttarget = %s\n", params->target);
+    printf_log("\t\tfilesystemtype = %s\n", params->filesystemtype);
     return params;
 }
 
@@ -346,12 +370,11 @@ void syscall_ret_umount_os(Parameters_umount *params, CPUArchState *env)
 }
 
 
-ParametersExecve *syscall_execve_os(CPUArchState *env)
+Parameters_execve *syscall_execve_os(CPUArchState *env)
 {
-    ParametersExecve *params = g_malloc0(sizeof(ParametersExecve));
+    Parameters_execve *params = g_malloc0(sizeof(Parameters_execve));
     
     printf_log("START OF EXECVE\n");
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_execve\n");
     
     printf_log("filename = 0x%x\nNAME: ", (int) env->regs[R_EBX]);
@@ -407,14 +430,15 @@ Parameters_map *syscall_map_view_of_section_os(CPUArchState *env)
 }
 */
 
-void syscall_printf_end(void) 
+void syscall_ret_execve_os(void *param, CPUArchState *env)
 {
-    printf_log("END OF EXECVE\n");
+    Parameters_execve *params = param;
+    params->ret = (int) env->regs[R_EAX];
+    printf_log("END OF EXECVE return val = %i\n", params->ret);;
 }
 
 void syscall_exit_group_os(CPUArchState *env)
 {
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_exit_group\n");
     printf_log("\t\tstatus: 0x%x\n", (int) env->regs[R_EBX]);
 }
@@ -422,7 +446,6 @@ void syscall_exit_group_os(CPUArchState *env)
 Parameters_mmap *syscall_mmap_os(CPUArchState *env)
 {
     Parameters_mmap *params = g_new0(Parameters_mmap, 1);
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_old_mmap\n");
     
     uint8_t buf[24];
@@ -445,7 +468,6 @@ Parameters_mmap *syscall_mmap_os(CPUArchState *env)
 Parameters_mmap *syscall_mmap2_os(CPUArchState *env)
 {
     Parameters_mmap *params = g_new0(Parameters_mmap, 1);
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
     printf_log("\tsys_mmap2/sys_mmap_pgoff\n");
     
     params->address = env->regs[R_EBX];
@@ -467,18 +489,6 @@ void syscall_mmap_return(Parameters_mmap *params, CPUArchState *env)
     params->address = env->regs[R_EAX];
     printf_log("return value mmap/mmap2\n");
     printf_log("\t\taddress: 0x%"PRIx64"\n", params->address);
-}
-
-void syscall_getpid_os(CPUArchState *env)
-{
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
-    printf_log("\tsys_getpid\n");
-}
-
-void syscall_getppid_os(CPUArchState *env)
-{
-    printf_log("system call   code_of_sys_call = 0x%x\n", (int) env->regs[R_EAX]);
-    printf_log("\tsys_getppid\n");
 }
 
 void syscall_ret_values_os(void *param, CPUArchState *env, int event)

@@ -1201,6 +1201,7 @@ void syscall_ret_handle_os(void *param, CPUArchState *env, int event)
             printf_log("\t\tRet base address = 0x%x\n", params->pBaseAddress);
             printf_log("\t\tRet region size = 0x%x\n", params->pRegionSize);
         }
+        break;
         case VMI_SYS_QUERY_INFO_PROCESS:
         {
             Parameters_query_info_proc *params = (Parameters_query_info_proc *) param;
@@ -1221,6 +1222,7 @@ void syscall_ret_handle_os(void *param, CPUArchState *env, int event)
                 }
                 params->reserved2 = ldl_p(&data[8]);
                 params->uniqueProcId = ldl_p(&data[16]);
+                printf_log("\tprocessID: 0x%x\n", params->uniqueProcId);
                 params->reserved3 = ldl_p(&data[20]);
             }
             //if (params->infoClass)
@@ -1229,6 +1231,7 @@ void syscall_ret_handle_os(void *param, CPUArchState *env, int event)
                 //printf("cr3 = 0x%x after queryinfo\n", (int) env->cr[3]);
             //process_info_add(env->cr[3], params->uniqueProcId);
         }
+        break;
         default: break;
     }
 }

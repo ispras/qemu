@@ -25,6 +25,8 @@ contexts-files              := contexts.o
 example1-files              := example1.o
 example2-files              := example2.o
 
+mem_log-files               := mem_log.o
+
 syscalls_linux-flags        := -DGUEST_OS_LINUX
 syscalls_linux-files        := syscalls_linux.o syscall_lin.o guest_string.o syscall_processing.o
 

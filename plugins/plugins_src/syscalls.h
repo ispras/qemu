@@ -1,6 +1,6 @@
 #ifndef SYSCALLS_H
 #define SYSCALLS_H
-
+#if 0
 /***** os syscalls *****/
 enum SyscallNumbers {
                     /* Common */
@@ -18,12 +18,12 @@ enum SyscallNumbers {
                      VMI_SCP_ALLOCATE_USER_PHYSICAL_PAGES, VMI_SCP_ALLOCATE_VIRTUAL_MEMORY, VMI_SCP_QUERY_INFO_PROCESS,
                      VMI_SC_COUNT};
 /***** process syscalls *****/
-
+#endif
 
 SignalInfo *syscall_get_cb(void);
 //{ ostaetsya
 void start_system_call(CPUArchState *env);
-void exit_system_call(CPUArchState *env, uint32_t reg);
+void exit_system_call(CPUArchState *env, uint64_t stack);
 //void check_dll_call(uint64_t pc);
 //}
 
@@ -82,17 +82,24 @@ typedef struct ParametersFork {
     int pid;
     int ret;
 } ParametersFork;
+ParametersFork *syscall_fork_os(CPUArchState *env);
 
-typedef struct ParametersExecve {
+typedef struct Parameters_clone {
+    uint32_t flags;
+    //uint64_t ctid;
+    int ret;
+} Parameters_clone;
+Parameters_clone *syscall_clone_os(CPUArchState *env);
+void syscall_ret_clone_os(void *param, CPUArchState *env);
+
+typedef struct Parameters_execve {
     char *name;
     char **argv;
     int ret;
-} ParametersExecve;
-
+} Parameters_execve;
+Parameters_execve *syscall_execve_os(CPUArchState *env);
+void syscall_ret_execve_os(void *param, CPUArchState *env);
 /* process syscalls */
-void syscall_clone_os(CPUArchState *env);
-ParametersFork *syscall_fork_os(CPUArchState *env);
-ParametersExecve *syscall_execve_os(CPUArchState *env);
 void syscall_exit_group_os(CPUArchState *env);
 
 typedef struct Parameters_mmap {
@@ -110,7 +117,7 @@ void syscall_getppid_os(CPUArchState *env);
 /* return value */
 void syscall_ret_values_os(void *param, CPUArchState *env, int event);
 
-void syscall_printf_end(void);
+void syscall_syscall_printf_end(CPUArchState *env);
 void syscall_mmap_return(Parameters_mmap *params, CPUArchState *env);
 
 typedef struct Parameters_mount {

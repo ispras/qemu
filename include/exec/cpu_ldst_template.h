@@ -29,6 +29,7 @@
 #endif
 
 #include "trace/mem.h"
+#include "plugins/plugin.h"
 
 #if DATA_SIZE == 8
 #define SUFFIX q
@@ -105,6 +106,7 @@ glue(glue(glue(cpu_ld, USUFFIX), MEMSUFFIX), _ra)(CPUArchState *env,
         uintptr_t hostaddr = addr + env->tlb_table[mmu_idx][page_index].addend;
         res = glue(glue(ld, USUFFIX), _p)((uint8_t *)hostaddr);
     }
+    plugin_ld(env, ptr, DATA_SIZE, res);
     return res;
 }
 
@@ -143,6 +145,7 @@ glue(glue(glue(cpu_lds, SUFFIX), MEMSUFFIX), _ra)(CPUArchState *env,
         uintptr_t hostaddr = addr + env->tlb_table[mmu_idx][page_index].addend;
         res = glue(glue(lds, SUFFIX), _p)((uint8_t *)hostaddr);
     }
+    plugin_ld(env, ptr, DATA_SIZE, res);
     return res;
 }
 
@@ -185,6 +188,7 @@ glue(glue(glue(cpu_st, SUFFIX), MEMSUFFIX), _ra)(CPUArchState *env,
         uintptr_t hostaddr = addr + env->tlb_table[mmu_idx][page_index].addend;
         glue(glue(st, SUFFIX), _p)((uint8_t *)hostaddr, v);
     }
+    plugin_st(env, ptr, DATA_SIZE, v);
 }
 
 static inline void

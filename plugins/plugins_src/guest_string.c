@@ -9,6 +9,9 @@
 
 char *guest_strdup(CPUArchState *env, target_ulong ptr)
 {
+    if (!ptr) {
+        return NULL;
+    }
     CPUState *cpu = ENV_GET_CPU(env);
     uint8_t c;
     target_ulong len = 0;
@@ -23,6 +26,9 @@ char *guest_strdup(CPUArchState *env, target_ulong ptr)
 
 wchar_t *guest_strdupw(CPUArchState *env, target_ulong ptr, target_ulong *len)
 {
+    if (!ptr) {
+        return NULL;
+    }
     CPUState *cpu = ENV_GET_CPU(env);
     uint8_t c[2];
     //target_ulong len = 0;

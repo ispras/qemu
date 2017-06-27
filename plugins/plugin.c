@@ -14,6 +14,10 @@
 #include <regex.h> /* regular expressions */
 #include <dlfcn.h>   /* dlopen(3), dlsym(3), */
 #include <dirent.h> /* to work with directories */
+#include <libgen.h>
+#ifdef CONFIG_WIN32
+#include <windows.h>
+#endif
 
 #define PLUGIN_EXTENSION ".plugin"
 
@@ -65,6 +69,19 @@ static bool plugin_check_os(const struct pi_info *init_info)
     return false;
 }
 
+static char *get_libexec_path(void)
+{
+    char *libexec = g_malloc0(1024); //magic numbers
+    char *exec_dir = qemu_get_exec_dir();
+    strcpy(libexec, exec_dir);
+#ifndef CONFIG_WIN32
+    libexec = dirname(libexec);
+#endif
+    strcat(libexec, "/libexec/");
+    g_free(exec_dir);
+    return libexec;
+}
+
 /* Load the dynamic shared object "name" and call its function
  * "pi_init()" to initialize itself. */
 bool plugin_load(const char *name)
@@ -84,18 +101,20 @@ bool plugin_load(const char *name)
     void *handle;
     /* Check if "name" refers to an installed plugin (short form).  */
     if (name[0] != '.' && name[0] != '/') {
-        const char *format = CONFIG_QEMU_HELPERDIR "/plugin-%s-" TARGET_NAME PLUGIN_EXTENSION;
-        size_t size = strlen(format) + strlen(name) + 1;
+        const char *format = "plugin-%s-" TARGET_NAME PLUGIN_EXTENSION;
+        char *fullpath = get_libexec_path();
+        strcat(fullpath, format);
+        size_t size = strlen(fullpath) + strlen(name) + 1;
+        
         int status;
-
         path = g_malloc0(size);
-        snprintf(path, size, format, name);
-
+        snprintf(path, size, fullpath, name);
         status = access(path, F_OK);
         if (status) {
             g_free(path);
             path = NULL;
         }
+        g_free(fullpath);
     }
 
     Plugin *pl;
@@ -204,13 +223,14 @@ bool plugin_unload(const char *name)
 
     /* Check if "name" refers to an installed plugin (short form).  */
     if (name && name[0] != '.' && name[0] != '/') {
-        const char *format = CONFIG_QEMU_HELPERDIR "/plugin-%s-" TARGET_NAME PLUGIN_EXTENSION;
-        size_t size = strlen(format) + strlen(name) + 1;
+        const char *format = "plugin-%s-" TARGET_NAME PLUGIN_EXTENSION;
+        char *fullpath = get_libexec_path();
+        strcat(fullpath, format);
+        size_t size = strlen(fullpath) + strlen(name) + 1;
+        
         int status;
-
         path = g_malloc0(size);
-        snprintf(path, size, format, name);
-
+        snprintf(path, size, fullpath, name);
         status = access(path, F_OK);
         if (status) {
             g_free(path);
@@ -218,6 +238,7 @@ bool plugin_unload(const char *name)
         } else {
             name = path;
         }
+        g_free(fullpath);
     }
 
     Plugin *pl;
@@ -293,18 +314,20 @@ const void *plugin_get_functions_list(const char *plugin_name)
     char *path = NULL;
     /* Check if "name" refers to an installed plugin (short form).  */
     if (plugin_name[0] != '.' && plugin_name[0] != '/') {
-        const char *format = CONFIG_QEMU_HELPERDIR "/plugin-%s-" TARGET_NAME PLUGIN_EXTENSION;
-        size_t size = strlen(format) + strlen(plugin_name) + 1;
+        const char *format = "plugin-%s-" TARGET_NAME PLUGIN_EXTENSION;
+        char *fullpath = get_libexec_path();
+        strcat(fullpath, format);
+        size_t size = strlen(fullpath) + strlen(plugin_name) + 1;
+        
         int status;
-
         path = g_malloc0(size);
-        snprintf(path, size, format, plugin_name);
-
+        snprintf(path, size, fullpath, plugin_name);
         status = access(path, F_OK);
         if (status) {
             g_free(path);
             path = NULL;
         }
+        g_free(fullpath);
     }
     char *name  = g_strdup(path ? path : plugin_name);
 
@@ -417,21 +440,36 @@ void plugin_subscribe(void *func, const char *name, const char *str_id)
     }
 }
 
-void plugin_gen_sub_callback(SignalInfo *sig, const char *str_id, void *data, CPUArchState *env);
-void plugin_gen_sub_callback(SignalInfo *sig, const char *str_id, void *data, CPUArchState *env)
+static void plugin_gen_sub_callback(SignalInfo *sig, const char *str_id, void *data, CPUArchState *env)
 {
-    SignalInfo *signal = sig;
-    Subs_group *sb_group;
-    if (signal) {
-        HASH_FIND_STR(sig->subs_group, str_id, sb_group);
-        if(sb_group) {
-            Subscriber *subscribers = sb_group->subs;
-            while (subscribers) {
-                (*subscribers->callback)(data, env);
-                subscribers = subscribers->next;
-            }
+    Subs_group *sb_group = plugin_get_subscribers(sig, str_id);
+    plugin_send_to_subscribers(sb_group, data, env);
+}
+
+void plugin_send_to_subscribers(Subs_group *sb_group, void *data, CPUArchState *env)
+{
+    if (sb_group) {
+        Subscriber *subscribers = sb_group->subs;
+        while (subscribers) {
+            (*subscribers->callback)(data, env);
+            subscribers = subscribers->next;
         }
     }
+}
+
+Subs_group *plugin_get_subscribers(SignalInfo *sig, const char *str_id)
+{
+    Subs_group *sb_group = NULL;
+    if (sig) {
+        HASH_FIND_STR(sig->subs_group, str_id, sb_group);
+    }
+    if (!sb_group) {
+        /* add group without subscribers */
+        sb_group =  g_new0(Subs_group, 1);
+        strcpy(sb_group->str_id, str_id);
+        HASH_ADD_STR(sig->subs_group, str_id, sb_group);
+    }
+    return sb_group;
 }
 
 void plugin_gen_signal(SignalInfo *sig, const char *str_id, void *data, CPUArchState *env)
@@ -543,8 +581,8 @@ bool plugin_load_provider_plugin(const char* name)
     }
     char *all_signals = (char *) malloc(10240 * sizeof(char)); //Magic size that i hope would be sufficient
     strcpy(all_signals, "List of signals available for loading:\n");
-    if ((dir = opendir (CONFIG_QEMU_HELPERDIR "/")) != NULL) {
-        //tpi_get_sig_names_t tpi_get_sig;
+    char *libexec_path =  get_libexec_path();
+    if ((dir = opendir (libexec_path)) != NULL) {
         regex_t regex;
         regcomp(&regex, "[.]*-" TARGET_NAME PLUGIN_EXTENSION, 0);
 
@@ -552,7 +590,7 @@ bool plugin_load_provider_plugin(const char* name)
         while ((ent = readdir (dir)) != NULL) {
             if (!regexec(&regex, ent->d_name, 0, NULL, 0)) {
                 char path[PATH_MAX + 1];
-                strcpy(path, CONFIG_QEMU_HELPERDIR "/");
+                strcpy(path, libexec_path);
                 strcat(path, ent->d_name);
                 handle = dlopen(path, RTLD_NOW);
                 if (handle) {
@@ -570,9 +608,11 @@ bool plugin_load_provider_plugin(const char* name)
                                 if (!plugin_load(path)) {
                                     printf("Error occured while loading plugin \"%s\" needed for signals. \n", path);
                                     g_free(all_signals);
+                                    g_free(libexec_path);
                                     return false;
                                 }
                                 g_free(all_signals);
+                                g_free(libexec_path);
                                 return true;
                             }
                             signals++;
@@ -593,10 +633,12 @@ bool plugin_load_provider_plugin(const char* name)
         /* could not open directory */
         printf("Couldn't open directory with plugins.\n");
         g_free(all_signals);
+        g_free(libexec_path);
         return false;
     }
     // Not sure
     printf("%s", all_signals);
     g_free(all_signals);
+    g_free(libexec_path);
     return false;
 }

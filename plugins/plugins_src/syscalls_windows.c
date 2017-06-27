@@ -45,6 +45,11 @@ SignalInfo *syscall_get_cb(void)
     return cb;
 }
 
+static void exit_system_call_win(CPUArchState *env)
+{
+    exit_system_call(env, env->regs[R_ECX]);
+}
+
 static void decode_instr(void *data, CPUArchState *env)
 {
     target_ulong g_pc = ((struct PluginParamsInstrTranslate*)data)->pc;
@@ -60,13 +65,10 @@ static void decode_instr(void *data, CPUArchState *env)
         }	
         if (code2 == 0x35) {
             TCGv_ptr t_env = tcg_const_ptr(env);
-            TCGv_i32 t_ecx = tcg_const_i32(R_ECX);
-            TCGArg args[2];
+            TCGArg args[1];
             args[0] = GET_TCGV_PTR(t_env);
-            args[1] = GET_TCGV_I32(t_ecx);
-            tcg_gen_callN(&tcg_ctx, exit_system_call, dh_retvar(void), 2, args);
+            tcg_gen_callN(&tcg_ctx, exit_system_call_win, dh_retvar(void), 1, args);
             tcg_temp_free_ptr(t_env);
-            tcg_temp_free_i32(t_ecx);
         }
     }
 }
@@ -125,9 +127,9 @@ void pi_start(PluginInterface *pi)
             dh_sizemask(void, 0) | dh_sizemask(ptr, 1));
     tcg_context_register_helper(
             &tcg_ctx,
-            exit_system_call,
-            "exit_system_call",
+            exit_system_call_win,
+            "exit_system_call_win",
             0,
-            dh_sizemask(void, 0) | dh_sizemask(ptr, 1) | dh_sizemask(i32, 2));
+            dh_sizemask(void, 0) | dh_sizemask(ptr, 1));
 }
 

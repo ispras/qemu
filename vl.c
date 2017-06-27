@@ -4125,12 +4125,6 @@ int main(int argc, char **argv, char **envp)
         exit(1);
     }
 
-    plugins_init();
-
-    if (os_version) {
-        plugins_set_os(os_version);
-    }
-
     /*
      * Get the default machine options from the machine if it is not already
      * specified either by the configuration file or by the command line.
@@ -4503,6 +4497,12 @@ int main(int argc, char **argv, char **envp)
 
     machine_class->init(current_machine);
 
+    plugins_init();
+
+    if (os_version) {
+        plugins_set_os(os_version);
+    }
+    
     if (!plugin_filename) {
         plugin_filename = getenv("PLUGIN");
     }

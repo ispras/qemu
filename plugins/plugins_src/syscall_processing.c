@@ -13,380 +13,417 @@
 #include "func_numbers_arch_linux.h"
 #endif
 
-typedef struct InfoRet {
-    uint64_t num;
+typedef struct SCKey {
     uint64_t esp;
     uint64_t ctx;
-    void *param;
-} InfoRet;
+} SCKey;
 
-InfoRet infoRet[1024];
-static int count = 0;
+typedef struct SCData {
+    uint32_t num;
+    void *param;
+} SCData;
+
+static GHashTable *syscalls;
+
+static guint sc_key_hash(gconstpointer k)
+{
+    const SCKey *key = k;
+    uint64_t v = key->esp ^ key->ctx;
+    return (guint)(v ^ (v >> 32));
+}
+
+static gboolean sc_key_equal(gconstpointer a, gconstpointer b)
+{
+    const SCKey *k1 = a;
+    const SCKey *k2 = b;
+    return k1->esp == k2->esp && k1->ctx == k2->ctx;
+}
+
+static void sc_value_destroy(gpointer data)
+{
+    SCData *val = data;
+    syscall_free_memory(val->param, val->num);
+}
+
+static void sc_init(void)
+{
+    if (syscalls) {
+        return;
+    }
+    syscalls = g_hash_table_new_full(sc_key_hash, sc_key_equal,
+        g_free, sc_value_destroy);
+}
+
+static SCData *sc_find(uint64_t ctx, uint64_t esp)
+{
+    sc_init();
+
+    SCKey k = { .ctx = ctx, .esp = esp };
+    return g_hash_table_lookup(syscalls, &k);
+}
+
+static void sc_erase(uint64_t ctx, uint64_t esp)
+{
+    sc_init();
+
+    SCKey k = { .ctx = ctx, .esp = esp };
+    g_hash_table_remove(syscalls, &k);
+}
+
+static void sc_insert(uint64_t ctx, uint64_t esp, uint32_t num, void *param)
+{
+    sc_init();
+
+    SCKey *k = g_new(SCKey, 1);
+    SCData *v = g_new(SCData, 1);
+    k->ctx = ctx;
+    k->esp = esp;
+    v->num = num;
+    v->param = param;
+
+    if (!g_hash_table_insert(syscalls, k, v)) {
+        //qemu_log_mask(LOG_PLUGINS, "overwriting old syscall with new %d\n", num);
+    }
+}
 
 void start_system_call(CPUArchState *env)
 {
     static struct FuncInfo { const char *name; } func_info[1024] = {
 #include "func_info.inc"
     };
+    bool terminate_syscall = false;
+    uint64_t ctx = get_current_context();
     uint32_t num = env->regs[R_EAX];
+    uint64_t esp = env->regs[R_ESP];
+    void *param = NULL;
     if (num < 1024) {
+        syscall_printf_all_calls(num);
         if (func_info[num].name != NULL) {
-            if (count >= 1024) {
-                printf("syscall buffer overflow\n");
-                return;
-            }
-            infoRet[count].num = num;
-            infoRet[count].esp = env->regs[R_ESP]; //esp
-            infoRet[count].ctx = get_current_context();
-            infoRet[count].param = NULL;
             switch (num) {
                 /*** file syscalls ***/
                 case VMI_SYS_CREATE: 
-                    infoRet[count].param = syscall_create_os(env); 
+                    param = syscall_create_os(env); 
                     break;
                 case VMI_SYS_OPEN: 
-                    infoRet[count].param = syscall_open_os(env); 
+                    param = syscall_open_os(env); 
                     break;
                 case VMI_SYS_READ: 
-                    infoRet[count].param = syscall_read_os(env); 
+                    param = syscall_read_os(env); 
                     break;
                 case VMI_SYS_WRITE: 
-                    infoRet[count].param = syscall_write_os(env);  
+                    param = syscall_write_os(env);  
                     break;
                 case VMI_SYS_CLOSE: 
-                    infoRet[count].param = syscall_close_os(env);
+                    param = syscall_close_os(env);
                     break;
 #ifdef GUEST_OS_WINDOWS
                 case VMI_SYS_CREATE_SECTION: 
-                    infoRet[count].param = syscall_create_section_os(env);
+                    param = syscall_create_section_os(env);
                     break;
                 case VMI_SYS_MAP_VIEW_OF_SECTION: 
-                    infoRet[count].param = syscall_map_view_of_section_os(env); 
+                    param = syscall_map_view_of_section_os(env); 
                     break;
                 case VMI_SYS_UNMAP_VIEW_OF_SECTION: 
-                    infoRet[count].param = syscall_unmap_view_of_section_os(env); 
+                    param = syscall_unmap_view_of_section_os(env); 
                     break;
                 case VMI_SYS_OPEN_SECTION:
-                    infoRet[count].param = syscall_open_section_os(env);
+                    param = syscall_open_section_os(env);
                     break;
                 case VMI_SYS_DUPLICATE_OBJ:
-                    infoRet[count].param = syscall_duplicate_object_os(env);
+                    param = syscall_duplicate_object_os(env);
                     break;
              
                 /*** process syscalls ***/
                 case VMI_SYS_CREATE_PROCESS:
-                    infoRet[count].param = syscall_create_process_os(env);
+                    param = syscall_create_process_os(env);
                     break;
                 case VMI_SYS_CREATE_PROCESS_EX:
-                    infoRet[count].param = syscall_create_process_ex_os(env);
+                    param = syscall_create_process_ex_os(env);
                     break;  
                 case VMI_SYS_OPEN_PROCESS:
-                    infoRet[count].param = syscall_open_process_os(env);
+                    param = syscall_open_process_os(env);
                     break;                      
                 case VMI_SYS_TERMINATE_PROCESS:
-                    infoRet[count].param = syscall_terminate_process_os(env);
+                    param = syscall_terminate_process_os(env);
+                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_TERMINATE", param, env);
+                    g_free(param);
+                    terminate_syscall = true;
                     break;
                 case VMI_SYS_OPEN_PROCESS_TOKEN:
-                    infoRet[count].param = syscall_open_process_token_os(env);
+                    param = syscall_open_process_token_os(env);
                     break;
                 case VMI_SYS_RESUME_PROCESS:
-                    infoRet[count].param = syscall_resume_process_os(env);
+                    param = syscall_resume_process_os(env);
                     break;
                 case VMI_SYS_SUSPEND_PROCESS:
-                    infoRet[count].param = syscall_suspend_process_os(env);
+                    param = syscall_suspend_process_os(env);
                     break;
                 case VMI_SYS_CREATE_THREAD:
-                    infoRet[count].param = syscall_create_thread_os(env);
+                    param = syscall_create_thread_os(env);
                     break;
                 case VMI_SYS_OPEN_THREAD:
-                    infoRet[count].param = syscall_open_thread_os(env);
+                    param = syscall_open_thread_os(env);
                     break;
                 case VMI_SYS_OPEN_THREAD_TOKEN:
-                    infoRet[count].param = syscall_open_thread_token_os(env);
+                    param = syscall_open_thread_token_os(env);
                     break;
                 case VMI_SYS_RESUME_THREAD:
-                    infoRet[count].param = syscall_resume_thread_os(env);
+                    param = syscall_resume_thread_os(env);
                     break;
                 case VMI_SYS_SUSPEND_THREAD:
-                    infoRet[count].param = syscall_suspend_thread_os(env);
+                    param = syscall_suspend_thread_os(env);
                     break;
                 case VMI_SYS_TERMINATE_THREAD:
-                    infoRet[count].param = syscall_terminate_thread_os(env);
+                    param = syscall_terminate_thread_os(env);
                     break;
                 case VMI_SYS_ALLOCATE_USER_PHYSICAL_PAGES:
                     syscall_allocate_user_physical_pages_os(env);
                     break;
                 case VMI_SYS_ALLOCATE_VIRTUAL_MEMORY:
-                    infoRet[count].param = syscall_allocate_virtual_memory_os(env);
+                    param = syscall_allocate_virtual_memory_os(env);
                     break;
                 case VMI_SYS_QUERY_INFO_PROCESS:
-                    infoRet[count].param = syscall_query_information_process_os(env);
+                    param = syscall_query_information_process_os(env);
                     break;
 #else /* Linux */
                 case VMI_SYS_CLONE:
-                    syscall_clone_os(env);
+                    param = syscall_clone_os(env);
                     break;
                 case VMI_SYS_FORK:
                     //printf("fork\n");
-                    infoRet[count].param = syscall_fork_os(env);
+                    param = syscall_fork_os(env);
                     break;
                 case VMI_SYS_EXECVE:
-                    infoRet[count].param = syscall_execve_os(env);
+                    param = syscall_execve_os(env);
+                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_EXECVE", param, env);
                     break;
                 case VMI_SYS_MOUNT:
-                    infoRet[count].param = syscall_mount_os(env);
+                    param = syscall_mount_os(env);
                     break;
                 case VMI_SYS_UMOUNT:
-                    infoRet[count].param = syscall_umount_os(env);
+                    param = syscall_umount_os(env);
                     break;
                 case VMI_SYS_EXIT_GROUP:
                     syscall_exit_group_os(env);
+                    terminate_syscall = true;
                     break;
                 case VMI_SYS_MMAP:
-                    infoRet[count].param = syscall_mmap_os(env);
+                    param = syscall_mmap_os(env);
                     break;
                 case VMI_SYS_MMAP2:
-                    infoRet[count].param = syscall_mmap2_os(env);
+                    param = syscall_mmap2_os(env);
                     break;
                 case VMI_SYS_GETPID:
-                    printf("getpid\n");
-                    syscall_getpid_os(env);
+                    param = 0;
                     break;
                 case VMI_SYS_GETPPID:
-                    printf("getppid\n");
-                    syscall_getppid_os(env);
+                    param = 0;
                     break;
 #endif                    
                 default: 
-                    syscall_printf_all_calls((int) env->regs[R_EAX]);
                     break;
             }
-            ++count;
-        } else {
-            syscall_printf_all_calls((int) env->regs[R_EAX]);
+            if (!terminate_syscall) {
+                sc_insert(ctx, esp, num, param);
+            }
         }
+    }
+    if (terminate_syscall) {
+        // Clean all entries with the current
+        // TODO
+        /*
+        int i;
+        for (i = 0 ; i < count ; ) {
+            if (infoRet[i].ctx == ctx) {
+                --count;
+                if (count) {
+                    infoRet[i] = infoRet[count];
+                }
+            } else {
+                ++i;
+            }
+        }
+        */
     }
 }
 
-void exit_system_call(CPUArchState *env, uint32_t reg)
+void exit_system_call(CPUArchState *env, uint64_t stack)
 {
-    int i;
-    int isOk = 0;
+    uint64_t ctx = get_current_context();
 
-    if (count) {
-        for (i = 0; i < count; i++) {
-            if (infoRet[i].esp == env->regs[reg]
-                && infoRet[i].ctx == get_current_context()) { //regs = windows ? ecx : esp
-                isOk = 1;
+    SCData *data = sc_find(ctx, stack);
+    if (data) {
+        switch (data->num) {
+            case VMI_SYS_CREATE: 
+#ifdef GUEST_OS_WINDOWS                
+                syscall_ret_handle_os(data->param, env, VMI_SYS_CREATE);
+#else                    
+                syscall_ret_oc_os(data->param, env);
+#endif
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_CREATE", data->param, env);
                 break;
-            }
-        }
-        if (isOk) {
-            switch (infoRet[i].num) {
-                case VMI_SYS_CREATE: 
+            case VMI_SYS_OPEN: 
 #ifdef GUEST_OS_WINDOWS                
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_CREATE);
+                syscall_ret_handle_os(data->param, env, VMI_SYS_OPEN);
 #else                    
-                    syscall_ret_oc_os(infoRet[i].param, env);
+                syscall_ret_oc_os(data->param, env);
 #endif
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_CREATE", infoRet[i].param, env);
-                    syscall_free_memory(infoRet[i].param, VMI_SYS_CREATE);
-                    break;
-                case VMI_SYS_OPEN: 
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_OPEN", data->param, env); 
+                break;
+            case VMI_SYS_READ:
 #ifdef GUEST_OS_WINDOWS                
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_OPEN);
+                syscall_ret_handle_os(data->param, env, VMI_SYS_READ);
 #else                    
-                    syscall_ret_oc_os(infoRet[i].param, env);
+                syscall_ret_read_os(data->param, env);
 #endif
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_OPEN", infoRet[i].param, env); 
-                    syscall_free_memory(infoRet[i].param, VMI_SYS_OPEN);
-                    break;
-                case VMI_SYS_READ:
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_READ", data->param, env); 
+                break;
+            case VMI_SYS_WRITE: 
 #ifdef GUEST_OS_WINDOWS                
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_READ);
+                syscall_ret_handle_os(data->param, env, VMI_SYS_WRITE);
 #else                    
-                    syscall_ret_read_os(infoRet[i].param, env);
+                syscall_ret_write_os(data->param, env);
 #endif
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_READ", infoRet[i].param, env); 
-                    syscall_free_memory(infoRet[i].param, VMI_SYS_READ);
-                    break;
-                case VMI_SYS_WRITE: 
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_WRITE", data->param, env); 
+                break;
+            case VMI_SYS_CLOSE: 
 #ifdef GUEST_OS_WINDOWS                
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_WRITE);
+                syscall_ret_handle_os(data->param, env, VMI_SYS_CLOSE);
 #else                    
-                    syscall_ret_write_os(infoRet[i].param, env);
+                syscall_ret_close_os(data->param, env);
 #endif
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_WRITE", infoRet[i].param, env); 
-                    syscall_free_memory(infoRet[i].param, VMI_SYS_WRITE);
-                    break;
-                case VMI_SYS_CLOSE: 
-#ifdef GUEST_OS_WINDOWS                
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_CLOSE);
-#else                    
-                    syscall_ret_close_os(infoRet[i].param, env);
-#endif
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_CLOSE", infoRet[i].param, env); 
-                    syscall_free_memory(infoRet[i].param, VMI_SYS_CLOSE);
-                    break;
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_CLOSE", data->param, env); 
+                break;
 #ifdef GUEST_OS_WINDOWS 
-                case VMI_SYS_CREATE_SECTION: 
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_CREATE_SECTION);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_CREATE_SECTION", infoRet[i].param, env); 
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_MAP_VIEW_OF_SECTION: 
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_MAP_VIEW_OF_SECTION);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_MAP_VIEW_OF_SECTION", infoRet[i].param, env); 
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_UNMAP_VIEW_OF_SECTION: 
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_UNMAP_VIEW_OF_SECTION);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_UNMAP_VIEW_OF_SECTION", infoRet[i].param, env); 
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_OPEN_SECTION:
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_OPEN_SECTION);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_OPEN_SECTION", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_DUPLICATE_OBJ:
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_DUPLICATE_OBJ);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_DUPLICATE_OBJ", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                /*** process syscalls ***/
-                case VMI_SYS_CREATE_PROCESS:
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_CREATE_PROCESS);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_CREATE", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_CREATE_PROCESS_EX:
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_CREATE_PROCESS_EX);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_CREATE_EX", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;  
-                case VMI_SYS_OPEN_PROCESS:
-                    //syscall_ret_oc_os(infoRet[i].param, env);
-                    //printf("open_process \n");
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_OPEN_PROCESS);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_OPEN", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;                      
-                case VMI_SYS_OPEN_PROCESS_TOKEN: 
-                    //printf("open_process_token \n");
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_OPEN_PROCESS_TOKEN);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_OPEN_TOKEN", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_RESUME_PROCESS:
-                    //printf("resume_process \n");
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_RESUME", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_SUSPEND_PROCESS:
-                    //printf("suspend_process \n");
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_SUSPEND", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_TERMINATE_PROCESS:
-                    //printf("terminate_process \n");
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_TERMINATE", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break; 
-                
-                case VMI_SYS_CREATE_THREAD:
-                    //printf("create_thread \n");
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_CREATE_THREAD);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCT_CREATE", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_OPEN_THREAD:
-                    //printf("open_thread \n");
-                    //syscall_ret_oc_os(infoRet[i].param, env);
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_OPEN_THREAD);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCT_OPEN", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_OPEN_THREAD_TOKEN: 
-                    //printf("open_thread_token \n");
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_OPEN_THREAD_TOKEN);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCT_OPEN_TOKEN", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_RESUME_THREAD:
-                    //printf("resume_thread \n");
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCT_RESUME", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_SUSPEND_THREAD:
-                    //printf("suspend_thread \n");
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCT_SUSPEND", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;                    
-                case VMI_SYS_TERMINATE_THREAD:
-                    //printf("terminate_thread \n");
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCT_TERMINATE", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_ALLOCATE_USER_PHYSICAL_PAGES:
-                    break;
-                case VMI_SYS_ALLOCATE_VIRTUAL_MEMORY:
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_ALLOCATE_VIRTUAL_MEMORY);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_ALLOCATE_VIRTUAL_MEMORY", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_QUERY_INFO_PROCESS:
-                    syscall_ret_handle_os(infoRet[i].param, env, VMI_SYS_QUERY_INFO_PROCESS);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_QUERY_INFO_PROCESS", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
+
+            case VMI_SYS_CREATE_SECTION: 
+                syscall_ret_handle_os(data->param, env, VMI_SYS_CREATE_SECTION);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_CREATE_SECTION", data->param, env); 
+                break;
+            case VMI_SYS_MAP_VIEW_OF_SECTION: 
+                syscall_ret_handle_os(data->param, env, VMI_SYS_MAP_VIEW_OF_SECTION);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_MAP_VIEW_OF_SECTION", data->param, env); 
+                break;
+            case VMI_SYS_UNMAP_VIEW_OF_SECTION: 
+                syscall_ret_handle_os(data->param, env, VMI_SYS_UNMAP_VIEW_OF_SECTION);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_UNMAP_VIEW_OF_SECTION", data->param, env); 
+                break;
+            case VMI_SYS_OPEN_SECTION:
+                syscall_ret_handle_os(data->param, env, VMI_SYS_OPEN_SECTION);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_OPEN_SECTION", data->param, env);
+                break;
+            case VMI_SYS_DUPLICATE_OBJ:
+                syscall_ret_handle_os(data->param, env, VMI_SYS_DUPLICATE_OBJ);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_DUPLICATE_OBJ", data->param, env);
+                break;
+            /*** process syscalls ***/
+            case VMI_SYS_CREATE_PROCESS:
+                syscall_ret_handle_os(data->param, env, VMI_SYS_CREATE_PROCESS);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_CREATE", data->param, env);
+                break;
+            case VMI_SYS_CREATE_PROCESS_EX:
+                syscall_ret_handle_os(data->param, env, VMI_SYS_CREATE_PROCESS_EX);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_CREATE_EX", data->param, env);
+                break;  
+            case VMI_SYS_OPEN_PROCESS:
+                //syscall_ret_oc_os(data->param, env);
+                //printf("open_process \n");
+                syscall_ret_handle_os(data->param, env, VMI_SYS_OPEN_PROCESS);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_OPEN", data->param, env);
+                break;                      
+            case VMI_SYS_OPEN_PROCESS_TOKEN: 
+                //printf("open_process_token \n");
+                syscall_ret_handle_os(data->param, env, VMI_SYS_OPEN_PROCESS_TOKEN);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_OPEN_TOKEN", data->param, env);
+                break;
+            case VMI_SYS_RESUME_PROCESS:
+                //printf("resume_process \n");
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_RESUME", data->param, env);
+                break;
+            case VMI_SYS_SUSPEND_PROCESS:
+                //printf("suspend_process \n");
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_SUSPEND", data->param, env);
+                break;
+            case VMI_SYS_TERMINATE_PROCESS:
+                //printf("terminate_process \n");
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_TERMINATE", data->param, env);
+                break; 
+            
+            case VMI_SYS_CREATE_THREAD:
+                //printf("create_thread \n");
+                syscall_ret_handle_os(data->param, env, VMI_SYS_CREATE_THREAD);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCT_CREATE", data->param, env);
+                break;
+            case VMI_SYS_OPEN_THREAD:
+                //printf("open_thread \n");
+                //syscall_ret_oc_os(data->param, env);
+                syscall_ret_handle_os(data->param, env, VMI_SYS_OPEN_THREAD);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCT_OPEN", data->param, env);
+                break;
+            case VMI_SYS_OPEN_THREAD_TOKEN: 
+                //printf("open_thread_token \n");
+                syscall_ret_handle_os(data->param, env, VMI_SYS_OPEN_THREAD_TOKEN);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCT_OPEN_TOKEN", data->param, env);
+                break;
+            case VMI_SYS_RESUME_THREAD:
+                //printf("resume_thread \n");
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCT_RESUME", data->param, env);
+                break;
+            case VMI_SYS_SUSPEND_THREAD:
+                //printf("suspend_thread \n");
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCT_SUSPEND", data->param, env);
+                break;                    
+            case VMI_SYS_TERMINATE_THREAD:
+                //printf("terminate_thread \n");
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCT_TERMINATE", data->param, env);
+                break;
+            case VMI_SYS_ALLOCATE_USER_PHYSICAL_PAGES:
+                break;
+            case VMI_SYS_ALLOCATE_VIRTUAL_MEMORY:
+                syscall_ret_handle_os(data->param, env, VMI_SYS_ALLOCATE_VIRTUAL_MEMORY);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_ALLOCATE_VIRTUAL_MEMORY", data->param, env);
+                break;
+            case VMI_SYS_QUERY_INFO_PROCESS:
+                syscall_ret_handle_os(data->param, env, VMI_SYS_QUERY_INFO_PROCESS);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_QUERY_INFO_PROCESS", data->param, env);
 #else
-                case VMI_SYS_CLONE:
-                    syscall_ret_values_os(infoRet[i].param, env, VMI_SYS_CLONE);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_CLONE", infoRet[i].param, env);
-                    break;
-                case VMI_SYS_FORK:
-                    //printf("foooooork\n");
-                    syscall_ret_f_os(infoRet[i].param, env);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_FORK", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_EXECVE:
-                    syscall_printf_end();
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_EXECVE", infoRet[i].param, env);
-                    g_free(infoRet[i].param);
-                    break;
-                case VMI_SYS_MOUNT:
-                    syscall_ret_mount_os(infoRet[i].param, env);
-                    syscall_free_memory(infoRet[i].param, VMI_SYS_MOUNT);
-                    break;
-                case VMI_SYS_UMOUNT:
-                    syscall_ret_umount_os(infoRet[i].param, env);
-                    syscall_free_memory(infoRet[i].param, VMI_SYS_UMOUNT);
-                    break;
-                case VMI_SYS_EXIT_GROUP:
-                    break;
-                case VMI_SYS_MMAP:
-                case VMI_SYS_MMAP2:
-                    syscall_mmap_return(infoRet[i].param, env);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SC_MMAP", infoRet[i].param, env);
-                    syscall_free_memory(infoRet[i].param, VMI_SYS_MMAP);
-                    break;
-                case VMI_SYS_GETPID:
-                    syscall_ret_values_os(infoRet[i].param, env, VMI_SYS_GETPID);
-                    plugin_gen_signal(syscall_get_cb(), "VMI_SCP_GETPID", infoRet[i].param, env);
-                    break;
-                case VMI_SYS_GETPPID:
-                    syscall_ret_values_os(infoRet[i].param, env, VMI_SYS_GETPPID);
-                    break;
+            case VMI_SYS_CLONE:
+                syscall_ret_clone_os(data->param, env);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_CLONE", data->param, env);
+                break;
+            case VMI_SYS_FORK:
+                //printf("foooooork\n");
+                syscall_ret_f_os(data->param, env);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_FORK", data->param, env);
+                break;
+            case VMI_SYS_EXECVE:
+                syscall_ret_execve_os(data->param, env);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_EXECVE_END", data->param, env);
+                break;
+            case VMI_SYS_MOUNT:
+                syscall_ret_mount_os(data->param, env);
+                break;
+            case VMI_SYS_UMOUNT:
+                syscall_ret_umount_os(data->param, env);
+                break;
+            case VMI_SYS_EXIT_GROUP:
+                break;
+            case VMI_SYS_MMAP:
+            case VMI_SYS_MMAP2:
+                syscall_mmap_return(data->param, env);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_MMAP", data->param, env);
+                break;
+            case VMI_SYS_GETPID:
+                syscall_ret_values_os(data->param, env, VMI_SYS_GETPID);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_GETPID", data->param, env);
+                break;
+            case VMI_SYS_GETPPID:
+                syscall_ret_values_os(data->param, env, VMI_SYS_GETPPID);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SCP_GETPPID", data->param, env);
+                break;
 #endif                
-                default: break;                
-            }
-            --count;
-            if (count)
-                infoRet[i] = infoRet[count];
+            default: break;                
         }
-        else {
-            //fprintf(log, "ne povezlo\n");
-        }
+        sc_erase(ctx, stack);
     }
 }
