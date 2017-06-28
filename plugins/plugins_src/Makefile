@@ -14,7 +14,12 @@ PLUGINS += syscalls_windows_xp syscalls_windows_7
 ifeq ($(TARGET_NAME), $(filter $(TARGET_NAME), i386))
 PLUGINS += syscalls_windows_8 syscalls_windows_8.1
 endif
+PLUGINS += file_monitor
 PLUGINS += syscalls_linux
+endif
+ifeq ($(TARGET_NAME), $(filter $(TARGET_NAME), i386))
+PLUGINS += api_monitor_windows
+PLUGINS += api_monitor_linux
 endif
 
 PLUGINS := $(addsuffix .plugin,$(PLUGINS))

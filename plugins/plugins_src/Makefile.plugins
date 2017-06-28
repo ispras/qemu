@@ -22,6 +22,8 @@ PLUGIN_DIR := $(PLUGIN_PREFIX)$(PLUGIN)/
 # List of the files in the plugins
 contexts-files              := contexts.o
 
+file_monitor-files          := file_monitor.o handle_map.o
+
 example1-files              := example1.o
 example2-files              := example2.o
 
@@ -31,21 +33,26 @@ syscalls_linux-flags        := -DGUEST_OS_LINUX
 syscalls_linux-files        := syscalls_linux.o syscall_lin.o guest_string.o syscall_processing.o
 
 syscalls_windows_xp-flags   := -DGUEST_OS_WINDOWS -DGUEST_OS_WINXP
-syscalls_windows_xp-files   := syscalls_windows.o syscall_win.o guest_string.o
-syscalls_windows_xp-files   += syscall_processing.o
+syscalls_windows_xp-files   := syscalls_windows.o syscall_win.o guest_string.o handle_map.o
+syscalls_windows_xp-files   += pe_header_parser.o module_map.o syscall_processing.o
 
 syscalls_windows_7-flags    := -DGUEST_OS_WINDOWS -DGUEST_OS_WIN7
-syscalls_windows_7-files    := syscalls_windows.o syscall_win.o guest_string.o
-syscalls_windows_7-files    += syscall_processing.o
+syscalls_windows_7-files    := syscalls_windows.o syscall_win.o guest_string.o handle_map.o
+syscalls_windows_7-files    += pe_header_parser.o module_map.o syscall_processing.o
 
 syscalls_windows_8-flags    := -DGUEST_OS_WINDOWS -DGUEST_OS_WIN8
-syscalls_windows_8-files    := syscalls_windows.o syscall_win.o guest_string.o
-syscalls_windows_8-files    += syscall_processing.o
+syscalls_windows_8-files    := syscalls_windows.o syscall_win.o guest_string.o handle_map.o
+syscalls_windows_8-files    += pe_header_parser.o module_map.o syscall_processing.o
 
 syscalls_windows_8.1-flags  := -DGUEST_OS_WINDOWS -DGUEST_OS_WIN81
-syscalls_windows_8.1-files  := syscalls_windows.o syscall_win.o guest_string.o
-syscalls_windows_8.1-files  += syscall_processing.o
+syscalls_windows_8.1-files  := syscalls_windows.o syscall_win.o guest_string.o handle_map.o
+syscalls_windows_8.1-files  += pe_header_parser.o module_map.o syscall_processing.o
 
+api_monitor_windows-flags   := -DGUEST_OS_WINDOWS
+api_monitor_windows-files   := api_monitor.o pe_header_parser.o handle_map.o module_map.o guest_string.o
+
+api_monitor_linux-flags     := -DGUEST_OS_LINUX
+api_monitor_linux-files     := api_monitor.o elf_header_parser.o handle_map.o module_map.o guest_string.o
 
 # Objects and binaries
 FILES := $($(PLUGIN)-files)
