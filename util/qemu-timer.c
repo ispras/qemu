@@ -587,7 +587,10 @@ int64_t timerlistgroup_deadline_ns(QEMUTimerListGroup *tlg)
             } else {
                 /* Read clock from the replay file and
                    do not calculate the deadline, based on virtual clock. */
-                qemu_clock_get_ns(type);
+                if (atomic_read(&tlg->tl[type]->active_timers)
+                    && tlg->tl[type]->clock->enabled) {
+                    qemu_clock_get_ns(type);
+                }
             }
         }
     }
