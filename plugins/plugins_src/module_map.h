@@ -11,7 +11,9 @@ void mm_free(ModuleMap *mm);
  *  Data is owned and freed by the map.
  */
 void mm_insert(ModuleMap *mm, uint64_t address, uint64_t size, uint64_t context, void *opaque);
-void mm_erase(ModuleMap *mm, uint64_t address, uint64_t context);
+bool mm_erase(ModuleMap *mm, uint64_t address, uint64_t context);
+bool mm_erase_map(ModuleMap *mm, uint64_t address, uint64_t context, void *opaque);
+int mm_erase_range(ModuleMap *mm, uint64_t address, uint64_t length, uint64_t context);
 void mm_iterate(ModuleMap *hm, MMIterator func, void *mon);
 
 /** Returns pointer associated with the map. */

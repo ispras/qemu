@@ -82,6 +82,11 @@ int stricmp_(char *str1, char *str2)
     return 0;
 }
 
+static map_params *get_address_dll(uint64_t address)
+{
+    return mm_find(mm, address, get_current_context());
+}
+
 #ifdef GUEST_OS_WINDOWS
 static bool strstrmy(char *name)
 {
@@ -165,8 +170,9 @@ static void api_monitor_map_cb(void *msg, CPUArchState *env)
 static void api_monitor_unmap_cb(void *msg, CPUArchState *env)
 {
     Parameters_unmap *api_params = msg;
-    mm_erase(mm, api_params->baseAddress, get_current_context());
-    fprintf(api_log, "UNMAP. baseAddress: 0x%"PRIx64"\n", api_params->baseAddress);
+    while (mm_erase(mm, api_params->baseAddress, get_current_context())) {
+        fprintf(api_log, "UNMAP. baseAddress: 0x%"PRIx64"\n", api_params->baseAddress);
+    }
 }
 
 static void api_monitor_close_handle_cb(void *msg, CPUArchState *env)
@@ -201,26 +207,77 @@ static void api_monitor_duplicate_cb(void *msg, CPUArchState *env)
 static void api_monitor_mmap2_cb(void *msg, CPUArchState *env)
 {
     Parameters_mmap *mmap_params = msg;
-    if (mmap_params->address != -1UL && mmap_params->address != -1ULL
+    uint64_t address = mmap_params->address;
+    uint64_t length = mmap_params->length;
+    if (address != -1UL && address != -1ULL
         && mmap_params->handle != -1UL) {
         fprintf(api_log, "MAP. Trying to map handle 0x%"PRIx64" to address 0x%"PRIx64" len=0x%"PRIx64" offset=0x%"PRIx64" ctx=0x%"PRIx64"\n",
             mmap_params->handle, mmap_params->address, mmap_params->length, mmap_params->offset, get_current_context());
         /* Find file */
         Parameters_oc *file = hm_find(hm_file, mmap_params->handle, get_current_context());
         if (file) {
+            /* Check whether this is the other part of the same file */
+            map_params *prev = get_address_dll(address);
+            if (prev && !strcmp(file->name, prev->section->dll_name)) {
+                if (prev->imageBase + prev->viewSize < address + length) {
+                    length += address - prev->imageBase;
+                    address = prev->imageBase;
+                    fprintf(api_log, "UPDATE. base=0x%"PRIx64" new size=0x%"PRIx64"\n",
+                        prev->imageBase, length);
+                } else {
+                    fprintf(api_log, "NO UPDATE for existing base=0x%"PRIx64"\n", prev->imageBase);
+                    return;
+                }
+            } else {
+                map_params *prev1 = get_address_dll(address - mmap_params->offset);
+                /* Map additional section to higher addresses */
+                if (prev1 && !strcmp(file->name, prev1->section->dll_name)
+                    && prev1->imageBase == address - mmap_params->offset) {
+                    /* Update the mapping of the same file */
+                    prev = prev1;
+                    length += address - prev->imageBase;
+                    address = prev->imageBase;
+                    fprintf(api_log, "ADD SECTION FOR base=0x%"PRIx64" new size=0x%"PRIx64"\n",
+                        prev->imageBase, length);
+                } else {
+                    /* Should delete 'prev' mapping of different file */
+                }
+            }
+
+            if (prev) {
+                g_free(prev->section->name);
+                g_free(prev->section->dll_name);
+                g_free(prev->section);
+                int ret = mm_erase_range(mm, address, length, get_current_context());
+                fprintf(api_log, "ERASE %d previous entries for base=0x%"PRIx64" length=0x%"PRIx64"\n",
+                    ret, address, length);
+                assert(ret);
+                //fprintf(api_log, "ERASE. previous entry for base=0x%"PRIx64"\n", address);
+                //if (!mm_erase_map(mm, prev->imageBase, get_current_context(), prev)) {
+                //    assert(false);
+                //}
+            }
             /* Create fake section */
             ModuleInfo *section = g_new0(ModuleInfo, 1);
+            assert(file->name);
             section->name = g_strdup(file->name);
             section->dll_name = g_strdup(file->name);
             /* Fill mapping params */
             map_params *params = g_new0(map_params, 1);
-            params->imageBase = mmap_params->address;
-            params->viewSize = mmap_params->length;
+            params->imageBase = address;
+            params->viewSize = length;
             params->section = section;
             /* Save mapping */
-            mm_insert(mm, mmap_params->address, mmap_params->length, get_current_context(), params);
-            fprintf(api_log, "MAP. Mapped file 0x%s to address 0x%"PRIx64"\n",
-                file->name, mmap_params->address);
+            mm_insert(mm, address, length, get_current_context(), params);
+            fprintf(api_log, "MAP. Mapped file 0x%s to address 0x%"PRIx64" params=%p\n",
+                file->name, address, params);
+        } else {
+            fprintf(api_log, "MAP. File handle 0x%"PRIx64" not found\n", mmap_params->handle);
+            int ret = mm_erase_range(mm, address, length, get_current_context());
+            if (ret) {
+                fprintf(api_log, "ERASE %d previous entries for base=0x%"PRIx64" length=0x%"PRIx64"\n",
+                    ret, address, length);
+            }
         }
     }
 }
@@ -229,8 +286,12 @@ static void api_monitor_mmap2_cb(void *msg, CPUArchState *env)
 static void api_monitor_remove_mapping(map_params *map, CPUArchState *env)
 {
     ModuleInfo *module = map->section;
-    fprintf(api_log, "ERASE. baseAddress: 0x%"PRIx64" %s(%s)\n", map->imageBase, module->name, module->dll_name);
-    mm_erase(mm, map->imageBase, get_current_context());
+    fprintf(api_log, "ERASE. baseAddress: 0x%"PRIx64" %s(%s) ctx=0x%"PRIx64"\n",
+        map->imageBase, module->name, module->dll_name, get_current_context());
+    if (!mm_erase_map(mm, map->imageBase, get_current_context(), map)) {
+        fprintf(api_log, "ERASE failed\n");
+        return;
+    }
 #ifdef GUEST_OS_LINUX
     g_free(module->name);
     g_free(module->dll_name);
@@ -240,11 +301,6 @@ static void api_monitor_remove_mapping(map_params *map, CPUArchState *env)
     g_free(module);
 #endif
 }
-
-static map_params *get_address_dll(target_ulong address)
-{
-    return mm_find(mm, address, get_current_context());
-} 
 
 static FILE *api_func_log;
 
@@ -327,6 +383,11 @@ static void before_tb_cb(void *data, CPUArchState *env)
 {
     TranslationBlock *tb = ((struct PluginParamsInstrTranslate*)data)->tb;
     target_ulong g_pc = tb->pc;
+#if defined(TARGET_I386) || defined(TARGET_X86_64)
+    // Do not take CS into account
+    // E.g. g_pc=AF843E2C and CS:EIP=0073:4F843E2C
+    g_pc -= env->segs[R_CS].base;
+#endif
     do {
         map_params *params = get_address_dll(g_pc);
         if (params) {
@@ -347,7 +408,9 @@ static void before_tb_cb(void *data, CPUArchState *env)
     } while (true);
 }
 
-/*#ifdef GUEST_OS_LINUX
+#define USE_TLB
+#ifdef GUEST_OS_LINUX
+#ifdef USE_TLB
 static void api_monitor_tlb_add_page(void *data, CPUArchState *env)
 {
     struct PluginParamsTlbAddPage *params = data;
@@ -357,7 +420,8 @@ static void api_monitor_tlb_add_page(void *data, CPUArchState *env)
         parse_header(map);
     }
 }
-#endif*/
+#endif
+#endif
 
 static void exit_func_call(uint64_t pc, CPUArchState *env)
 {
@@ -443,6 +507,9 @@ void pi_start(PluginInterface *pi)
     plugin_subscribe(api_monitor_duplicate_cb, "syscall", "VMI_SC_DUPLICATE_OBJ");
 #elif defined(GUEST_OS_LINUX)
     plugin_subscribe(api_monitor_mmap2_cb, "syscall", "VMI_SC_MMAP");
+#ifdef USE_TLB
+    plugin_subscribe(api_monitor_tlb_add_page, "qemu", "PLUGIN_QEMU_TLB_SET_PAGE");
+#endif
 #endif
     tcg_context_register_helper(
         &tcg_ctx,

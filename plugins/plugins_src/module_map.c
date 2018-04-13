@@ -37,7 +37,7 @@ static gint compare(gconstpointer a, gconstpointer b, gpointer opaque)
 
 /* Hack to remove found items */
 typedef struct MMSearch {
-    uint64_t address;
+    uint64_t address, length;
     const MMKey *key;
 } MMSearch;
 
@@ -46,6 +46,24 @@ static gint search(gconstpointer a, gconstpointer b)
     const MMKey *k = a;
     MMSearch *s = (MMSearch*)b;
     if (s->address < k->address) {
+        return -1;
+    } else if (s->address < k->address + k->size) {
+        s->key = k;
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+static gint search_range(gconstpointer a, gconstpointer b)
+{
+    const MMKey *k = a;
+    MMSearch *s = (MMSearch*)b;
+    if (s->address < k->address) {
+        if (s->address + s->length > k->address) {
+            s->key = k;
+            return 0;
+        }
         return -1;
     } else if (s->address < k->address + k->size) {
         s->key = k;
@@ -65,6 +83,13 @@ static ModuleTree *mm_get_context(ModuleMap *mm, uint64_t context)
     return tree;
 }
 
+/*static gboolean mm_print_tree(gpointer k, gpointer v, gpointer d)
+{
+    MMKey *key = k;
+    printf("(%"PRIx64"; %"PRIx64") ", key->address, key->size);
+    return false;
+}*/
+
 void mm_insert(ModuleMap *mm, uint64_t address, uint64_t size, uint64_t context, void *opaque)
 {
     ModuleTree *tree = mm_get_context(mm, context);
@@ -72,16 +97,52 @@ void mm_insert(ModuleMap *mm, uint64_t address, uint64_t size, uint64_t context,
     key->address = address;
     key->size = size;
     g_tree_insert(tree, key, opaque);
+    //printf("after insert %"PRIx64"\n", address);
+    //g_tree_foreach(tree, mm_print_tree, NULL);
+    //printf("\n");
 }
 
-void mm_erase(ModuleMap *mm, uint64_t address, uint64_t context)
+bool mm_erase_map(ModuleMap *mm, uint64_t address, uint64_t context, void *opaque)
+{
+    ModuleTree *tree = mm_get_context(mm, context);
+    MMSearch s = { .address = address };
+    void *x = g_tree_search(tree, search, &s);
+    assert(s.key && x == opaque);
+    g_tree_remove(tree, s.key);
+    return true;
+}
+
+bool mm_erase(ModuleMap *mm, uint64_t address, uint64_t context)
 {
     ModuleTree *tree = mm_get_context(mm, context);
     MMSearch s = { .address = address };
     g_tree_search(tree, search, &s);
     if (s.key) {
-        g_tree_remove(tree, s.key);
+        //printf("before erase %"PRIx64"\n", address);
+        //g_tree_foreach(tree, mm_print_tree, NULL);
+        //printf("\n");
+        if (g_tree_remove(tree, s.key)) {
+            return true;
+        }
     }
+    return false;
+}
+
+int mm_erase_range(ModuleMap *mm, uint64_t address, uint64_t length, uint64_t context)
+{
+    ModuleTree *tree = mm_get_context(mm, context);
+    MMSearch s = { .address = address, .length = length };
+    int count = 0;
+    do {
+        s.key = 0;
+        g_tree_search(tree, search_range, &s);
+        if (s.key) {
+            g_tree_remove(tree, s.key);
+            ++count;
+        }
+    } while (s.key);
+
+    return count;
 }
 
 void *mm_find(ModuleMap *mm, uint64_t address, uint64_t context)
