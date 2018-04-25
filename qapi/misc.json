@@ -3485,3 +3485,20 @@
 ##
 { 'command': 'info_replay',
   'returns': 'ReplayInfo' }
+
+##
+# @replay_break:
+#
+# Set breakpoint on the specified step of the replay.
+# Execution stops when the specified step is reached.
+#
+# @step: execution step to stop at
+#
+# Since: 2.13
+#
+# Example:
+#
+# -> { "execute": "replay_break", "data": { "step": 220414 } }
+#
+##
+{ 'command': 'replay_break', 'data': { 'step': 'int' } }
