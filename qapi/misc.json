@@ -3502,3 +3502,19 @@
 #
 ##
 { 'command': 'replay_break', 'data': { 'step': 'int' } }
+
+##
+# @replay_seek:
+#
+# Automatically proceeds to the specified step, when replaying
+# the execution.
+#
+# @step: destination execution step
+#
+# Since: 2.13
+#
+# Example:
+#
+# -> { "execute": "replay_seek", "data": { "step": 220414 } }
+##
+{ 'command': 'replay_seek', 'data': { 'step': 'int' } }
