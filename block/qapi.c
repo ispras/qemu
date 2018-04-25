@@ -210,6 +210,7 @@ int bdrv_query_snapshot_info_list(BlockDriverState *bs,
         info->date_nsec     = sn_tab[i].date_nsec;
         info->vm_clock_sec  = sn_tab[i].vm_clock_nsec / 1000000000;
         info->vm_clock_nsec = sn_tab[i].vm_clock_nsec % 1000000000;
+        info->icount        = sn_tab[i].icount;
 
         info_list = g_new0(SnapshotInfoList, 1);
         info_list->value = info;
@@ -654,8 +655,8 @@ void bdrv_snapshot_dump(fprintf_function func_fprintf, void *f,
 
     if (!sn) {
         func_fprintf(f,
-                     "%-10s%-20s%7s%20s%15s",
-                     "ID", "TAG", "VM SIZE", "DATE", "VM CLOCK");
+                     "%-10s%-18s%7s%20s%13s%11s",
+                     "ID", "TAG", "VM SIZE", "DATE", "VM CLOCK", "ICOUNT");
     } else {
         ti = sn->date_sec;
         localtime_r(&ti, &tm);
@@ -669,12 +670,13 @@ void bdrv_snapshot_dump(fprintf_function func_fprintf, void *f,
                  (int)(secs % 60),
                  (int)((sn->vm_clock_nsec / 1000000) % 1000));
         func_fprintf(f,
-                     "%-10s%-20s%7s%20s%15s",
+                     "%-10s%-18s%7s%20s%13s%11"PRId64,
                      sn->id_str, sn->name,
                      get_human_readable_size(buf1, sizeof(buf1),
                                              sn->vm_state_size),
                      date_buf,
-                     clock_buf);
+                     clock_buf,
+                     sn->icount);
     }
 }
 
@@ -842,6 +844,7 @@ void bdrv_image_info_dump(fprintf_function func_fprintf, void *f,
                 .date_nsec = elem->value->date_nsec,
                 .vm_clock_nsec = elem->value->vm_clock_sec * 1000000000ULL +
                                  elem->value->vm_clock_nsec,
+                .icount = elem->value->icount,
             };
 
             pstrcpy(sn.id_str, sizeof(sn.id_str), elem->value->id);
