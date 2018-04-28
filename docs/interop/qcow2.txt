@@ -506,6 +506,10 @@ Snapshot table entry:
 
                     Byte 48 - 55:   Virtual disk size of the snapshot in bytes
 
+                    Byte 56 - 63:   icount value which corresponds to
+                                    the record/replay step when the snapshot
+                                    was taken
+
                     Version 3 images must include extra data at least up to
                     byte 55.
 
