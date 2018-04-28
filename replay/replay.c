@@ -29,8 +29,7 @@
 ReplayMode replay_mode = REPLAY_MODE_NONE;
 char *replay_snapshot;
 
-/* Name of replay file  */
-static char *replay_filename;
+char *replay_filename;
 ReplayState replay_state;
 static GSList *replay_blockers;
 
