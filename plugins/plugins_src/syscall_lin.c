@@ -14,6 +14,7 @@
 #include "guest_string.h"
 
 static FILE *syscallfile;
+static FILE *log;
 
 
 void printf_log(const char *format, ...)
@@ -61,12 +62,24 @@ Parameters_oc *syscall_open_os(CPUArchState *env)
     // ebx[3] - const char*
     // ecx[1] - int
     // edx[2] - int 
-    int access = env->regs[R_ECX];
+    int access;
+    uint64_t name_addr;
+    uint8_t buf[128];
+    uint64_t permission;
+
+#if defined(TARGET_X86_64)
+    access = env->regs[R_ESI];
+    name_addr = env->regs[R_EDI];
+    permission = env->regs[R_EDX];
+#elif defined(TARGET_I386)
+    access = env->regs[R_ECX];
+    name_addr = env->regs[R_EBX];
+    permission = env->regs[R_EDX];
+#endif
 
     printf_log("\tsys_open\n");
-    printf_log("\t\tpfilename 0x%x\n", (int) env->regs[R_EBX]);
-    uint8_t buf[128];
-    cpu_memory_rw_debug(first_cpu, env->regs[R_EBX], buf, sizeof(buf), 0);
+    printf_log("\t\tpfilename 0x%x\n", (int) name_addr);
+    cpu_memory_rw_debug(first_cpu, name_addr, buf, sizeof(buf), 0);
     printf_log("\t\t\tname: ");
     int i;
     for (i = 0; i < 128; i++)
@@ -79,20 +92,37 @@ Parameters_oc *syscall_open_os(CPUArchState *env)
     params->name = g_malloc((i + 1) * sizeof(char));
     memcpy(params->name, buf, i + 1);
     printf_log("\t\taccess 0x%x\n", access);
-    printf_log("\t\tpermission 0x%x\n", (int) env->regs[R_EDX]);
+    printf_log("\t\tpermission 0x%x\n", (int) permission);
     params->access = get_oc_flags(access);
 
     return params;
 }
 
-Parameters_oc *syscall_create_os(CPUArchState *env)
+Parameters_oc *syscall_openat_os(CPUArchState *env)
 {
     Parameters_oc *params = g_malloc0(sizeof(Parameters_oc));
-    int access = env->regs[R_ECX];
-    printf_log("\tsys_creat\n");
-    printf_log("\t\tpfilename 0x%x\n", (int) env->regs[R_EBX]);
+    // ebx - int dfd
+    // ecx - const char* filename
+    // edx - int flags
+    // esi - int mode
+    int access;
+    uint64_t name_addr;
+    uint64_t permission;
+
+#if defined(TARGET_X86_64)
+    access = env->regs[R_EDX];
+    name_addr = env->regs[R_ESI];
+    permission = env->regs[10];
+#elif defined(TARGET_I386)
+    access = env->regs[R_EDX];
+    name_addr = env->regs[R_ECX];
+    permission = env->regs[R_ESI];
+#endif
+
+    printf_log("\tsys_openat\n");
+    printf_log("\t\tpfilename 0x%x\n", (int) name_addr);
     uint8_t buf[128];
-    cpu_memory_rw_debug(first_cpu, env->regs[R_EBX], buf, sizeof(buf), 0);
+    cpu_memory_rw_debug(first_cpu, name_addr, buf, sizeof(buf), 0);
     printf_log("\t\t\tname: ");
     int i;
     for (i = 0; i < 128; i++)
@@ -104,7 +134,42 @@ Parameters_oc *syscall_create_os(CPUArchState *env)
     printf_log("\n");
     params->name = g_malloc((i + 1) * sizeof(char));
     memcpy(params->name, buf, i + 1);
-    printf("name = %s\n", params->name);
+    printf_log("\t\taccess 0x%x\n", access);
+    printf_log("\t\tpermission 0x%x\n", (int) permission);
+    params->access = get_oc_flags(access);
+
+    return params;
+}
+
+Parameters_oc *syscall_create_os(CPUArchState *env)
+{
+    Parameters_oc *params = g_malloc0(sizeof(Parameters_oc));
+    int access;
+    uint64_t name_addr;
+
+#if defined(TARGET_X86_64)
+    access = env->regs[R_ESI];
+    name_addr = env->regs[R_EDI];
+#elif defined(TARGET_I386)
+    access = env->regs[R_ECX];
+    name_addr = env->regs[R_EBX];
+#endif
+
+    printf_log("\tsys_creat\n");
+    printf_log("\t\tpfilename 0x%x\n", (int) name_addr);
+    uint8_t buf[128];
+    cpu_memory_rw_debug(first_cpu, name_addr, buf, sizeof(buf), 0);
+    printf_log("\t\t\tname: ");
+    int i;
+    for (i = 0; i < 128; i++)
+    {
+        if (buf[i] == '\0')
+            break;
+        printf_log("%c", buf[i]);
+    }
+    printf_log("\n");
+    params->name = g_malloc((i + 1) * sizeof(char));
+    memcpy(params->name, buf, i + 1);
     printf_log("\t\tmode 0x%x\n", access);
     params->access = get_oc_flags(access);
     
@@ -117,13 +182,27 @@ Parameters_rw *syscall_read_os(CPUArchState *env)
     // ebx[3] - unsigned int
     // ecx[1] - char*
     // edx[2] - size_t 
+    uint64_t handle;
+    uint64_t buffer;
+    uint64_t lenght;
+
+#if defined(TARGET_X86_64)
+    handle = env->regs[R_EDI];
+    buffer = env->regs[R_ESI];
+    lenght = env->regs[R_EDX];
+#elif defined(TARGET_I386)
+    handle = env->regs[R_EBX];
+    buffer = env->regs[R_ECX];
+    lenght = env->regs[R_EDX];
+#endif
+
     printf_log("\tsys_read\n");
-    printf_log("\t\thandle 0x%x\n", (int) env->regs[R_EBX]);
-    params->handle = env->regs[R_EBX];
-    printf_log("\t\tpbuffer 0x%x\n", (int) env->regs[R_ECX]);
-    params->pBuffer = env->regs[R_ECX];
-    printf_log("\t\tnbyte 0x%x\n", (int) env->regs[R_EDX]);
-    params->length = env->regs[R_EDX];
+    printf_log("\t\thandle 0x%x\n", (int) handle);
+    params->handle = handle;
+    printf_log("\t\tpbuffer 0x%x\n", (int) buffer);
+    params->pBuffer = buffer;
+    printf_log("\t\tnbyte 0x%x\n", (int) lenght);
+    params->length = lenght;
     
     return params;
 }
@@ -131,13 +210,28 @@ Parameters_rw *syscall_read_os(CPUArchState *env)
 Parameters_rw *syscall_write_os(CPUArchState *env)
 {
     Parameters_rw *params = g_malloc0(sizeof(Parameters_rw));
+
+    uint64_t handle;
+    uint64_t buffer;
+    uint64_t lenght;
+
+#if defined(TARGET_X86_64)
+    handle = env->regs[R_EDI];
+    buffer = env->regs[R_ESI];
+    lenght = env->regs[R_EDX];
+#elif defined(TARGET_I386)
+    handle = env->regs[R_EBX];
+    buffer = env->regs[R_ECX];
+    lenght = env->regs[R_EDX];
+#endif
+
     printf_log("\tsys_write\n");
-    printf_log("\t\thandle 0x%x\n", (int) env->regs[R_EBX]);
-    params->handle = env->regs[R_EBX];
-    printf_log("\t\tpbuffer 0x%x\n", (int) env->regs[R_ECX]);
-    params->pBuffer = env->regs[R_ECX];
-    printf_log("\t\tnbyte 0x%x\n", (int) env->regs[R_EDX]);
-    params->length = env->regs[R_EDX];
+    printf_log("\t\thandle 0x%x\n", (int) handle);
+    params->handle = handle;
+    printf_log("\t\tpbuffer 0x%x\n", (int) buffer);
+    params->pBuffer = buffer;
+    printf_log("\t\tnbyte 0x%x\n", (int) lenght);
+    params->length = lenght;
     
     if (params->length) {
         params->buffer = g_malloc(params->length * sizeof(uint8_t));
@@ -153,14 +247,26 @@ Parameters_c *syscall_close_os(CPUArchState *env)
 {
     Parameters_c *params = g_malloc0(sizeof(Parameters_c));
     printf_log("\tsys_close\n");
-    printf_log("\t\thandle 0x%x\n", (int) env->regs[R_EBX]);
-    params->handle = env->regs[R_EBX];
+
+    uint64_t handle;
+#if defined(TARGET_X86_64)
+    handle = env->regs[R_EDI];;
+#elif defined(TARGET_I386)
+    handle = env->regs[R_EBX];
+#endif
+
+    printf_log("\t\thandle 0x%x\n", (int) handle);
+    params->handle = handle;
     
     return params;
 }
 
 int syscall_init_log(void)
 {
+    log = fopen("log_sys_ret.log", "w");
+    if (!log)
+        printf("Can\'t read file %s\n", "log_sys_ret.log");
+
     const char *fname = "syscall.log";
     syscallfile = fopen(fname, "w");
     if (!syscallfile) {
@@ -255,6 +361,7 @@ void syscall_free_memory(void *param, int event)
         }
         case VMI_SYS_CLOSE: 
             break;
+#ifndef TARGET_X86_64
         case VMI_SYS_MOUNT:
         {
             Parameters_mount *params = param;
@@ -281,6 +388,7 @@ void syscall_free_memory(void *param, int event)
             g_free(params->argv);
             break;
         }
+#endif
         //case VMI_SYS_CREATE_SECTION: 
         //    break;
         //case VMI_SYS_MAP_VIEW_OF_SECTION: 
@@ -300,6 +408,8 @@ void syscall_ret_f_os(void *param, CPUArchState *env)
     else 
         params->ret = 1;
 }
+
+#if !defined(TARGET_X86_64)
 
 Parameters_clone *syscall_clone_os(CPUArchState *env)
 {
@@ -516,3 +626,4 @@ void syscall_ret_values_os(void *param, CPUArchState *env, int event)
         default: break;
     }
 }
+#endif

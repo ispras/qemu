@@ -116,7 +116,7 @@ void start_system_call(CPUArchState *env)
                 case VMI_SYS_CLOSE: 
                     param = syscall_close_os(env);
                     break;
-#ifdef GUEST_OS_WINDOWS
+#if defined(GUEST_OS_WINDOWS)
                 case VMI_SYS_CREATE_SECTION: 
                     param = syscall_create_section_os(env);
                     break;
@@ -185,7 +185,8 @@ void start_system_call(CPUArchState *env)
                 case VMI_SYS_QUERY_INFO_PROCESS:
                     param = syscall_query_information_process_os(env);
                     break;
-#else /* Linux */
+#elif defined (GUEST_OS_LINUX)
+#ifndef TARGET_X86_64
                 case VMI_SYS_CLONE:
                     param = syscall_clone_os(env);
                     break;
@@ -219,7 +220,11 @@ void start_system_call(CPUArchState *env)
                 case VMI_SYS_GETPPID:
                     param = 0;
                     break;
-#endif                    
+#endif
+                case VMI_SYS_OPENAT: 
+                    param = syscall_openat_os(env); 
+                    break;
+#endif
                 default: 
                     break;
             }
@@ -255,7 +260,7 @@ void exit_system_call(CPUArchState *env, uint64_t stack)
     if (data) {
         switch (data->num) {
             case VMI_SYS_CREATE: 
-#ifdef GUEST_OS_WINDOWS                
+#if defined (GUEST_OS_WINDOWS)              
                 syscall_ret_handle_os(data->param, env, VMI_SYS_CREATE);
 #else                    
                 syscall_ret_oc_os(data->param, env);
@@ -263,7 +268,7 @@ void exit_system_call(CPUArchState *env, uint64_t stack)
                 plugin_gen_signal(syscall_get_cb(), "VMI_SC_CREATE", data->param, env);
                 break;
             case VMI_SYS_OPEN: 
-#ifdef GUEST_OS_WINDOWS                
+#if defined (GUEST_OS_WINDOWS)                
                 syscall_ret_handle_os(data->param, env, VMI_SYS_OPEN);
 #else                    
                 syscall_ret_oc_os(data->param, env);
@@ -271,7 +276,7 @@ void exit_system_call(CPUArchState *env, uint64_t stack)
                 plugin_gen_signal(syscall_get_cb(), "VMI_SC_OPEN", data->param, env); 
                 break;
             case VMI_SYS_READ:
-#ifdef GUEST_OS_WINDOWS                
+#if defined (GUEST_OS_WINDOWS)               
                 syscall_ret_handle_os(data->param, env, VMI_SYS_READ);
 #else                    
                 syscall_ret_read_os(data->param, env);
@@ -279,7 +284,7 @@ void exit_system_call(CPUArchState *env, uint64_t stack)
                 plugin_gen_signal(syscall_get_cb(), "VMI_SC_READ", data->param, env); 
                 break;
             case VMI_SYS_WRITE: 
-#ifdef GUEST_OS_WINDOWS                
+#if defined (GUEST_OS_WINDOWS)             
                 syscall_ret_handle_os(data->param, env, VMI_SYS_WRITE);
 #else                    
                 syscall_ret_write_os(data->param, env);
@@ -287,14 +292,14 @@ void exit_system_call(CPUArchState *env, uint64_t stack)
                 plugin_gen_signal(syscall_get_cb(), "VMI_SC_WRITE", data->param, env); 
                 break;
             case VMI_SYS_CLOSE: 
-#ifdef GUEST_OS_WINDOWS                
+#if defined (GUEST_OS_WINDOWS)             
                 syscall_ret_handle_os(data->param, env, VMI_SYS_CLOSE);
 #else                    
                 syscall_ret_close_os(data->param, env);
 #endif
                 plugin_gen_signal(syscall_get_cb(), "VMI_SC_CLOSE", data->param, env); 
                 break;
-#ifdef GUEST_OS_WINDOWS 
+#if defined (GUEST_OS_WINDOWS)
 
             case VMI_SYS_CREATE_SECTION: 
                 syscall_ret_handle_os(data->param, env, VMI_SYS_CREATE_SECTION);
@@ -386,7 +391,8 @@ void exit_system_call(CPUArchState *env, uint64_t stack)
             case VMI_SYS_QUERY_INFO_PROCESS:
                 syscall_ret_handle_os(data->param, env, VMI_SYS_QUERY_INFO_PROCESS);
                 plugin_gen_signal(syscall_get_cb(), "VMI_SCP_QUERY_INFO_PROCESS", data->param, env);
-#else
+#elif defined (GUEST_OS_LINUX)
+#ifndef TARGET_X86_64
             case VMI_SYS_CLONE:
                 syscall_ret_clone_os(data->param, env);
                 plugin_gen_signal(syscall_get_cb(), "VMI_SCP_CLONE", data->param, env);
@@ -421,7 +427,12 @@ void exit_system_call(CPUArchState *env, uint64_t stack)
                 syscall_ret_values_os(data->param, env, VMI_SYS_GETPPID);
                 plugin_gen_signal(syscall_get_cb(), "VMI_SCP_GETPPID", data->param, env);
                 break;
-#endif                
+#endif
+            case VMI_SYS_OPENAT: 
+                syscall_ret_oc_os(data->param, env);
+                plugin_gen_signal(syscall_get_cb(), "VMI_SC_OPEN", data->param, env); 
+                break;
+#endif
             default: break;                
         }
         sc_erase(ctx, stack);

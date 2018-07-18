@@ -52,6 +52,7 @@ typedef struct Parameters_oc {
     int ret;
 } Parameters_oc;
 Parameters_oc *syscall_open_os(CPUArchState *env);
+Parameters_oc *syscall_openat_os(CPUArchState *env);
 Parameters_oc *syscall_create_os(CPUArchState *env);
 
 typedef struct Parameters_rw {

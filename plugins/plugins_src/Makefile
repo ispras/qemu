@@ -11,11 +11,12 @@ PLUGINS += example1 example2
 PLUGINS += mem_log
 ifeq ($(TARGET_NAME), $(filter $(TARGET_NAME), i386 x86_64))
 PLUGINS += syscalls_windows_xp syscalls_windows_7
+PLUGINS += syscalls_linux
 ifeq ($(TARGET_NAME), $(filter $(TARGET_NAME), i386))
 PLUGINS += syscalls_windows_8 syscalls_windows_8.1
 endif
 PLUGINS += file_monitor
-PLUGINS += syscalls_linux
+#PLUGINS += syscalls_linux
 endif
 ifeq ($(TARGET_NAME), $(filter $(TARGET_NAME), i386))
 PLUGINS += api_monitor_windows

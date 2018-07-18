@@ -56,9 +56,19 @@ static uint32_t guest_read_dword(CPUArchState *env, uint64_t address)
     return val;
 }
 
+#ifdef TARGET_X86_64
+static uint64_t guest_read_qword(CPUArchState *env, uint64_t address)
+{
+    uint64_t val = 0;
+    cpu_memory_rw_debug(ENV_GET_CPU(env), address, (uint8_t*)&val, sizeof(val), 0);
+    // TODO: support big endian host
+    return val;
+}
+#endif
+
 static void iret_helper(CPUArchState *env)
 {
-    uint32_t esp = 0;
+    uint64_t esp = 0;
     if (env->eflags & NT_MASK) {
         uint32_t selector = guest_read_dword(env, env->tr.base + 0);
         SegmentCache *dt;
@@ -88,7 +98,11 @@ static void iret_helper(CPUArchState *env)
         esp = env->regs[R_ESP];
         exit_system_call(env, esp);
         // get new ESP from the stack - try for sysenter-iret pair
+#ifndef TARGET_X86_64
         esp = guest_read_dword(env, 12 + env->segs[R_SS].base + env->regs[R_ESP]);
+#else
+        esp = guest_read_qword(env, 24 + env->segs[R_SS].base + env->regs[R_ESP]);
+#endif
         exit_system_call(env, esp);
     }
 }
@@ -96,6 +110,11 @@ static void iret_helper(CPUArchState *env)
 static void sysexit_helper(CPUArchState *env)
 {
     exit_system_call(env, env->regs[R_ECX]);
+}
+
+static void sysret_helper(CPUArchState *env)
+{
+    exit_system_call(env, env->regs[R_ESP]);
 }
 
 static void decode_instr(void *data, CPUArchState *env)
@@ -121,6 +140,14 @@ static void decode_instr(void *data, CPUArchState *env)
             tcg_gen_callN(&tcg_ctx, start_system_call, dh_retvar(void), 1, args);
             tcg_temp_free_ptr(t_env);
         }
+        if (code2 == 0x05) {
+            // syscall
+            TCGv_ptr t_env = tcg_const_ptr((intptr_t)env);
+            TCGArg args[1];
+            args[0] = GET_TCGV_PTR(t_env);
+            tcg_gen_callN(&tcg_ctx, start_system_call, dh_retvar(void), 1, args);
+            tcg_temp_free_ptr(t_env);
+        }
         if (code2 == 0x35) {
             // sysexit
             TCGv_ptr t_env = tcg_const_ptr(env);
@@ -128,6 +155,26 @@ static void decode_instr(void *data, CPUArchState *env)
             args[0] = GET_TCGV_PTR(t_env);
             tcg_gen_callN(&tcg_ctx, sysexit_helper, dh_retvar(void), 1, args);
             tcg_temp_free_ptr(t_env);
+        }
+        if (code2 == 0x07) {
+            // sysret
+            TCGv_ptr t_env = tcg_const_ptr((intptr_t)env);
+            TCGArg args[1];
+            args[0] = GET_TCGV_PTR(t_env);
+            tcg_gen_callN(&tcg_ctx, sysret_helper, dh_retvar(void), 1, args);
+            tcg_temp_free_ptr(t_env);
+        }
+    } else if (code1 == 0x48) {
+        int code2 = cpu_ldub_code(env, ++g_pc);
+        if (code2 == 0x0f) {
+            int code3 = cpu_ldub_code(env, ++g_pc);
+            if (code3 == 0x07) {
+                TCGv_ptr t_env = tcg_const_ptr((intptr_t)env);
+                TCGArg args[1];
+                args[0] = GET_TCGV_PTR(t_env);
+                tcg_gen_callN(&tcg_ctx, sysret_helper, dh_retvar(void), 1, args);
+                tcg_temp_free_ptr(t_env);
+            }
         }
     }
 }
@@ -194,6 +241,12 @@ void pi_start(PluginInterface *pi)
             "sysexit_helper",
             0,
             dh_sizemask(void, 0) | dh_sizemask(ptr, 1) | dh_sizemask(i32, 2));
+    tcg_context_register_helper(
+            &tcg_ctx,
+            sysret_helper,
+            "sysret_helper",
+            0,
+            dh_sizemask(void, 0) | dh_sizemask(ptr, 1));
     tcg_context_register_helper(
             &tcg_ctx,
             iret_helper,

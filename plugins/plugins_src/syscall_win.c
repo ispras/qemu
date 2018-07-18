@@ -1225,11 +1225,6 @@ void syscall_ret_handle_os(void *param, CPUArchState *env, int event)
                 printf_log("\tprocessID: 0x%x\n", params->uniqueProcId);
                 params->reserved3 = ldl_p(&data[20]);
             }
-            //if (params->infoClass)
-                //printf("!!!!!!!!!!!!cr3 = 0x%x after queryinfo pid 0x%x\n", (int) env->cr[3], params->uniqueProcId);
-            //else
-                //printf("cr3 = 0x%x after queryinfo\n", (int) env->cr[3]);
-            //process_info_add(env->cr[3], params->uniqueProcId);
         }
         break;
         default: break;
