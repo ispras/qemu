@@ -32,6 +32,7 @@
 #include "qemu/cutils.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "sysemu/replay.h"
 
 #define NOT_DONE 0x7fffffff /* used while emulated sync operation in progress */
 
@@ -533,6 +534,13 @@ void bdrv_drain_all_begin(void)
         return;
     }
 
+    /* bdrv queue is managed by record/replay,
+       waiting for finishing the I/O requests may
+       be infinite */
+    if (replay_events_enabled()) {
+        return;
+    }
+
     /* AIO_WAIT_WHILE() with a NULL context can only be called from the main
      * loop AioContext, so make sure we're in the main context. */
     assert(qemu_get_current_aio_context() == qemu_get_aio_context());
@@ -560,6 +568,13 @@ void bdrv_drain_all_begin(void)
 void bdrv_drain_all_end(void)
 {
     BlockDriverState *bs = NULL;
+
+    /* bdrv queue is managed by record/replay,
+       waiting for finishing the I/O requests may
+       be endless */
+    if (replay_events_enabled()) {
+        return;
+    }
 
     while ((bs = bdrv_next_all_states(bs))) {
         AioContext *aio_context = bdrv_get_aio_context(bs);
@@ -1992,6 +2007,13 @@ int bdrv_flush_all(void)
     BdrvNextIterator it;
     BlockDriverState *bs = NULL;
     int result = 0;
+
+    /* bdrv queue is managed by record/replay,
+       creating new flush request for stopping
+       the VM may break the determinism */
+    if (replay_events_enabled()) {
+        return result;
+    }
 
     for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
         AioContext *aio_context = bdrv_get_aio_context(bs);
