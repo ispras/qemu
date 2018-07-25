@@ -3100,6 +3100,41 @@
   'data': [ 'none', 'record', 'play' ] }
 
 ##
+# @ReplayInfo:
+#
+# Status of the record/replay mode.
+#
+# @mode: current mode.
+#
+# @filename: name of the record/replay log file.
+#
+# @step: current step number.
+#
+# Since: 3.1
+#
+##
+{ 'struct': 'ReplayInfo',
+  'data': { 'mode': 'ReplayMode', '*filename': 'str', 'step': 'int' } }
+
+##
+# @query-replay:
+#
+# Retrieves the status of the execution record/replay.
+#
+# Returns: structure with the properties of the record/replay.
+#
+# Since: 3.1
+#
+# Example:
+#
+# -> { "execute": "query-replay" }
+# <- { "return": { "mode": "play", "filename": "log.rr", "step": 220414 } }
+#
+##
+{ 'command': 'query-replay',
+  'returns': 'ReplayInfo' }
+
+##
 # @xen-load-devices-state:
 #
 # Load the state of all devices from file. The RAM and the block devices
