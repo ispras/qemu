@@ -3135,6 +3135,23 @@
   'returns': 'ReplayInfo' }
 
 ##
+# @replay-break:
+#
+# Set breakpoint on the specified step of the replay.
+# Execution stops when the specified step is reached.
+#
+# @step: execution step to stop at
+#
+# Since: 3.1
+#
+# Example:
+#
+# -> { "execute": "replay-break", "data": { "step": 220414 } }
+#
+##
+{ 'command': 'replay-break', 'data': { 'step': 'int' } }
+
+##
 # @xen-load-devices-state:
 #
 # Load the state of all devices from file. The RAM and the block devices

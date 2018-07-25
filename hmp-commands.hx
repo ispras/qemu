@@ -1874,6 +1874,21 @@ Set QOM property @var{property} of object at location @var{path} to value @var{v
 ETEXI
 
     {
+        .name       = "replay_break",
+        .args_type  = "step:i",
+        .params     = "step",
+        .help       = "sets breakpoint on the specified step of the replay",
+        .cmd        = hmp_replay_break,
+    },
+
+STEXI
+@item replay_break @var{step}
+@findex replay_break
+Set breakpoint on the specified step of the replay.
+Execution stops when the specified step is reached.
+ETEXI
+
+    {
         .name       = "info",
         .args_type  = "item:s?",
         .params     = "[subcommand]",
