@@ -2761,6 +2761,11 @@ static void check_watchpoint(int offset, int len, MemTxAttrs attrs, int flags)
     QTAILQ_FOREACH(wp, &cpu->watchpoints, entry) {
         if (cpu_watchpoint_address_matches(wp, vaddr, len)
             && (wp->flags & flags)) {
+            if (replay_running_debug()) {
+                /* Don't process the watchpoints when we are
+                   in a reverse debugging operation. */
+                return;
+            }
             if (flags == BP_MEM_READ) {
                 wp->flags |= BP_WATCHPOINT_HIT_READ;
             } else {

@@ -74,6 +74,13 @@ void replay_add_blocker(Error *reason);
 /*! Sets breakpoint at the specified step.
     If step = -1LL the existing breakpoint is removed. */
 void replay_break(int64_t step, QEMUTimerCB callback, void *opaque);
+/*! Start making one step in backward direction.
+    Used by gdbstub for backwards debugging.
+    Returns true on success. */
+bool replay_reverse_step(void);
+/*! Returns true if replay module is processing
+    reverse_continue or reverse_step request */
+bool replay_running_debug(void);
 
 /* Processing the instructions */
 
