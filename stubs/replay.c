@@ -90,3 +90,9 @@ bool replay_reverse_continue(void)
 {
     return false;
 }
+
+void replay_bh_schedule_oneshot_event(AioContext *ctx,
+    QEMUBHFunc *cb,void *opaque)
+{
+    aio_bh_schedule_oneshot(ctx, cb, opaque);
+}
