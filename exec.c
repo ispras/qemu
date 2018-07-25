@@ -2764,6 +2764,7 @@ static void check_watchpoint(int offset, int len, MemTxAttrs attrs, int flags)
             if (replay_running_debug()) {
                 /* Don't process the watchpoints when we are
                    in a reverse debugging operation. */
+                replay_breakpoint();
                 return;
             }
             if (flags == BP_MEM_READ) {
