@@ -39,6 +39,7 @@
 #include "sysemu/kvm.h"
 #include "exec/semihost.h"
 #include "exec/exec-all.h"
+#include "sysemu/replay.h"
 
 #ifdef CONFIG_USER_ONLY
 #define GDB_ATTACHED "0"
@@ -334,6 +335,19 @@ typedef struct GDBState {
  */
 static int sstep_flags = SSTEP_ENABLE|SSTEP_NOIRQ|SSTEP_NOTIMER;
 
+/*! Retrieves flags for single step mode. */
+static int get_sstep_flags(void)
+{
+    /* In replay mode all events written into the log should be replayed.
+     * That is why NOIRQ flag is removed in this mode.
+     */
+    if (replay_mode != REPLAY_MODE_NONE) {
+        return SSTEP_ENABLE;
+    } else {
+        return sstep_flags;
+    }
+}
+
 static GDBState *gdbserver_state;
 
 bool gdb_has_xml;
@@ -424,7 +438,7 @@ static int gdb_continue_partial(GDBState *s, char *newstates)
     CPU_FOREACH(cpu) {
         if (newstates[cpu->cpu_index] == 's') {
             trace_gdbstub_op_stepping(cpu->cpu_index);
-            cpu_single_step(cpu, sstep_flags);
+            cpu_single_step(cpu, get_sstep_flags());
         }
     }
     s->running_state = 1;
@@ -443,7 +457,7 @@ static int gdb_continue_partial(GDBState *s, char *newstates)
                 break; /* nothing to do here */
             case 's':
                 trace_gdbstub_op_stepping(cpu->cpu_index);
-                cpu_single_step(cpu, sstep_flags);
+                cpu_single_step(cpu, get_sstep_flags());
                 cpu_resume(cpu);
                 flag = 1;
                 break;
@@ -1082,9 +1096,28 @@ static int gdb_handle_packet(GDBState *s, const char *line_buf)
             addr = strtoull(p, (char **)&p, 16);
             gdb_set_cpu_pc(s, addr);
         }
-        cpu_single_step(s->c_cpu, sstep_flags);
+        cpu_single_step(s->c_cpu, get_sstep_flags());
         gdb_continue(s);
         return RS_IDLE;
+    case 'b':
+        /* Backward debugging commands */
+        if (replay_mode == REPLAY_MODE_PLAY) {
+            switch (*p) {
+            case 's':
+                if (replay_reverse_step()) {
+                    gdb_continue(s);
+                    return RS_IDLE;
+                } else {
+                    put_packet(s, "E14");
+                    break;
+                }
+            default:
+                goto unknown_command;
+            }
+        } else {
+            put_packet(s, "E22");
+        }
+        goto unknown_command;
     case 'F':
         {
             target_ulong ret;
@@ -1346,6 +1379,9 @@ static int gdb_handle_packet(GDBState *s, const char *line_buf)
             cc = CPU_GET_CLASS(first_cpu);
             if (cc->gdb_core_xml_file != NULL) {
                 pstrcat(buf, sizeof(buf), ";qXfer:features:read+");
+            }
+            if (replay_mode == REPLAY_MODE_PLAY) {
+                pstrcat(buf, sizeof(buf), ";ReverseStep+");
             }
             put_packet(s, buf);
             break;
