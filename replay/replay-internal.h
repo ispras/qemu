@@ -91,6 +91,8 @@ extern ReplayState replay_state;
 
 /* File for replay writing */
 extern FILE *replay_file;
+/*! Name of replay file  */
+extern char *replay_filename;
 
 void replay_put_byte(uint8_t byte);
 void replay_put_event(uint8_t event);
