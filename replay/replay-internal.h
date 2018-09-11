@@ -93,6 +93,10 @@ extern ReplayState replay_state;
 extern FILE *replay_file;
 /*! Name of replay file  */
 extern char *replay_filename;
+/*! Step of the replay breakpoint */
+extern int64_t replay_break_step;
+/*! Timer for the replay breakpoint callback */
+extern QEMUTimer *replay_break_timer;
 
 void replay_put_byte(uint8_t byte);
 void replay_put_event(uint8_t event);

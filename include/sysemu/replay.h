@@ -71,6 +71,9 @@ void replay_start(void);
 void replay_finish(void);
 /*! Adds replay blocker with the specified error description */
 void replay_add_blocker(Error *reason);
+/*! Sets breakpoint at the specified step.
+    If step = -1LL the existing breakpoint is removed. */
+void replay_break(int64_t step, QEMUTimerCB callback, void *opaque);
 
 /* Processing the instructions */
 
