@@ -3179,6 +3179,22 @@
 { 'command': 'replay-delete-break' }
 
 ##
+# @replay-seek:
+#
+# Automatically proceeds to the specified step when replaying
+# the execution.
+#
+# @step: destination execution step
+#
+# Since: 4.0
+#
+# Example:
+#
+# -> { "execute": "replay-seek", "data": { "step": 220414 } }
+##
+{ 'command': 'replay-seek', 'data': { 'step': 'int' } }
+
+##
 # @xen-load-devices-state:
 #
 # Load the state of all devices from file. The RAM and the block devices

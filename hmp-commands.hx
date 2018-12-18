@@ -1919,6 +1919,21 @@ Removes replay breakpoint which was previously set with replay_break.
 ETEXI
 
     {
+        .name       = "replay_seek",
+        .args_type  = "step:i",
+        .params     = "step",
+        .help       = "rewinds replay to the specified step",
+        .cmd        = hmp_replay_seek,
+    },
+
+STEXI
+@item replay_seek @var{step}
+@findex replay_seek
+Automatically proceeds to the specified step, when replaying
+the execution.
+ETEXI
+
+    {
         .name       = "info",
         .args_type  = "item:s?",
         .params     = "[subcommand]",
