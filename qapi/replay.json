@@ -99,3 +99,23 @@
 #
 ##
 { 'command': 'replay-delete-break' }
+
+##
+# @replay-seek:
+#
+# Automatically proceeds to the step specified by @icount when replaying
+# the execution. The command automatically loads nearest
+# snapshot and replay the execution to find the desired step.
+# When there is no preceding snapshot or the execution is not replayed,
+# then the command is ignored.
+# icount for the reference may be obtained with @query-replay command.
+#
+# @icount: destination execution step
+#
+# Since: 4.0
+#
+# Example:
+#
+# -> { "execute": "replay-seek", "data": { "icount": 220414 } }
+##
+{ 'command': 'replay-seek', 'data': { 'icount': 'int' } }
