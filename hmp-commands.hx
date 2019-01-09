@@ -1890,6 +1890,40 @@ Set QOM property @var{property} of object at location @var{path} to value @var{v
 ETEXI
 
     {
+        .name       = "replay_break",
+        .args_type  = "icount:i",
+        .params     = "icount",
+        .help       = "sets breakpoint on the step specified by the icount of the replay",
+        .cmd        = hmp_replay_break,
+    },
+
+STEXI
+@item replay_break @var{icount}
+@findex replay_break
+Set breakpoint on the step of the replay specified by @var{icount}.
+Execution stops when the specified @var{icount} is reached.
+icount for the reference may be observed with 'info replay' command.
+There could be at most one breakpoint. When breakpoint is set, the prior
+one is removed. The breakpoints may be set only in replay mode and only
+at the step in the future.
+ETEXI
+
+    {
+        .name       = "replay_delete_break",
+        .args_type  = "",
+        .params     = "",
+        .help       = "removes replay breakpoint",
+        .cmd        = hmp_replay_delete_break,
+    },
+
+STEXI
+@item replay_delete_break
+@findex replay_delete_break
+Removes replay breakpoint which was previously set with replay_break.
+The command is ignored when there are no replay breakpoints.
+ETEXI
+
+    {
         .name       = "info",
         .args_type  = "item:s?",
         .params     = "[subcommand]",

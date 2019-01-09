@@ -63,3 +63,39 @@
 ##
 { 'command': 'query-replay',
   'returns': 'ReplayInfo' }
+
+##
+# @replay-break:
+#
+# Set breakpoint on the step of the replay specified by @icount.
+# Execution stops when the specified @icount is reached.
+# icount for the reference may be obtained with @query-replay command.
+# There could be at most one breakpoint. When breakpoint is set, the prior
+# one is removed. The breakpoints may be set only in replay mode and only
+# at the step in the future.
+#
+# @icount: execution step to stop at
+#
+# Since: 4.0
+#
+# Example:
+#
+# -> { "execute": "replay-break", "data": { "icount": 220414 } }
+#
+##
+{ 'command': 'replay-break', 'data': { 'icount': 'int' } }
+
+##
+# @replay-delete-break:
+#
+# Removes replay breakpoint which was set with @replay-break.
+# The command is ignored when there are no replay breakpoints.
+#
+# Since: 4.0
+#
+# Example:
+#
+# -> { "execute": "replay-delete-break" }
+#
+##
+{ 'command': 'replay-delete-break' }
