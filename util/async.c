@@ -45,7 +45,16 @@ struct QEMUBH {
     bool scheduled;
     bool idle;
     bool deleted;
+
+    QEMUTimer timer;
 };
+
+static void timer_bh_oneshot_cb(void *opaque)
+{
+    QEMUBH *bh = opaque;
+    bh->cb(bh->opaque);
+    g_free(bh);
+}
 
 void aio_bh_schedule_oneshot(AioContext *ctx, QEMUBHFunc *cb, void *opaque)
 {
@@ -56,6 +65,10 @@ void aio_bh_schedule_oneshot(AioContext *ctx, QEMUBHFunc *cb, void *opaque)
         .cb = cb,
         .opaque = opaque,
     };
+    timer_init_full(&bh->timer, &ctx->tlg, QEMU_CLOCK_REALTIME,
+        SCALE_NS, 0, timer_bh_oneshot_cb, bh);
+    timer_mod_ns(&bh->timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));
+    #if 0
     qemu_lockcnt_lock(&ctx->list_lock);
     bh->next = ctx->first_bh;
     bh->scheduled = 1;
@@ -65,6 +78,7 @@ void aio_bh_schedule_oneshot(AioContext *ctx, QEMUBHFunc *cb, void *opaque)
     ctx->first_bh = bh;
     qemu_lockcnt_unlock(&ctx->list_lock);
     aio_notify(ctx);
+    #endif
 }
 
 QEMUBH *aio_bh_new(AioContext *ctx, QEMUBHFunc *cb, void *opaque)
@@ -76,12 +90,16 @@ QEMUBH *aio_bh_new(AioContext *ctx, QEMUBHFunc *cb, void *opaque)
         .cb = cb,
         .opaque = opaque,
     };
+    timer_init_full(&bh->timer, &ctx->tlg, QEMU_CLOCK_REALTIME,
+        SCALE_NS, 0, (QEMUTimerCB*)aio_bh_call, bh);
+    #if 0
     qemu_lockcnt_lock(&ctx->list_lock);
     bh->next = ctx->first_bh;
     /* Make sure that the members are ready before putting bh into list */
     smp_wmb();
     ctx->first_bh = bh;
     qemu_lockcnt_unlock(&ctx->list_lock);
+    #endif
     return bh;
 }
 
@@ -145,15 +163,20 @@ int aio_bh_poll(AioContext *ctx)
 
 void qemu_bh_schedule_idle(QEMUBH *bh)
 {
+    timer_mod_ns(&bh->timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));
+#if 0
     bh->idle = 1;
     /* Make sure that idle & any writes needed by the callback are done
      * before the locations are read in the aio_bh_poll.
      */
     atomic_mb_set(&bh->scheduled, 1);
+#endif
 }
 
 void qemu_bh_schedule(QEMUBH *bh)
 {
+    timer_mod_ns(&bh->timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));
+#if 0
     AioContext *ctx;
 
     ctx = bh->ctx;
@@ -167,6 +190,7 @@ void qemu_bh_schedule(QEMUBH *bh)
     if (atomic_xchg(&bh->scheduled, 1) == 0) {
         aio_notify(ctx);
     }
+    #endif
 }
 
 
@@ -174,7 +198,8 @@ void qemu_bh_schedule(QEMUBH *bh)
  */
 void qemu_bh_cancel(QEMUBH *bh)
 {
-    atomic_mb_set(&bh->scheduled, 0);
+    timer_del(&bh->timer);
+    //atomic_mb_set(&bh->scheduled, 0);
 }
 
 /* This func is async.The bottom half will do the delete action at the finial
@@ -182,8 +207,9 @@ void qemu_bh_cancel(QEMUBH *bh)
  */
 void qemu_bh_delete(QEMUBH *bh)
 {
-    bh->scheduled = 0;
-    bh->deleted = 1;
+    timer_del(&bh->timer);
+    //bh->scheduled = 0;
+    //bh->deleted = 1;
 }
 
 int64_t
