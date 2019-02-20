@@ -233,7 +233,7 @@ static void replay_stop_vm_debug(void *opaque)
 {
     replay_is_debugging = false;
     vm_stop(RUN_STATE_DEBUG);
-    replay_break(-1LL, NULL, NULL);
+    replay_delete_break();
 }
 
 bool replay_reverse_step(void)
@@ -260,7 +260,7 @@ static void replay_continue_end(void)
 {
     replay_is_debugging = false;
     vm_stop(RUN_STATE_DEBUG);
-    replay_break(-1LL, NULL, NULL);
+    replay_delete_break();
 }
 
 static void replay_continue_stop(void *opaque)
