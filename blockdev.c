@@ -1453,7 +1453,7 @@ static void internal_snapshot_prepare(BlkActionState *common,
     sn->date_nsec = tv.tv_usec * 1000;
     sn->vm_clock_nsec = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     if (replay_mode != REPLAY_MODE_NONE) {
-        sn->icount = replay_get_current_step();
+        sn->icount = replay_get_current_icount();
     } else {
         sn->icount = -1ULL;
     }

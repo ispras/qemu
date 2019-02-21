@@ -38,7 +38,7 @@ void hmp_info_replay(Monitor *mon, const QDict *qdict)
         monitor_printf(mon,
             "%s execution '%s': instruction count = %"PRId64"\n",
             replay_mode == REPLAY_MODE_RECORD ? "Recording" : "Replaying",
-            replay_get_filename(), replay_get_current_step());
+            replay_get_filename(), replay_get_current_icount());
     }
 }
 
@@ -51,7 +51,7 @@ ReplayInfo *qmp_query_replay(Error **errp)
         retval->filename = g_strdup(replay_get_filename());
         retval->has_filename = true;
     }
-    retval->icount = replay_get_current_step();
+    retval->icount = replay_get_current_icount();
     return retval;
 }
 
@@ -59,7 +59,7 @@ static void replay_break(uint64_t icount, QEMUTimerCB callback, void *opaque)
 {
     assert(replay_mode == REPLAY_MODE_PLAY);
     assert(replay_mutex_locked());
-    assert(replay_break_icount >= replay_get_current_step());
+    assert(replay_break_icount >= replay_get_current_icount());
     assert(callback);
 
     replay_break_icount = icount;
@@ -94,7 +94,7 @@ static void replay_stop_vm(void *opaque)
 void qmp_replay_break(int64_t icount, Error **errp)
 {
     if (replay_mode == REPLAY_MODE_PLAY) {
-        if (icount >= replay_get_current_step()) {
+        if (icount >= replay_get_current_icount()) {
             replay_break(icount, replay_stop_vm, NULL);
         } else {
             error_setg(errp,
@@ -196,14 +196,14 @@ static void replay_seek(int64_t icount, QEMUTimerCB callback, Error **errp)
 
     snapshot = replay_find_nearest_snapshot(icount, &snapshot_icount);
     if (snapshot) {
-        if (icount < replay_get_current_step()
-            || replay_get_current_step() < snapshot_icount) {
+        if (icount < replay_get_current_icount()
+            || replay_get_current_icount() < snapshot_icount) {
             vm_stop(RUN_STATE_RESTORE_VM);
             load_snapshot(snapshot, errp);
         }
         g_free(snapshot);
     }
-    if (replay_get_current_step() <= icount) {
+    if (replay_get_current_icount() <= icount) {
         replay_break(icount, callback, NULL);
         vm_start();
     } else {
@@ -242,8 +242,9 @@ bool replay_reverse_step(void)
 
     assert(replay_mode == REPLAY_MODE_PLAY);
 
-    if (replay_get_current_step() != 0) {
-        replay_seek(replay_get_current_step() - 1, replay_stop_vm_debug, &err);
+    if (replay_get_current_icount() != 0) {
+        replay_seek(replay_get_current_icount() - 1,
+                    replay_stop_vm_debug, &err);
         if (err) {
             error_free(err);
             return false;
@@ -283,7 +284,7 @@ static void replay_continue_stop(void *opaque)
             error_free(err);
             replay_continue_end();
         }
-        replay_last_snapshot = replay_get_current_step();
+        replay_last_snapshot = replay_get_current_icount();
         return;
     } else {
         /* Seek to the very first step */
@@ -303,15 +304,16 @@ bool replay_reverse_continue(void)
 
     assert(replay_mode == REPLAY_MODE_PLAY);
 
-    if (replay_get_current_step() != 0) {
-        replay_seek(replay_get_current_step() - 1, replay_continue_stop, &err);
+    if (replay_get_current_icount() != 0) {
+        replay_seek(replay_get_current_icount() - 1,
+                    replay_continue_stop, &err);
         if (err) {
             error_free(err);
             return false;
         }
         replay_last_breakpoint = -1LL;
         replay_is_debugging = true;
-        replay_last_snapshot = replay_get_current_step();
+        replay_last_snapshot = replay_get_current_icount();
         return true;
     }
 
@@ -321,5 +323,5 @@ bool replay_reverse_continue(void)
 void replay_breakpoint(void)
 {
     assert(replay_mode == REPLAY_MODE_PLAY);
-    replay_last_breakpoint = replay_get_current_step();
+    replay_last_breakpoint = replay_get_current_icount();
 }
