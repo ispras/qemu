@@ -915,6 +915,15 @@ void tcg_register_thread(void);
 void tcg_prologue_init(TCGContext *s);
 void tcg_func_start(TCGContext *s);
 
+/*
+ * tcg_register_helper
+ *
+ * Used by the helper-register.h machinery to register non-core helpers
+ * from plugins. Built-in helpers are installed via all_helpers[]
+ */
+void tcg_register_helper(void *func, const char *name,
+                         unsigned flags, unsigned sizemask);
+
 int tcg_gen_code(TCGContext *s, TranslationBlock *tb);
 
 void tcg_set_frame(TCGContext *s, TCGReg reg, intptr_t start, intptr_t size);
