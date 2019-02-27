@@ -1,8 +1,13 @@
 #include "qemu/osdep.h"
 #include "qemu-common.h"
+#include "cpu.h"
 #include "qemu/error-report.h"
 #include "qemu/plugins.h"
+#include "qemu/instrument.h"
+#include "tcg/tcg.h"
+#include "tcg/tcg-op.h"
 #include "qemu/queue.h"
+#include "qemu/option.h"
 #include <gmodule.h>
 
 typedef bool (*PluginInitFunc)(const char *);
@@ -80,6 +85,40 @@ void qemu_plugin_load(const char *filename, const char *args)
     return;
 }
 
+bool plugins_need_before_insn(target_ulong pc, CPUState *cpu)
+{
+    QemuPluginInfo *info;
+    QLIST_FOREACH(info, &qemu_plugins, next) {
+        if (info->needs_before_insn && info->needs_before_insn(pc, cpu)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void plugins_instrument_before_insn(target_ulong pc, CPUState *cpu)
+{
+    TCGv t_pc = tcg_const_tl(pc);
+    TCGv_ptr t_cpu = tcg_const_ptr(cpu);
+    /* We will dispatch plugins' callbacks in our own helper below */
+    gen_helper_before_insn(t_pc, t_cpu);
+    tcg_temp_free(t_pc);
+    tcg_temp_free_ptr(t_cpu);
+}
+
+void helper_before_insn(target_ulong pc, void *cpu)
+{
+    QemuPluginInfo *info;
+    QLIST_FOREACH(info, &qemu_plugins, next) {
+        if (info->needs_before_insn && info->needs_before_insn(pc, cpu)) {
+            if (info->before_insn) {
+                info->before_insn(pc, cpu);
+            }
+        }
+    }
+}
+
 void qemu_plugins_init(void)
 {
     QemuPluginInfo *info;
@@ -88,4 +127,6 @@ void qemu_plugins_init(void)
             info->init(info->args);
         }
     }
+
+#include "exec/helper-register.h"
 }

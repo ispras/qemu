@@ -17,6 +17,7 @@
 #include "exec/gen-icount.h"
 #include "exec/log.h"
 #include "exec/translator.h"
+#include "qemu/instrument.h"
 
 /* Pairs with tcg_clear_temp_count.
    To be called by #TranslatorOps.{translate_insn,tb_stop} if
@@ -92,7 +93,9 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
                 break;
             }
         }
-
+        if (plugins_need_before_insn(db->pc_next, cpu)) {
+            plugins_instrument_before_insn(db->pc_next, cpu);
+        }
         /* Disassemble one instruction.  The translate_insn hook should
            update db->pc_next and db->is_jmp to indicate what should be
            done next -- either exiting this loop or locate the start of
