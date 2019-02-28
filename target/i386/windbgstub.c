@@ -15,9 +15,13 @@
 #ifdef TARGET_X86_64
 #define OFFSET_KPCR_SELF 0x18
 #define OFFSET_KPCR_LOCK_ARRAY 0x28
+#define OFFSET_KPRCB 0x20
+#define OFFSET_KPRCB_CURRTHREAD 0x8
 #else  /* TARGET_I386 */
 #define OFFSET_KPCR_SELF 0x1C
 #define OFFSET_KPCR_VERSION 0x34
+#define OFFSET_KPRCB 0x20
+#define OFFSET_KPRCB_CURRTHREAD 0x4
 #endif /* TARGET_I386 */
 
 #ifdef TARGET_X86_64
@@ -160,4 +164,46 @@ void windbg_on_reset(void)
 #else
     kdVersion.is_init = false;
 #endif
+}
+
+__attribute__ ((unused)) /* unused yet */
+static void kd_state_change_common(CPUState *cs, PacketData *data)
+{
+    X86CPU *cpu = X86_CPU(cs);
+    CPUX86State *env = &cpu->env;
+    DBGKD_ANY_WAIT_STATE_CHANGE *sc = (DBGKD_ANY_WAIT_STATE_CHANGE *) data->buf;
+    DBGKD_CONTROL_REPORT *cr = &sc->ControlReport;
+    target_ulong KPRCB = VMEM_ADDR(cs, KPCR.addr + OFFSET_KPRCB);
+    target_ulong thread = VMEM_ADDR(cs, KPRCB + OFFSET_KPRCB_CURRTHREAD);
+    int number_processors = 0;
+
+    CPUState *cpu_tmp;
+    CPU_FOREACH(cpu_tmp) {
+        ++number_processors;
+    }
+
+    /* HEADER */
+
+    /* TODO: Fix this hardcoded value. */
+    stw_p(&sc->ProcessorLevel, 0);
+    /* TODO: Fix this hardcoded value. */
+    stw_p(&sc->Processor, 0);
+    stl_p(&sc->NumberProcessors, number_processors);
+    sttul_p(&sc->Thread, thread);
+    sttul_p(&sc->ProgramCounter, env->eip);
+
+    /* CONTROL REPORT */
+
+    sttul_p(&cr->Dr6, env->dr[6]);
+    sttul_p(&cr->Dr7, env->dr[7]);
+    stw_p(&cr->ReportFlags, REPORT_INCLUDES_SEGS | REPORT_STANDARD_CS);
+    stw_p(&cr->SegCs, env->segs[R_CS].selector);
+    stw_p(&cr->SegDs, env->segs[R_DS].selector);
+    stw_p(&cr->SegEs, env->segs[R_ES].selector);
+    stw_p(&cr->SegFs, env->segs[R_FS].selector);
+    stl_p(&cr->EFlags, env->eflags);
+
+    /* This is a feature */
+    memset(cr->InstructionStream, 0, DBGKD_MAXSTREAM);
+    stw_p(&cr->InstructionCount, 0);
 }
