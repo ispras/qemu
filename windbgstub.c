@@ -176,6 +176,14 @@ static void windbg_process_manipulate_packet(WindbgState *state)
         kd_api_set_context(cs, data);
         break;
 
+    case DbgKdWriteBreakPointApi:
+        kd_api_write_breakpoint(cs, data);
+        break;
+
+    case DbgKdRestoreBreakPointApi:
+        kd_api_restore_breakpoint(cs, data);
+        break;
+
     case DbgKdReadControlSpaceApi:
         kd_api_read_control_space(cs, data);
         break;
@@ -183,6 +191,10 @@ static void windbg_process_manipulate_packet(WindbgState *state)
     case DbgKdWriteControlSpaceApi:
         kd_api_write_control_space(cs, data);
         break;
+
+    case DbgKdClearAllInternalBreakpointsApi:
+        kd_api_clear_all_internal_breakpoints(cs, data);
+        return;
 
     case DbgKdGetContextExApi:
         kd_api_get_context_ex(cs, data);

@@ -80,6 +80,8 @@ static const char *kd_packet_type_names[] = {
     "PACKET_TYPE_MAX",
 };
 
+static InitedAddr bps[KD_BREAKPOINT_MAX];
+
 static void prep_bmbc(const uint8_t *pattern, int pLen, int bmBc[])
 {
     int i;
@@ -247,6 +249,72 @@ void kd_api_write_virtual_memory(CPUState *cs, PacketData *pd)
 
     stl_p(&mem->ActualBytesWritten, len);
     pd->size = M64_SIZE + 0;
+}
+
+void kd_api_write_breakpoint(CPUState *cs, PacketData *pd)
+{
+    DBGKD_WRITE_BREAKPOINT64 *m64c = &pd->m64.u.WriteBreakPoint;
+    target_ulong addr;
+    int i, err = 0;
+
+    addr = ldtul_p(&m64c->BreakPointAddress);
+
+    for (i = 0; i < KD_BREAKPOINT_MAX; ++i) {
+        if (!bps[i].is_init) {
+            err = cpu_breakpoint_insert(cs, addr, BP_GDB, NULL);
+            if (!err) {
+                bps[i].addr = addr;
+                bps[i].is_init = true;
+                DPRINTF("write_breakpoint: " FMT_ADDR ", index(%d)", addr, i);
+                break;
+            } else {
+                WINDBG_ERROR("write_breakpoint: " FMT_ADDR ", " FMT_ERR,
+                             addr, err);
+                pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+                return;
+            }
+        } else if (addr == bps[i].addr) {
+            break;
+        }
+    }
+
+    if (!err) {
+        stl_p(&m64c->BreakPointHandle, i + 1);
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    } else {
+        WINDBG_ERROR("write_breakpoint: all breakpoints occupied");
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+    }
+}
+
+void kd_api_restore_breakpoint(CPUState *cs, PacketData *pd)
+{
+    DBGKD_RESTORE_BREAKPOINT *m64c = &pd->m64.u.RestoreBreakPoint;
+    uint8_t index;
+    int err = -1;
+
+    index = ldtul_p(&m64c->BreakPointHandle) - 1;
+
+    if (bps[index].is_init) {
+        err = cpu_breakpoint_remove(cs, bps[index].addr, BP_GDB);
+        if (!err) {
+            DPRINTF("restore_breakpoint: " FMT_ADDR ", index(%d)",
+                    bps[index].addr, index);
+        } else {
+            WINDBG_ERROR("restore_breakpoint: " FMT_ADDR
+                         ", index(%d), " FMT_ERR,
+                         bps[index].addr, index, err);
+        }
+        bps[index].is_init = false;
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    } else {
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    }
+}
+
+void kd_api_clear_all_internal_breakpoints(CPUState *cs, PacketData *pd)
+{
+    pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
 }
 
 void kd_api_unsupported(CPUState *cs, PacketData *pd)
