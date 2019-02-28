@@ -12,6 +12,18 @@
 #include "qemu/osdep.h"
 #include "exec/windbgstub-utils.h"
 
+#ifdef TARGET_X86_64
+#define OFFSET_KPCR_SELF 0x18
+#else  /* TARGET_I386 */
+#define OFFSET_KPCR_SELF 0x1C
+#endif /* TARGET_I386 */
+
+#ifdef TARGET_X86_64
+#define TARGET_SAFE(i386_obj, x86_64_obj) x86_64_obj
+#else  /* TARGET_I386 */
+#define TARGET_SAFE(i386_obj, x86_64_obj) i386_obj
+#endif /* TARGET_I386 */
+
 static InitedAddr KPCR;
 #ifdef TARGET_X86_64
 static InitedAddr kdDebuggerDataBlock;
@@ -21,6 +33,26 @@ static InitedAddr kdVersion;
 
 static bool find_KPCR(CPUState *cs)
 {
+    X86CPU *cpu = X86_CPU(cs);
+    CPUX86State *env = &cpu->env;
+
+    if (!KPCR.is_init) {
+        KPCR.addr = env->segs[TARGET_SAFE(R_FS, R_GS)].base;
+
+        static target_ulong prev_KPCR;
+        if (!KPCR.addr || prev_KPCR == KPCR.addr) {
+            return false;
+        }
+        prev_KPCR = KPCR.addr;
+
+        if (KPCR.addr != VMEM_ADDR(cs, KPCR.addr + OFFSET_KPCR_SELF)) {
+            return false;
+        }
+        KPCR.is_init = true;
+
+        DPRINTF("find KPCR " FMT_ADDR, KPCR.addr);
+    }
+
     return KPCR.is_init;
 }
 
