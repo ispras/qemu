@@ -503,7 +503,10 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
             qemu_mutex_lock_iothread();
             cc->do_interrupt(cpu);
             qemu_mutex_unlock_iothread();
+
+            *ret = cpu->exception_index;
             cpu->exception_index = -1;
+            return *ret == EXCP_DEBUG;
         } else if (!replay_has_interrupt()) {
             /* give a chance to iothread in replay mode */
             *ret = EXCP_INTERRUPT;
