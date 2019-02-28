@@ -176,16 +176,15 @@ bool qemu_clock_expired(QEMUClockType type);
 bool qemu_clock_use_for_deadline(QEMUClockType type);
 
 /**
- * qemu_clock_deadline_ns_all:
- * @type: the clock type
+ * virtual_clock_deadline_ns:
  *
  * Calculate the deadline across all timer lists associated
- * with a clock (as opposed to just the default one)
+ * with virtual clock (excluding external timers)
  * in nanoseconds, or -1 if no timer is set to expire.
  *
  * Returns: time until expiry in nanoseconds or -1
  */
-int64_t qemu_clock_deadline_ns_all(QEMUClockType type);
+int64_t virtual_clock_deadline_ns(void);
 
 /**
  * qemu_clock_get_main_loop_timerlist:
