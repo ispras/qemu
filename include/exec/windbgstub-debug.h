@@ -22,7 +22,7 @@
 #define TULONG_P(ptr) ((target_ulong *) (ptr))
 #define FIELD_P(type, field, ptr) ((typeof_field(type, field) *) (ptr))
 
-#define _OUT(file, log, fmt, ...)                                              \
+#define IOUT(file, log, fmt, ...)                                              \
     do {                                                                       \
         if (file != NULL) {                                                    \
             fprintf(file, fmt, ##__VA_ARGS__);                                 \
@@ -31,18 +31,18 @@
             qemu_log(fmt, ##__VA_ARGS__);                                      \
         }                                                                      \
     } while (0)
-#define _OUT_STRUCT(f, l, var) _OUT_ARRAY(f, l, &var, 1)
-#define _OUT_PSTRUCT(f, l, var) _OUT_ARRAY(f, l, var, 1)
-#define _OUT_ARRAY(f, l, var, count) \
-    _OUT_BLOCK(f, l, var, sizeof(*(var)), count)
-#define _OUT_BLOCK(f, l, var, size, count)                                     \
+#define IOUT_STRUCT(f, l, var) IOUT_ARRAY(f, l, &var, 1)
+#define IOUT_PSTRUCT(f, l, var) IOUT_ARRAY(f, l, var, 1)
+#define IOUT_ARRAY(f, l, var, count) \
+    IOUT_BLOCK(f, l, var, sizeof(*(var)), count)
+#define IOUT_BLOCK(f, l, var, size, count)                                     \
     do {                                                                       \
-        _OUT(f, l, #var " ");                                                  \
-        _OUT(f, l, "[size: %d, count: %d]\n", (int) (size), (int) (count));    \
-        _OUT_MEMORY(f, l, var, size * count, 0, false, true);                  \
+        IOUT(f, l, #var " ");                                                  \
+        IOUT(f, l, "[size: %d, count: %d]\n", (int) (size), (int) (count));    \
+        IOUT_MEMORY(f, l, var, size * count, 0, false, true);                  \
     } while (0)
 
-#define _OUT_MEMORY(f, l, ptr, size, offset, with_offset, with_chars)          \
+#define IOUT_MEMORY(f, l, ptr, size, offset, with_offset, with_chars)          \
     do {                                                                       \
         uint8_t *_p = (uint8_t *) (ptr);                                       \
         uint32_t _s = (size);                                                  \
@@ -68,7 +68,7 @@
             }                                                                  \
                                                                                \
             _line[_line_size] = 0;                                             \
-            _OUT(f, l, "%s\n", _line);                                         \
+            IOUT(f, l, "%s\n", _line);                                         \
         }                                                                      \
     } while (0)
 
@@ -102,23 +102,23 @@ static int _dformat_offset(char *str, target_ulong offset)
     return len;
 }
 
-#define DPRINT(fmt, ...) _OUT(NULL, true, fmt, ##__VA_ARGS__)
-#define DPRINT_STRUCT(var) _OUT_STRUCT(NULL, true, var)
-#define DPRINT_PSTRUCT(var) _OUT_PSTRUCT(NULL, true, var)
-#define DPRINT_ARRAY(var, count) _OUT_ARRAY(NULL, true, var, count)
+#define DPRINT(fmt, ...) IOUT(NULL, true, fmt, ##__VA_ARGS__)
+#define DPRINT_STRUCT(var) IOUT_STRUCT(NULL, true, var)
+#define DPRINT_PSTRUCT(var) IOUT_PSTRUCT(NULL, true, var)
+#define DPRINT_ARRAY(var, count) IOUT_ARRAY(NULL, true, var, count)
 #define DPRINT_BLOCK(var, size, count) \
-    _OUT_BLOCK(NULL, true, var, size, count)
+    IOUT_BLOCK(NULL, true, var, size, count)
 #define DPRINT_MEMORY(ptr, size, offset, with_offset, with_chars) \
-    _OUT_MEMORY(NULL, true, ptr, size, offset, with_offset, with_chars)
+    IOUT_MEMORY(NULL, true, ptr, size, offset, with_offset, with_chars)
 
-#define FPRINT(file, fmt, ...) _OUT(file, false, fmt, ##__VA_ARGS__)
-#define FPRINT_STRUCT(file, var) _OUT_STRUCT(file, false, var)
-#define FPRINT_PSTRUCT(file, var) _OUT_PSTRUCT(file, false, var)
-#define FPRINT_ARRAY(file, var, count) _OUT_ARRAY(file, false, var, count)
+#define FPRINT(file, fmt, ...) IOUT(file, false, fmt, ##__VA_ARGS__)
+#define FPRINT_STRUCT(file, var) IOUT_STRUCT(file, false, var)
+#define FPRINT_PSTRUCT(file, var) IOUT_PSTRUCT(file, false, var)
+#define FPRINT_ARRAY(file, var, count) IOUT_ARRAY(file, false, var, count)
 #define FPRINT_BLOCK(file, var, size, count) \
-    _OUT_BLOCK(file, false, var, size, count)
+    IOUT_BLOCK(file, false, var, size, count)
 #define FPRINT_MEMORY(file, ptr, size, offset, with_offset, with_chars) \
-    _OUT_MEMORY(file, false, ptr, size, offset, with_offset, with_chars)
+    IOUT_MEMORY(file, false, ptr, size, offset, with_offset, with_chars)
 
 #define DBG_RVMEM(cpu, addr, size)                                             \
     ({                                                                         \
@@ -142,9 +142,9 @@ static int _dformat_offset(char *str, target_ulong offset)
 #define CAT(a, ...) a ## __VA_ARGS__
 #define EAT(...)
 #define EXPAND(...) __VA_ARGS__
-#define _IF(c) glue(_IF_, c)
-#define _IF_1(...) __VA_ARGS__ EAT
-#define _IF_0(...) EXPAND
+#define IIF(c) glue(IIF_, c)
+#define IIF_1(...) __VA_ARGS__ EAT
+#define IIF_0(...) EXPAND
 
 #define COMPL(x) glue(COMPL_, x)
 #define COMPL_1 0
@@ -158,7 +158,7 @@ static int _dformat_offset(char *str, target_ulong offset)
 #define NOT_0 PROBE(~)
 #define BOOL(x) COMPL(NOT(x))
 
-#define IF(c) _IF(BOOL(c))
+#define IF(c) IIF(BOOL(c))
 
 #define IS_EMPTY(x) CHECK(CAT(IS_EMPTY_, x))
 #define IS_EMPTY_ PROBE(~)
@@ -214,19 +214,19 @@ static int _dformat_offset(char *str, target_ulong offset)
     switch (_size) {                                                           \
     case 1:                                                                    \
         _value = (uint64_t) ((uint8_t *) (_ptr + _offset))[0];                 \
-        sprintf(_str, "    t1 " #field " = 0x%llx;", _value);                  \
+        sprintf(_str, "    t1 " #field " = 0x%" PRIu64 ";", _value);           \
         break;                                                                 \
     case 2:                                                                    \
         _value = (uint64_t) ((uint16_t *) (_ptr + _offset))[0];                \
-        sprintf(_str, "    t2 " #field " = 0x%llx;", _value);                  \
+        sprintf(_str, "    t2 " #field " = 0x%" PRIu64 ";", _value);           \
         break;                                                                 \
     case 4:                                                                    \
         _value = (uint64_t) ((uint32_t *) (_ptr + _offset))[0];                \
-        sprintf(_str, "    t4 " #field " = 0x%llx;", _value);                  \
+        sprintf(_str, "    t4 " #field " = 0x%" PRIu64 ";", _value);           \
         break;                                                                 \
     case 8:                                                                    \
         _value = (uint64_t) ((uint64_t *) (_ptr + _offset))[0];                \
-        sprintf(_str, "    t8 " #field " = 0x%llx;", _value);                  \
+        sprintf(_str, "    t8 " #field " = 0x%" PRIu64 ";", _value);           \
         break;                                                                 \
     default:                                                                   \
         sprintf(_str, "    t%u " #field " = [...];", _size);                   \
@@ -238,7 +238,7 @@ static int _dformat_offset(char *str, target_ulong offset)
 } while (0)
 
 #define REFLECTION(stct, ptr, file, ...) do {                                  \
-    fprintf(file, "struct " #stct " { sizeof: %llu\n", sizeof(stct));          \
+    fprintf(file, "struct " #stct " { sizeof: %" PRIu64 "\n", sizeof(stct));   \
     FOREACH_WITH(REFLECTION_PRINT, (stct, ptr, file), __VA_ARGS__);            \
     fprintf(file, "}\n");                                                      \
     fflush(file);                                                              \
