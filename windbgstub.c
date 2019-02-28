@@ -15,6 +15,7 @@
 #include "chardev/char-fe.h"
 #include "qemu/cutils.h"
 #include "sysemu/reset.h"
+#include "sysemu/sysemu.h"
 #include "sysemu/kvm.h"
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
@@ -112,7 +113,6 @@ static void windbg_send_data_packet(WindbgState *state, uint8_t *data,
     state->wait_packet_type = PACKET_TYPE_KD_ACKNOWLEDGE;
 }
 
-__attribute__ ((unused)) /* unused yet */
 static void windbg_send_control_packet(WindbgState *state, uint16_t type,
                                        uint32_t id)
 {
@@ -129,8 +129,52 @@ static void windbg_send_control_packet(WindbgState *state, uint16_t type,
     qemu_chr_fe_write(&state->chr, PTR(packet), sizeof(packet));
 }
 
+static void windbg_vm_stop(void)
+{
+    vm_stop(RUN_STATE_PAUSED);
+}
+
+static void windbg_process_data_packet(WindbgState *state)
+{
+}
+
+static void windbg_process_control_packet(WindbgState *state)
+{
+}
+
 static void windbg_ctx_handler(WindbgState *state)
 {
+    if (!state->is_loaded) {
+        if (state->ctx.result == RESULT_BREAKIN_BYTE) {
+            state->catched_breakin_byte = true;
+        }
+        return;
+    }
+
+    switch (state->ctx.result) {
+    case RESULT_NONE:
+        break;
+
+    case RESULT_BREAKIN_BYTE:
+        windbg_vm_stop();
+        break;
+
+    case RESULT_CONTROL_PACKET:
+        windbg_process_control_packet(state);
+        break;
+
+    case RESULT_DATA_PACKET:
+        windbg_process_data_packet(state);
+        break;
+
+    case RESULT_UNKNOWN_PACKET:
+    case RESULT_ERROR:
+        windbg_send_control_packet(state, PACKET_TYPE_KD_RESEND, 0);
+        break;
+
+    default:
+        break;
+    }
 }
 
 static void windbg_read_byte(ParsingContext *ctx, uint8_t byte)
@@ -260,6 +304,14 @@ void windbg_try_load(void)
     if (windbg_state && !windbg_state->is_loaded) {
         if (windbg_on_load()) {
             windbg_state->is_loaded = true;
+
+            /* Handle last packet. Or we can require resend last packet. */
+            windbg_ctx_handler(windbg_state);
+
+            if (windbg_state->catched_breakin_byte == true) {
+                windbg_vm_stop();
+                windbg_state->catched_breakin_byte = false;
+            }
         }
     }
 }
