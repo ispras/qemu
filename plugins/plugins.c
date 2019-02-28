@@ -127,6 +127,4 @@ void qemu_plugins_init(void)
             info->init(info->args);
         }
     }
-
-#include "exec/helper-register.h"
 }

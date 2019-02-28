@@ -31,6 +31,7 @@ dh_ctype(ret) HELPER(name) (dh_ctype(t1), dh_ctype(t2), dh_ctype(t3), \
                             dh_ctype(t4), dh_ctype(t5), dh_ctype(t6));
 
 #include "helper.h"
+#include "plugins/helpers.h"
 #include "trace/generated-helpers.h"
 #include "tcg-runtime.h"
 

@@ -1855,18 +1855,6 @@ static inline const char *tcg_find_helper(TCGContext *s, uintptr_t val)
     return ret;
 }
 
-void tcg_register_helper(void *func, const char *name,
-                         unsigned flags, unsigned sizemask)
-{
-    TCGHelperInfo *info = g_new0(TCGHelperInfo, 1);
-    info->func = func;
-    info->name = name;
-    info->flags = flags;
-    info->sizemask = sizemask;
-
-    g_hash_table_insert(helper_table, func, info);
-}
-
 static const char * const cond_name[] =
 {
     [TCG_COND_NEVER] = "never",
