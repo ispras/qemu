@@ -26,3 +26,9 @@ void windbg_interrupt_handler(CPUState *cs, uint64_t instr_pointer)
 {
 }
 #endif
+
+#ifdef WINDBG_PARSER
+void windbg_debug_parser_hook(bool is_server, const uint8_t *buf, int len)
+{
+}
+#endif

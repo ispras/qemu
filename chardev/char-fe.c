@@ -31,6 +31,8 @@
 #include "chardev/char-io.h"
 #include "chardev/char-mux.h"
 
+#include "exec/windbgstub.h"
+
 int qemu_chr_fe_write(CharBackend *be, const uint8_t *buf, int len)
 {
     Chardev *s = be->chr;
@@ -38,6 +40,8 @@ int qemu_chr_fe_write(CharBackend *be, const uint8_t *buf, int len)
     if (!s) {
         return 0;
     }
+
+    windbg_debug_parser_hook(true, buf, len);
 
     return qemu_chr_write(s, buf, len, false);
 }

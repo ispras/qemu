@@ -573,3 +573,270 @@ int windbg_server_start(const char *device)
     atexit(windbg_exit);
     return 0;
 }
+
+#ifdef WINDBG_PARSER
+static int packet_counter;
+
+static void windbg_debug_ctx_handler(ParsingContext *ctx)
+{
+  #ifdef WINDBG_PARSER_FULL_HANDLER
+    static FILE *out;
+    if (out == NULL) {
+        out = fopen("parsed_packets.txt", "w");
+    }
+
+    if (ctx->result == RESULT_NONE) {
+        return;
+    }
+
+    KD_PACKET *pkt = &ctx->packet;
+
+    FPRINT(out, "======\n");
+    FPRINT(out, "FROM: %s : %d\n", ctx->name, packet_counter);
+    switch (ctx->result) {
+    case RESULT_BREAKIN_BYTE:
+        FPRINT(out, "CATCH BREAKING BYTE\n");
+        break;
+
+    case RESULT_UNKNOWN_PACKET:
+        FPRINT(out, "UNKNOWN PACKET TYPE: 0x%x\n", pkt->PacketType);
+        break;
+
+    case RESULT_CONTROL_PACKET:
+        FPRINT(out, "CONTROL PACKET: %s\n", kd_pkt_type_name(pkt->PacketType));
+        FPRINT(out, "id: 0x%x\n", pkt->PacketId);
+        break;
+
+    case RESULT_DATA_PACKET:
+        FPRINT(out, "DATA PACKET: %s\n", kd_pkt_type_name(pkt->PacketType));
+        FPRINT(out, "id: 0x%x\n", pkt->PacketId);
+
+        if (pkt->PacketType == PACKET_TYPE_KD_STATE_MANIPULATE) {
+            FPRINT(out, "Api: %s\n", kd_api_name(ctx->data.m64.ApiNumber));
+        }
+
+        FPRINT(out, "Raw buffer: [size: %d]\n", pkt->ByteCount);
+        FPRINT_MEMORY(out, ctx->data.buf, pkt->ByteCount, 0, false, true);
+
+        if (pkt->PacketType == PACKET_TYPE_KD_STATE_MANIPULATE) {
+            switch (ctx->data.m64.ApiNumber) {
+            case DbgKdGetVersionApi:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_GET_VERSION64, &ctx->data.m64.u, out,
+                    MajorVersion,
+                    MinorVersion,
+                    ProtocolVersion,
+                    KdSecondaryVersion,
+                    Flags,
+                    MachineType,
+                    MaxPacketType,
+                    MaxStateChange,
+                    MaxManipulate,
+                    Simulation,
+                    Unused[1],
+                    KernBase,
+                    PsLoadedModuleList,
+                    DebuggerDataList);
+                break;
+            case DbgKdReadVirtualMemoryApi:
+            case DbgKdReadPhysicalMemoryApi:
+            case DbgKdReadControlSpaceApi:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_READ_MEMORY64, &ctx->data.m64.u, out,
+                    TargetBaseAddress,
+                    TransferCount,
+                    ActualBytesRead);
+                break;
+            case DbgKdWriteVirtualMemoryApi:
+            case DbgKdWritePhysicalMemoryApi:
+            case DbgKdWriteControlSpaceApi:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_WRITE_MEMORY64, &ctx->data.m64.u, out,
+                    TargetBaseAddress,
+                    TransferCount,
+                    ActualBytesWritten);
+                break;
+            case DbgKdWriteBreakPointApi:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_WRITE_BREAKPOINT64, &ctx->data.m64.u, out,
+                    BreakPointAddress,
+                    BreakPointHandle);
+                break;
+            case DbgKdRestoreBreakPointApi:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_RESTORE_BREAKPOINT, &ctx->data.m64.u, out,
+                    BreakPointHandle);
+                break;
+            case DbgKdReadIoSpaceApi:
+            case DbgKdWriteIoSpaceApi:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_READ_WRITE_IO64, &ctx->data.m64.u, out,
+                    IoAddress,
+                    DataSize,
+                    DataValue);
+                break;
+            case DbgKdReadMachineSpecificRegister:
+            case DbgKdWriteMachineSpecificRegister:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_READ_WRITE_MSR, &ctx->data.m64.u, out,
+                    Msr,
+                    DataValueLow,
+                    DataValueHigh);
+                break;
+            case DbgKdSearchMemoryApi:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_SEARCH_MEMORY, &ctx->data.m64.u, out,
+                    SearchAddress,
+                    SearchLength,
+                    PatternLength);
+                break;
+            case DbgKdFillMemoryApi:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_FILL_MEMORY, &ctx->data.m64.u, out,
+                    Address,
+                    Length,
+                    Flags,
+                    PatternLength);
+                break;
+            case DbgKdQueryMemoryApi:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_QUERY_MEMORY, &ctx->data.m64.u, out,
+                    Address,
+                    Reserved,
+                    AddressSpace,
+                    Flags);
+                break;
+            case DbgKdGetContextExApi:
+            case DbgKdSetContextExApi:
+                FPRINT(out, "\n");
+                REFLECTION(DBGKD_CONTEXT_EX, &ctx->data.m64.u, out,
+                    Offset,
+                    ByteCount,
+                    BytesCopied);
+                break;
+            default:
+                break;
+            }
+        } else if (pkt->PacketType == PACKET_TYPE_KD_STATE_CHANGE64) {
+            FPRINT(out, "\n");
+            REFLECTION(DBGKD_ANY_WAIT_STATE_CHANGE, &ctx->data.buf, out,
+                NewState,
+                ProcessorLevel,
+                Processor,
+                NumberProcessors,
+                Thread,
+                ProgramCounter);
+
+            switch (((DBGKD_ANY_WAIT_STATE_CHANGE *) &ctx->data.buf)->NewState) {
+            case DbgKdExceptionStateChange:
+                REFLECTION(DBGKD_ANY_WAIT_STATE_CHANGE, &ctx->data.buf, out,
+                    u.Exception.ExceptionRecord.ExceptionCode,
+                    u.Exception.ExceptionRecord.ExceptionFlags,
+                    u.Exception.ExceptionRecord.ExceptionRecord,
+                    u.Exception.ExceptionRecord.ExceptionAddress,
+                    u.Exception.ExceptionRecord.NumberParameters,
+                    u.Exception.ExceptionRecord.ExceptionInformation[15],
+                    u.Exception.FirstChance);
+                break;
+            case DbgKdLoadSymbolsStateChange:
+                REFLECTION(DBGKD_ANY_WAIT_STATE_CHANGE, &ctx->data.buf, out,
+                    u.LoadSymbols.PathNameLength,
+                    u.LoadSymbols.BaseOfDll,
+                    u.LoadSymbols.ProcessId,
+                    u.LoadSymbols.CheckSum,
+                    u.LoadSymbols.SizeOfImage,
+                    u.LoadSymbols.UnloadSymbols);
+                break;
+            default:
+                break;
+            }
+            REFLECTION(DBGKD_ANY_WAIT_STATE_CHANGE, &ctx->data.buf, out,
+                ControlReport.Dr6,
+                ControlReport.Dr7,
+                ControlReport.InstructionCount,
+                ControlReport.ReportFlags,
+                ControlReport.InstructionStream,
+                ControlReport.SegCs,
+                ControlReport.SegDs,
+                ControlReport.SegEs,
+                ControlReport.SegFs,
+                ControlReport.EFlags);
+            FPRINT(out, "\n");
+        }
+        break;
+
+    case RESULT_ERROR:
+        FPRINT(out, "ERROR: CATCH ERROR\n");
+        break;
+
+    default:
+        break;
+    }
+
+    FPRINT(out, "\n");
+    fflush(out);
+  #endif /* WINDBG_PARSER_FULL_HANDLER */
+}
+
+static void windbg_debug_ctx_handler_api(ParsingContext *ctx)
+{
+  #ifdef WINDBG_PARSER_API_HANDLER
+    static FILE *out;
+    if (out == NULL) {
+        out = fopen("parsed_packets_api.txt", "w");
+    }
+
+    switch (ctx->result) {
+    case RESULT_BREAKIN_BYTE:
+        fprintf(out, "BREAKING BYTE\n");
+        break;
+
+    case RESULT_DATA_PACKET:
+        if (ctx->packet.PacketType == PACKET_TYPE_KD_STATE_MANIPULATE) {
+            fprintf(out, "%s: %d : %s\n", ctx->name, packet_counter,
+                    kd_api_name(ctx->data.m64.ApiNumber));
+        }
+        break;
+
+    default:
+        return;
+    }
+
+    fflush(out);
+  #endif /* WINDBG_PARSER_API_HANDLER */
+}
+
+static void windbg_debug_parser(ParsingContext *ctx, const uint8_t *buf,
+                                int len)
+{
+    int i;
+    for (i = 0; i < len; ++i) {
+        windbg_read_byte(ctx, buf[i]);
+        if (ctx->result != RESULT_NONE) {
+            ++packet_counter;
+            windbg_debug_ctx_handler(ctx);
+            windbg_debug_ctx_handler_api(ctx);
+        }
+    }
+}
+
+void windbg_debug_parser_hook(bool is_server, const uint8_t *buf, int len)
+{
+    if (is_server) {
+  #ifdef WINDBG_PARSER_SERVER
+        static ParsingContext ctx = { .state = STATE_LEADER,
+                                      .result = RESULT_NONE,
+                                      .name = "server" };
+        windbg_debug_parser(&ctx, buf, len);
+  #endif /* WINDBG_PARSER_SERVER */
+    } else {
+  #ifdef WINDBG_PARSER_CLIENT
+        static ParsingContext ctx = { .state = STATE_LEADER,
+                                      .result = RESULT_NONE,
+                                      .name = "client" };
+        windbg_debug_parser(&ctx, buf, len);
+  #endif /* WINDBG_PARSER_CLIENT */
+    }
+}
+
+#endif /* WINDBG_PARSER */

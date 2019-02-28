@@ -17,6 +17,7 @@
 #include "log.h"
 #include "cpu.h"
 #include "exec/windbgstub.h"
+#include "exec/windbgstub-debug.h"
 #include "exec/windbgkd.h"
 
 #define DPRINTF(fmt, ...)                                                      \
@@ -26,7 +27,14 @@
         }                                                                      \
     } while (0)
 
-#define WINDBG_ERROR(...) error_report("windbg: " __VA_ARGS__)
+#define WINDBG_ERROR(fmt, ...)                                                 \
+    do {                                                                       \
+        if (WINDBG_DPRINT) {                                                   \
+            qemu_log("windbg: " fmt "\n", ##__VA_ARGS__);                      \
+        } else {                                                               \
+            error_report("windbg: " fmt, ##__VA_ARGS__);                       \
+        }                                                                      \
+    } while (0)
 
 #define FMT_ADDR "addr:0x" TARGET_FMT_lx
 #define FMT_ERR "Error:%d"
