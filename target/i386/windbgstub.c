@@ -16,6 +16,7 @@
 #define OFFSET_KPCR_SELF 0x18
 #else  /* TARGET_I386 */
 #define OFFSET_KPCR_SELF 0x1C
+#define OFFSET_KPCR_VERSION 0x34
 #endif /* TARGET_I386 */
 
 #ifdef TARGET_X86_64
@@ -64,6 +65,16 @@ static bool find_kdDebuggerDataBlock(CPUState *cs)
 #else  /* TARGET_I386 */
 static bool find_kdVersion(CPUState *cs)
 {
+    if (!kdVersion.is_init && KPCR.is_init) {
+        kdVersion.addr = VMEM_ADDR(cs, KPCR.addr + OFFSET_KPCR_VERSION);
+        if (!kdVersion.addr) {
+            return false;
+        }
+        kdVersion.is_init = true;
+
+        DPRINTF("find kdVersion " FMT_ADDR, kdVersion.addr);
+    }
+
     return kdVersion.is_init;
 }
 #endif /* TARGET_I386 */
