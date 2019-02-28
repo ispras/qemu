@@ -166,7 +166,6 @@ void windbg_on_reset(void)
 #endif
 }
 
-__attribute__ ((unused)) /* unused yet */
 static void kd_state_change_common(CPUState *cs, PacketData *data)
 {
     X86CPU *cpu = X86_CPU(cs);
@@ -206,4 +205,37 @@ static void kd_state_change_common(CPUState *cs, PacketData *data)
     /* This is a feature */
     memset(cr->InstructionStream, 0, DBGKD_MAXSTREAM);
     stw_p(&cr->InstructionCount, 0);
+}
+
+__attribute__ ((unused)) /* unused yet */
+static void kd_state_change_load_symbols(CPUState *cs, PacketData *data)
+{
+    DBGKD_ANY_WAIT_STATE_CHANGE *sc = (DBGKD_ANY_WAIT_STATE_CHANGE *) data->buf;
+
+    kd_state_change_common(cs, data);
+
+    stl_p(&sc->NewState, DbgKdLoadSymbolsStateChange);
+
+    /* TODO: Path to load symbold (with extra array). */
+    stl_p(&sc->u.LoadSymbols.PathNameLength, 0);
+
+    data->size = sizeof(DBGKD_ANY_WAIT_STATE_CHANGE);
+}
+
+__attribute__ ((unused)) /* unused yet */
+static void kd_state_change_excp(CPUState *cs, PacketData *data, uint32_t code)
+{
+    DBGKD_ANY_WAIT_STATE_CHANGE *sc = (DBGKD_ANY_WAIT_STATE_CHANGE *) data->buf;
+    DBGKM_EXCEPTION_RECORD64 *exc = &sc->u.Exception.ExceptionRecord;
+    X86CPU *cpu = X86_CPU(cs);
+    CPUX86State *env = &cpu->env;
+
+    kd_state_change_common(cs, data);
+
+    stl_p(&sc->NewState, DbgKdExceptionStateChange);
+    sttul_p(&exc->ExceptionAddress, env->eip);
+
+    stl_p(&exc->ExceptionCode, code);
+
+    data->size = sizeof(DBGKD_ANY_WAIT_STATE_CHANGE);
 }
