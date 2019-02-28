@@ -56,4 +56,7 @@ typedef struct InitedAddr {
 const char *kd_api_name(int id);
 const char *kd_pkt_type_name(int id);
 
+bool windbg_on_load(void);
+void windbg_on_reset(void);
+
 #endif /* WINDBGSTUB_UTILS_H */

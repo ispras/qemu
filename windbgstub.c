@@ -14,6 +14,8 @@
 #include "chardev/char.h"
 #include "chardev/char-fe.h"
 #include "qemu/cutils.h"
+#include "sysemu/reset.h"
+#include "sysemu/kvm.h"
 #include "exec/windbgstub.h"
 #include "exec/windbgstub-utils.h"
 
@@ -50,12 +52,32 @@ static void windbg_exit(void)
     g_free(windbg_state);
 }
 
+static void windbg_handle_reset(void *opaque)
+{
+    windbg_state_clean(windbg_state);
+    windbg_on_reset();
+}
+
+void windbg_try_load(void)
+{
+    if (windbg_state && !windbg_state->is_loaded) {
+        if (windbg_on_load()) {
+            windbg_state->is_loaded = true;
+        }
+    }
+}
+
 int windbg_server_start(const char *device)
 {
     Chardev *chr = NULL;
 
     if (windbg_state) {
         WINDBG_ERROR("Multiple instances of windbg are not supported.");
+        exit(1);
+    }
+
+    if (kvm_enabled()) {
+        WINDBG_ERROR("KVM is not supported.");
         exit(1);
     }
 
@@ -75,6 +97,8 @@ int windbg_server_start(const char *device)
     qemu_chr_fe_init(&windbg_state->chr, chr, &error_abort);
     qemu_chr_fe_set_handlers(&windbg_state->chr, windbg_chr_can_receive,
                              windbg_chr_receive, NULL, NULL, NULL, NULL, true);
+
+    qemu_register_reset(windbg_handle_reset, NULL);
 
     atexit(windbg_exit);
     return 0;

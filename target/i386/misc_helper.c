@@ -24,6 +24,7 @@
 #include "exec/exec-all.h"
 #include "exec/cpu_ldst.h"
 #include "exec/address-spaces.h"
+#include "exec/windbgstub.h"
 
 void helper_outb(CPUX86State *env, uint32_t port, uint32_t data)
 {
@@ -385,6 +386,8 @@ void helper_wrmsr(CPUX86State *env)
         /* XXX: exception? */
         break;
     }
+
+    windbg_try_load();
 }
 
 void helper_rdmsr(CPUX86State *env)
