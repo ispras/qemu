@@ -228,15 +228,8 @@ void helper_rdmsr(CPUX86State *env)
 {
 }
 #else
-void helper_wrmsr(CPUX86State *env)
+void cpu_x86_write_msr(CPUX86State *env, uint64_t val)
 {
-    uint64_t val;
-
-    cpu_svm_check_intercept_param(env, SVM_EXIT_MSR, 1, GETPC());
-
-    val = ((uint32_t)env->regs[R_EAX]) |
-        ((uint64_t)((uint32_t)env->regs[R_EDX]) << 32);
-
     switch ((uint32_t)env->regs[R_ECX]) {
     case MSR_IA32_SYSENTER_CS:
         env->sysenter_cs = val & 0xffff;
@@ -386,11 +379,9 @@ void helper_wrmsr(CPUX86State *env)
         /* XXX: exception? */
         break;
     }
-
-    windbg_try_load();
 }
 
-void helper_rdmsr(CPUX86State *env)
+uint64_t cpu_x86_read_msr(CPUX86State *env)
 {
     uint64_t val;
 
@@ -537,6 +528,32 @@ void helper_rdmsr(CPUX86State *env)
         val = 0;
         break;
     }
+
+    return val;
+}
+
+void helper_wrmsr(CPUX86State *env)
+{
+    uint64_t val;
+
+    cpu_svm_check_intercept_param(env, SVM_EXIT_MSR, 1, GETPC());
+
+    val = ((uint32_t)env->regs[R_EAX]) |
+        ((uint64_t)((uint32_t)env->regs[R_EDX]) << 32);
+
+    cpu_x86_write_msr(env, val);
+
+    windbg_try_load();
+}
+
+void helper_rdmsr(CPUX86State *env)
+{
+    uint64_t val;
+
+    cpu_svm_check_intercept_param(env, SVM_EXIT_MSR, 0, GETPC());
+
+    val = cpu_x86_read_msr(env);
+
     env->regs[R_EAX] = (uint32_t)(val);
     env->regs[R_EDX] = (uint32_t)(val >> 32);
 }

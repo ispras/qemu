@@ -1101,6 +1101,40 @@ void kd_api_set_context_ex(CPUState *cs, PacketData *pd)
     pd->size = M64_SIZE + 0;
 }
 
+void kd_api_read_msr(CPUState *cs, PacketData *pd)
+{
+#ifndef CONFIG_USER_ONLY
+    DBGKD_READ_WRITE_MSR *m64c = &pd->m64.u.ReadWriteMsr;
+    X86CPU *cpu = X86_CPU(cs);
+    CPUX86State *env = &cpu->env;
+    uint64_t val = cpu_x86_read_msr(env);
+
+    stq_p(&val, val);
+
+    m64c->DataValueLow = val;
+    m64c->DataValueHigh = val >> 32;
+    pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+#else /* !CONFIG_USER_ONLY */
+    pd->m64.ReturnStatus = STATUS_UNSUCCESS;
+#endif
+}
+
+void kd_api_write_msr(CPUState *cs, PacketData *pd)
+{
+#ifndef CONFIG_USER_ONLY
+    DBGKD_READ_WRITE_MSR *m64c = &pd->m64.u.ReadWriteMsr;
+    X86CPU *cpu = X86_CPU(cs);
+    CPUX86State *env = &cpu->env;
+    uint64_t val = m64c->DataValueLow | ((uint64_t) m64c->DataValueHigh) << 32;
+
+    cpu_x86_write_msr(env, ldq_p(&val));
+
+    pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+#else /* !CONFIG_USER_ONLY */
+    pd->m64.ReturnStatus = STATUS_UNSUCCESS;
+#endif
+}
+
 void kd_api_get_version(CPUState *cs, PacketData *pd)
 {
     DBGKD_GET_VERSION64 *kdver = (DBGKD_GET_VERSION64 *) (PTR(pd->m64) + 0x10);

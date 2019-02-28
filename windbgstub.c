@@ -225,6 +225,14 @@ static void windbg_process_manipulate_packet(WindbgState *state)
         kd_api_get_version(cs, data);
         break;
 
+    case DbgKdReadMachineSpecificRegister:
+        kd_api_read_msr(cs, data);
+        break;
+
+    case DbgKdWriteMachineSpecificRegister:
+        kd_api_write_msr(cs, data);
+        break;
+
     case DbgKdClearAllInternalBreakpointsApi:
         kd_api_clear_all_internal_breakpoints(cs, data);
         return;
