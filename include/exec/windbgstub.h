@@ -12,6 +12,12 @@
 #ifndef WINDBGSTUB_H
 #define WINDBGSTUB_H
 
+#ifdef DEBUG_WINDBG
+#define WINDBG_DPRINT true
+#else
+#define WINDBG_DPRINT false
+#endif
+
 int windbg_server_start(const char *device);
 
 #endif /* WINDBGSTUB_H */
