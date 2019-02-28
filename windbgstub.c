@@ -160,6 +160,14 @@ static void windbg_process_manipulate_packet(WindbgState *state)
     }
 
     switch (data->m64.ApiNumber) {
+    case DbgKdReadVirtualMemoryApi:
+        kd_api_read_virtual_memory(cs, data);
+        break;
+
+    case DbgKdWriteVirtualMemoryApi:
+        kd_api_write_virtual_memory(cs, data);
+        break;
+
     default:
         kd_api_unsupported(cs, data);
         break;

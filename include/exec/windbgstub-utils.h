@@ -74,6 +74,8 @@ typedef struct PacketData {
 const char *kd_api_name(int id);
 const char *kd_pkt_type_name(int id);
 
+void kd_api_read_virtual_memory(CPUState *cs, PacketData *pd);
+void kd_api_write_virtual_memory(CPUState *cs, PacketData *pd);
 void kd_api_unsupported(CPUState *cs, PacketData *pd);
 
 bool kd_init_state_change(CPUState *cs, PacketData *data,

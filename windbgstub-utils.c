@@ -200,6 +200,55 @@ InitedAddr windbg_search_vmaddr(CPUState *cs, target_ulong start,
     return ret;
 }
 
+void kd_api_read_virtual_memory(CPUState *cs, PacketData *pd)
+{
+    DBGKD_READ_MEMORY64 *mem = &pd->m64.u.ReadMemory;
+    uint32_t len;
+    target_ulong addr;
+    int err;
+
+    len = MIN(ldl_p(&mem->TransferCount), PACKET_MAX_SIZE - M64_SIZE);
+    addr = ldtul_p(&mem->TargetBaseAddress);
+    err = cpu_memory_rw_debug(cs, addr, pd->m64_extra, len, 0);
+
+    if (err) {
+        len = 0;
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+
+        DPRINTF("read_virtual_memory: No physical page mapped: " FMT_ADDR,
+                addr);
+    } else {
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    }
+
+    stl_p(&mem->ActualBytesRead, len);
+    pd->size = M64_SIZE + len;
+}
+
+void kd_api_write_virtual_memory(CPUState *cs, PacketData *pd)
+{
+    DBGKD_WRITE_MEMORY64 *mem = &pd->m64.u.WriteMemory;
+    uint32_t len;
+    target_ulong addr;
+    int err;
+
+    len = MIN(ldl_p(&mem->TransferCount), pd->size - M64_SIZE);
+    addr = ldtul_p(&mem->TargetBaseAddress);
+    err = cpu_memory_rw_debug(cs, addr, pd->m64_extra, len, 1);
+
+    if (err) {
+        len = 0;
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+
+        DPRINTF("read_write_memory: No physical page mapped: " FMT_ADDR, addr);
+    } else {
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    }
+
+    stl_p(&mem->ActualBytesWritten, len);
+    pd->size = M64_SIZE + 0;
+}
+
 void kd_api_unsupported(CPUState *cs, PacketData *pd)
 {
     WINDBG_ERROR("Caught unimplemented api %s", kd_api_name(pd->m64.ApiNumber));
