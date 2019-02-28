@@ -888,11 +888,55 @@ GEN_WINDBG_CONTEXT_RW(windbg_read_context, false)
 
 GEN_WINDBG_CONTEXT_RW(windbg_write_context, true)
 
-__attribute__ ((unused)) /* unused yet */
 GEN_WINDBG_KSPEC_REGS_RW(windbg_read_ks_regs, false)
 
-__attribute__ ((unused)) /* unused yet */
 GEN_WINDBG_KSPEC_REGS_RW(windbg_write_ks_regs, true)
+
+static int windbg_rw_context_ex(CPUState *cs, uint8_t *buf, int buf_size,
+                                int offset, int len, bool is_read)
+{
+    int context_len;
+    int ks_regs_len;
+    int err = -1;
+
+    if (offset < sizeof(CPU_KPROCESSOR_STATE)) {
+        len = MIN(len, sizeof(CPU_KPROCESSOR_STATE) - offset);
+
+        context_len = MAX(0, (int) (sizeof(CPU_CONTEXT) - offset));
+        ks_regs_len = len - context_len;
+
+        if (context_len > 0) {
+            if (is_read) {
+                err = windbg_read_context(cs, buf, context_len, offset,
+                                          context_len);
+            } else {
+                err = windbg_write_context(cs, buf, context_len, offset,
+                                           context_len);
+            }
+
+            if (err) {
+                return err;
+            }
+        }
+
+        if (ks_regs_len > 0) {
+            offset += context_len - sizeof(CPU_CONTEXT);
+            if (is_read) {
+                err = windbg_read_ks_regs(cs, buf + context_len, ks_regs_len,
+                                          offset, ks_regs_len);
+            } else {
+                err = windbg_write_ks_regs(cs, buf + context_len, ks_regs_len,
+                                           offset, ks_regs_len);
+            }
+
+            if (err) {
+                return err;
+            }
+        }
+    }
+
+    return err;
+}
 
 void kd_api_get_context(CPUState *cs, PacketData *pd)
 {
@@ -923,6 +967,47 @@ void kd_api_set_context(CPUState *cs, PacketData *pd)
     } else {
         pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
     }
+}
+
+void kd_api_get_context_ex(CPUState *cs, PacketData *pd)
+{
+    DBGKD_CONTEXT_EX *ctx = &pd->m64.u.ContextEx;
+    uint32_t offset = ldl_p(&ctx->Offset);
+    uint32_t len = MIN(ldl_p(&ctx->ByteCount), PACKET_MAX_SIZE - M64_SIZE);
+    int err;
+
+    err = windbg_rw_context_ex(cs, pd->m64_extra, PACKET_MAX_SIZE - M64_SIZE,
+                               offset, len, true);
+
+    if (err) {
+        len = 0;
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+    } else {
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    }
+
+    stl_p(&ctx->BytesCopied, len);
+    pd->size = M64_SIZE + len;
+}
+
+void kd_api_set_context_ex(CPUState *cs, PacketData *pd)
+{
+    DBGKD_CONTEXT_EX *ctx = &pd->m64.u.ContextEx;
+    uint32_t offset = ldl_p(&ctx->Offset);
+    uint32_t len = MIN(ldl_p(&ctx->ByteCount), pd->size - M64_SIZE);
+    int err;
+
+    err = windbg_rw_context_ex(cs, pd->m64_extra, len, offset, len, false);
+
+    if (err) {
+        len = 0;
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+    } else {
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    }
+
+    stl_p(&ctx->BytesCopied, len);
+    pd->size = M64_SIZE + 0;
 }
 
 static bool find_KPCR(CPUState *cs)

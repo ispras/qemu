@@ -78,6 +78,8 @@ void kd_api_read_virtual_memory(CPUState *cs, PacketData *pd);
 void kd_api_write_virtual_memory(CPUState *cs, PacketData *pd);
 void kd_api_get_context(CPUState *cs, PacketData *pd);
 void kd_api_set_context(CPUState *cs, PacketData *pd);
+void kd_api_get_context_ex(CPUState *cs, PacketData *pd);
+void kd_api_set_context_ex(CPUState *cs, PacketData *pd);
 void kd_api_unsupported(CPUState *cs, PacketData *pd);
 
 bool kd_init_state_change(CPUState *cs, PacketData *data,

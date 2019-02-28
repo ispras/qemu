@@ -176,6 +176,14 @@ static void windbg_process_manipulate_packet(WindbgState *state)
         kd_api_set_context(cs, data);
         break;
 
+    case DbgKdGetContextExApi:
+        kd_api_get_context_ex(cs, data);
+        break;
+
+    case DbgKdSetContextExApi:
+        kd_api_set_context_ex(cs, data);
+        break;
+
     default:
         kd_api_unsupported(cs, data);
         break;
