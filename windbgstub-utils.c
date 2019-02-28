@@ -391,6 +391,38 @@ void kd_api_write_io_space(CPUState *cs, PacketData *pd)
     pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
 }
 
+void kd_api_read_physical_memory(CPUState *cs, PacketData *pd)
+{
+    DBGKD_READ_MEMORY64 *mem = &pd->m64.u.ReadMemory;
+    uint32_t len;
+    target_ulong addr;
+
+    len = MIN(ldl_p(&mem->TransferCount), PACKET_MAX_SIZE - M64_SIZE);
+    addr = ldtul_p(&mem->TargetBaseAddress);
+
+    cpu_physical_memory_rw(addr, pd->m64_extra, len, 0);
+    stl_p(&mem->ActualBytesRead, len);
+
+    pd->size = M64_SIZE + len;
+    pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+}
+
+void kd_api_write_physical_memory(CPUState *cs, PacketData *pd)
+{
+    DBGKD_WRITE_MEMORY64 *mem = &pd->m64.u.WriteMemory;
+    uint32_t len;
+    target_ulong addr;
+
+    len = MIN(ldl_p(&mem->TransferCount), pd->size - M64_SIZE);
+    addr = ldtul_p(&mem->TargetBaseAddress);
+
+    cpu_physical_memory_rw(addr, pd->m64_extra, len, 1);
+    stl_p(&mem->ActualBytesWritten, len);
+
+    pd->size = M64_SIZE + 0;
+    pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+}
+
 void kd_api_clear_all_internal_breakpoints(CPUState *cs, PacketData *pd)
 {
     pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
