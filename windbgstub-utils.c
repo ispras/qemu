@@ -442,6 +442,49 @@ void kd_api_search_memory(CPUState *cs, PacketData *pd)
     pd->size = M64_SIZE + 0;
 }
 
+void kd_api_fill_memory(CPUState *cs, PacketData *pd)
+{
+    DBGKD_FILL_MEMORY *m64c = &pd->m64.u.FillMemory;
+    uint32_t len = ldl_p(&m64c->Length);
+    target_ulong addr = ldq_p(&m64c->Address);
+    uint16_t pattern = lduw_p(&m64c->PatternLength);
+    uint16_t flags = lduw_p(&m64c->Flags);
+    uint32_t offset = 0;
+    int err;
+
+    uint8_t *mem = g_new(uint8_t, pattern);
+    memcpy(mem, pd->m64_extra, pattern);
+
+    switch (flags) {
+    case DBGKD_FILL_MEMORY_VIRTUAL:
+        while (offset < len) {
+            err = cpu_memory_rw_debug(cs, addr + offset, mem,
+                                      MIN(pattern, len - offset), 1);
+            offset += pattern;
+            if (err) {
+                DPRINTF("fill_memory: No physical page mapped: " FMT_ADDR,
+                        addr);
+            }
+        }
+        break;
+
+    case DBGKD_FILL_MEMORY_PHYSICAL:
+        while (offset < len) {
+            cpu_physical_memory_rw(addr, mem, MIN(pattern, len - offset), 1);
+            offset += pattern;
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    g_free(mem);
+
+    pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    pd->size = M64_SIZE + 0;
+}
+
 void kd_api_clear_all_internal_breakpoints(CPUState *cs, PacketData *pd)
 {
     pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
