@@ -80,6 +80,12 @@ const char *replay_get_filename(void);
  */
 bool replay_reverse_step(void);
 /*
+ * Start making icount steps in backward direction.
+ * Used by gdbstub for backwards debugging.
+ * Returns true on success.
+ */
+bool replay_reverse_step_n(uint64_t icount_shift);
+/*
  * Start searching the last breakpoint/watchpoint.
  * Used by gdbstub for backwards debugging.
  * Returns true if the process successfully started.

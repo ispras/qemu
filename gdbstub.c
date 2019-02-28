@@ -1287,6 +1287,7 @@ static int gdb_handle_packet(GDBState *s, const char *line_buf)
     uint8_t *registers;
     target_ulong addr, len;
     GDBThreadIdKind thread_kind;
+    uint64_t icount_shift = 0;
 
     trace_gdbstub_io_command(line_buf);
 
@@ -1430,7 +1431,7 @@ static int gdb_handle_packet(GDBState *s, const char *line_buf)
     case 'b':
         /* Backward debugging commands */
         if (replay_mode == REPLAY_MODE_PLAY) {
-            switch (*p) {
+            switch (*p++) {
             case 's':
                 if (replay_reverse_step()) {
                     gdb_continue(s);
@@ -1441,6 +1442,20 @@ static int gdb_handle_packet(GDBState *s, const char *line_buf)
                 }
             case 'c':
                 if (replay_reverse_continue()) {
+                    gdb_continue(s);
+                    return RS_IDLE;
+                } else {
+                    put_packet(s, "E14");
+                    break;
+                }
+            case 'j':
+                if (*p++ == ',')
+                {
+                    icount_shift = strtoull(p, NULL, 0);
+                }
+
+                if (icount_shift && replay_reverse_step_n(icount_shift))
+                {
                     gdb_continue(s);
                     return RS_IDLE;
                 } else {
@@ -1757,7 +1772,7 @@ static int gdb_handle_packet(GDBState *s, const char *line_buf)
             pstrcat(buf, sizeof(buf), ";multiprocess+");
 
             if (replay_mode == REPLAY_MODE_PLAY) {
-                pstrcat(buf, sizeof(buf), ";ReverseStep+;ReverseContinue+");
+                pstrcat(buf, sizeof(buf), ";ReverseStep+;ReverseContinue+;ReverseRoll+");
             }
 
             put_packet(s, buf);

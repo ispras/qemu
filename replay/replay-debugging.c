@@ -236,15 +236,22 @@ static void replay_stop_vm_debug(void *opaque)
     replay_delete_break();
 }
 
-bool replay_reverse_step(void)
+bool replay_reverse_step_n(uint64_t icount_shift)
 {
     Error *err = NULL;
 
     assert(replay_mode == REPLAY_MODE_PLAY);
 
-    if (replay_get_current_icount() != 0) {
-        replay_seek(replay_get_current_icount() - 1,
+    uint64_t current_icount = replay_get_current_icount();
+    if (current_icount != 0) {
+        if (current_icount <= icount_shift) {
+
+            replay_seek(0, replay_stop_vm_debug, &err);
+
+        } else {
+            replay_seek(current_icount - icount_shift,
                     replay_stop_vm_debug, &err);
+        }
         if (err) {
             error_free(err);
             return false;
@@ -254,6 +261,12 @@ bool replay_reverse_step(void)
     }
 
     return false;
+}
+
+
+bool replay_reverse_step(void)
+{
+    return replay_reverse_step_n(1);
 }
 
 static void replay_continue_end(void)
