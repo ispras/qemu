@@ -83,6 +83,8 @@ void kd_api_restore_breakpoint(CPUState *cs, PacketData *pd);
 void kd_api_continue(CPUState *cs, PacketData *pd);
 void kd_api_read_control_space(CPUState *cs, PacketData *pd);
 void kd_api_write_control_space(CPUState *cs, PacketData *pd);
+void kd_api_read_io_space(CPUState *cs, PacketData *pd);
+void kd_api_write_io_space(CPUState *cs, PacketData *pd);
 void kd_api_clear_all_internal_breakpoints(CPUState *cs, PacketData *pd);
 void kd_api_get_context_ex(CPUState *cs, PacketData *pd);
 void kd_api_set_context_ex(CPUState *cs, PacketData *pd);

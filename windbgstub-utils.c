@@ -10,6 +10,7 @@
  */
 
 #include "exec/windbgstub-utils.h"
+#include "exec/address-spaces.h"
 #include "sysemu/sysemu.h"
 
 static const char *kd_api_names[] = {
@@ -324,6 +325,67 @@ void kd_api_continue(CPUState *cs, PacketData *pd)
         if (!runstate_needs_reset()) {
             vm_start();
         }
+    }
+
+    pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+}
+
+void kd_api_read_io_space(CPUState *cs, PacketData *pd)
+{
+    DBGKD_READ_WRITE_IO64 *io = &pd->m64.u.ReadWriteIo;
+    CPUArchState *env = cs->env_ptr;
+
+    target_ulong addr = ldtul_p(&io->IoAddress);
+    uint32_t value = 0;
+
+    switch (io->DataSize) {
+    case 1:
+        value = address_space_ldub(&address_space_io, addr,
+                                   cpu_get_mem_attrs(env), NULL);
+        stl_p(&io->DataValue, value);
+        break;
+    case 2:
+        value = address_space_lduw(&address_space_io, addr,
+                                   cpu_get_mem_attrs(env), NULL);
+        stl_p(&io->DataValue, value);
+        break;
+    case 4:
+        value = address_space_ldl(&address_space_io, addr,
+                                  cpu_get_mem_attrs(env), NULL);
+        stl_p(&io->DataValue, value);
+        break;
+    default:
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+        return;
+    }
+
+    pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+}
+
+void kd_api_write_io_space(CPUState *cs, PacketData *pd)
+{
+    DBGKD_READ_WRITE_IO64 *io = &pd->m64.u.ReadWriteIo;
+    CPUArchState *env = cs->env_ptr;
+
+    target_ulong addr = ldtul_p(&io->IoAddress);
+    uint32_t value = ldl_p(&io->DataValue);
+
+    switch (io->DataSize) {
+    case 1:
+        address_space_stb(&address_space_io, addr, value,
+                          cpu_get_mem_attrs(env), NULL);
+        break;
+    case 2:
+        address_space_stw(&address_space_io, addr, value,
+                          cpu_get_mem_attrs(env), NULL);
+        break;
+    case 4:
+        address_space_stl(&address_space_io, addr, value,
+                          cpu_get_mem_attrs(env), NULL);
+        break;
+    default:
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+        return;
     }
 
     pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
