@@ -207,7 +207,6 @@ static void kd_state_change_common(CPUState *cs, PacketData *data)
     stw_p(&cr->InstructionCount, 0);
 }
 
-__attribute__ ((unused)) /* unused yet */
 static void kd_state_change_load_symbols(CPUState *cs, PacketData *data)
 {
     DBGKD_ANY_WAIT_STATE_CHANGE *sc = (DBGKD_ANY_WAIT_STATE_CHANGE *) data->buf;
@@ -222,7 +221,6 @@ static void kd_state_change_load_symbols(CPUState *cs, PacketData *data)
     data->size = sizeof(DBGKD_ANY_WAIT_STATE_CHANGE);
 }
 
-__attribute__ ((unused)) /* unused yet */
 static void kd_state_change_excp(CPUState *cs, PacketData *data, uint32_t code)
 {
     DBGKD_ANY_WAIT_STATE_CHANGE *sc = (DBGKD_ANY_WAIT_STATE_CHANGE *) data->buf;
@@ -238,4 +236,19 @@ static void kd_state_change_excp(CPUState *cs, PacketData *data, uint32_t code)
     stl_p(&exc->ExceptionCode, code);
 
     data->size = sizeof(DBGKD_ANY_WAIT_STATE_CHANGE);
+}
+
+bool kd_init_state_change(CPUState *cs, PacketData *data,
+                          KdStateChangeType type)
+{
+    switch (type) {
+    case STATE_CHANGE_LOAD_SYMBOLS:
+        kd_state_change_load_symbols(cs, data);
+        return true;
+    case STATE_CHANGE_BREAKPOINT:
+        kd_state_change_excp(cs, data, NT_STATUS_BREAKPOINT);
+        return true;
+    }
+
+    return false;
 }

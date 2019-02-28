@@ -129,6 +129,20 @@ static void windbg_send_control_packet(WindbgState *state, uint16_t type,
     qemu_chr_fe_write(&state->chr, PTR(packet), sizeof(packet));
 }
 
+__attribute__ ((unused)) /* unused yet */
+static bool windbg_state_change(CPUState *cs, KdStateChangeType type)
+{
+    static PacketData out_data = {};
+
+    if (kd_init_state_change(cs, &out_data, type)) {
+        windbg_send_data_packet(windbg_state, out_data.buf, out_data.size,
+                                PACKET_TYPE_KD_STATE_CHANGE64);
+        return true;
+    } else {
+        return false;
+    }
+}
+
 static void windbg_vm_stop(void)
 {
     vm_stop(RUN_STATE_PAUSED);

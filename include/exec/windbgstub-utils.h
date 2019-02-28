@@ -50,6 +50,11 @@
 
 #define M64_SIZE sizeof(DBGKD_MANIPULATE_STATE64)
 
+typedef enum {
+    STATE_CHANGE_LOAD_SYMBOLS,
+    STATE_CHANGE_BREAKPOINT
+} KdStateChangeType;
+
 typedef struct InitedAddr {
     target_ulong addr;
     bool is_init;
@@ -68,6 +73,9 @@ typedef struct PacketData {
 
 const char *kd_api_name(int id);
 const char *kd_pkt_type_name(int id);
+
+bool kd_init_state_change(CPUState *cs, PacketData *data,
+                          KdStateChangeType type);
 
 bool windbg_on_load(void);
 void windbg_on_reset(void);
