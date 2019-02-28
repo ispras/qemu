@@ -146,8 +146,35 @@ static void windbg_vm_stop(void)
     vm_stop(RUN_STATE_PAUSED);
 }
 
+static void windbg_process_manipulate_packet(WindbgState *state)
+{
+}
+
 static void windbg_process_data_packet(WindbgState *state)
 {
+    ParsingContext *ctx = &state->ctx;
+
+    if (state->wait_packet_type == PACKET_TYPE_KD_ACKNOWLEDGE) {
+        /* We received something different */
+        windbg_send_control_packet(state, PACKET_TYPE_KD_RESEND, 0);
+        return;
+    }
+
+    switch (ctx->packet.PacketType) {
+    case PACKET_TYPE_KD_STATE_MANIPULATE:
+        windbg_send_control_packet(state, PACKET_TYPE_KD_ACKNOWLEDGE,
+                                   ctx->packet.PacketId);
+        windbg_process_manipulate_packet(state);
+        state->curr_packet_id &= ~SYNC_PACKET_ID;
+        break;
+
+    default:
+        WINDBG_ERROR("Caught unsupported data packet 0x%x",
+                     ctx->packet.PacketType);
+
+        windbg_send_control_packet(state, PACKET_TYPE_KD_RESEND, 0);
+        break;
+    }
 }
 
 static void windbg_process_control_packet(WindbgState *state)
