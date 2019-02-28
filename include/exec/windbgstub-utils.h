@@ -90,6 +90,7 @@ void kd_api_write_physical_memory(CPUState *cs, PacketData *pd);
 void kd_api_get_version(CPUState *cs, PacketData *pd);
 void kd_api_read_msr(CPUState *cs, PacketData *pd);
 void kd_api_write_msr(CPUState *cs, PacketData *pd);
+void kd_api_search_memory(CPUState *cs, PacketData *pd);
 void kd_api_clear_all_internal_breakpoints(CPUState *cs, PacketData *pd);
 void kd_api_get_context_ex(CPUState *cs, PacketData *pd);
 void kd_api_set_context_ex(CPUState *cs, PacketData *pd);

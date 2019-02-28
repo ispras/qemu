@@ -233,6 +233,10 @@ static void windbg_process_manipulate_packet(WindbgState *state)
         kd_api_write_msr(cs, data);
         break;
 
+    case DbgKdSearchMemoryApi:
+        kd_api_search_memory(cs, data);
+        break;
+
     case DbgKdClearAllInternalBreakpointsApi:
         kd_api_clear_all_internal_breakpoints(cs, data);
         return;
