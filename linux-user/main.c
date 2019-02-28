@@ -37,6 +37,7 @@
 #include "trace/control.h"
 #include "target_elf.h"
 #include "cpu_loop-common.h"
+#include "qemu/plugins.h"
 
 char *exec_path;
 
@@ -385,6 +386,11 @@ static void handle_arg_trace(const char *arg)
     trace_file = trace_opt_parse(arg);
 }
 
+static void handle_arg_plugin(const char *arg)
+{
+    qemu_plugin_parse_cmd_args(arg);
+}
+
 struct qemu_argument {
     const char *argv;
     const char *env;
@@ -436,6 +442,10 @@ static const struct qemu_argument arg_table[] = {
      "",           "Seed for pseudo-random number generator"},
     {"trace",      "QEMU_TRACE",       true,  handle_arg_trace,
      "",           "[[enable=]<pattern>][,events=<file>][,file=<file>]"},
+#ifdef CONFIG_PLUGINS
+    {"plugin",     "QEMU_PLUGIN",      true,  handle_arg_plugin,
+     "",           "file=<plugin_so>[,args=<args>]"},
+#endif
     {"version",    "QEMU_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
     {NULL, NULL, false, NULL, NULL, NULL}
@@ -816,6 +826,9 @@ int main(int argc, char **argv, char **envp)
         }
         gdb_handlesig(cpu, 0);
     }
+
+    qemu_plugins_init();
+
     cpu_loop(env);
     /* never exits */
     return 0;
