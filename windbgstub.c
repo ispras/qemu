@@ -70,6 +70,65 @@ static void windbg_state_clean(WindbgState *state)
     state->ctx.result = RESULT_NONE;
 }
 
+static uint32_t compute_checksum(uint8_t *data, uint16_t len)
+{
+    uint32_t checksum = 0;
+    while (len) {
+        --len;
+        checksum += *data++;
+    }
+    return checksum;
+}
+
+static void windbg_store_packet(KD_PACKET *packet)
+{
+    stw_p(&packet->PacketLeader, packet->PacketLeader);
+    stw_p(&packet->PacketType, packet->PacketType);
+    stw_p(&packet->ByteCount, packet->ByteCount);
+    stl_p(&packet->PacketId, packet->PacketId);
+    stl_p(&packet->Checksum, packet->Checksum);
+}
+
+__attribute__ ((unused)) /* unused yet */
+static void windbg_send_data_packet(WindbgState *state, uint8_t *data,
+                                    uint16_t byte_count, uint16_t type)
+{
+    const uint8_t trailing_byte = PACKET_TRAILING_BYTE;
+
+    KD_PACKET packet = {
+        .PacketLeader = PACKET_LEADER,
+        .PacketType = type,
+        .ByteCount = byte_count,
+        .PacketId = state->curr_packet_id,
+        .Checksum = compute_checksum(data, byte_count),
+    };
+
+    windbg_store_packet(&packet);
+
+    qemu_chr_fe_write(&state->chr, PTR(packet), sizeof(packet));
+    qemu_chr_fe_write(&state->chr, data, byte_count);
+    qemu_chr_fe_write(&state->chr, &trailing_byte, sizeof(trailing_byte));
+
+    state->wait_packet_type = PACKET_TYPE_KD_ACKNOWLEDGE;
+}
+
+__attribute__ ((unused)) /* unused yet */
+static void windbg_send_control_packet(WindbgState *state, uint16_t type,
+                                       uint32_t id)
+{
+    KD_PACKET packet = {
+        .PacketLeader = CONTROL_PACKET_LEADER,
+        .PacketType = type,
+        .ByteCount = 0,
+        .PacketId = id,
+        .Checksum = 0,
+    };
+
+    windbg_store_packet(&packet);
+
+    qemu_chr_fe_write(&state->chr, PTR(packet), sizeof(packet));
+}
+
 static void windbg_ctx_handler(WindbgState *state)
 {
 }
