@@ -80,6 +80,126 @@ static const char *kd_packet_type_names[] = {
     "PACKET_TYPE_MAX",
 };
 
+static void prep_bmbc(const uint8_t *pattern, int pLen, int bmBc[])
+{
+    int i;
+
+    for (i = 0; i < 256; ++i) {
+        bmBc[i] = pLen;
+    }
+    for (i = 0; i < pLen - 1; ++i) {
+        bmBc[pattern[i]] = pLen - i - 1;
+    }
+}
+
+static void prep_suffixes(const uint8_t *pattern, int pLen, int *suff)
+{
+    int f, g, i;
+
+    suff[pLen - 1] = pLen;
+    f = 0;
+    g = pLen - 1;
+    for (i = pLen - 2; i >= 0; --i) {
+        if (i > g && suff[i + pLen - 1 - f] < i - g) {
+            suff[i] = suff[i + pLen - 1 - f];
+        } else {
+            if (i < g) {
+                g = i;
+            }
+            f = i;
+            while (g >= 0 && pattern[g] == pattern[g + pLen - 1 - f]) {
+                --g;
+            }
+            suff[i] = f - g;
+        }
+    }
+}
+
+static void prep_bmgs(const uint8_t *pattern, int pLen, int bmGs[])
+{
+    int i, j, suff[pLen];
+
+    prep_suffixes(pattern, pLen, suff);
+
+    for (i = 0; i < pLen; ++i) {
+        bmGs[i] = pLen;
+    }
+
+    j = 0;
+    for (i = pLen - 1; i >= 0; --i) {
+        if (suff[i] == i + 1) {
+            for (; j < pLen - 1 - i; ++j) {
+                if (bmGs[j] == pLen) {
+                    bmGs[j] = pLen - 1 - i;
+                }
+            }
+        }
+    }
+
+    for (i = 0; i <= pLen - 2; ++i) {
+        bmGs[pLen - 1 - suff[i]] = pLen - 1 - i;
+    }
+}
+
+static int search_boyermoore(const uint8_t *data, int dLen,
+                             const uint8_t *pattern, int pLen, int bmGs[],
+                             int bmBc[])
+{
+    int i;
+    int j = 0;
+    while (j <= dLen - pLen) {
+        i = pLen - 1;
+        while (i >= 0 && pattern[i] == data[i + j]) {
+            --i;
+        }
+        if (i < 0) {
+            return j;
+        } else {
+            j += MAX(bmGs[i], bmBc[data[i + j]] - pLen + 1 + i);
+        }
+    }
+    return -1;
+}
+
+InitedAddr windbg_search_vmaddr(CPUState *cs, target_ulong start,
+                                target_ulong finish, const uint8_t *pattern,
+                                int pLen)
+{
+    InitedAddr ret = {
+        .addr = 0,
+        .is_init = false,
+    };
+    int bmGs[pLen], bmBc[256];
+    int find;
+    target_ulong offset = start;
+    target_ulong step = MIN(MAX(finish - start, 0x10000), pLen * 2);
+
+    if (finish <= start || pLen > finish - start) {
+        return ret;
+    }
+
+    uint8_t *buf = g_new(uint8_t, step);
+
+    prep_bmgs(pattern, pLen, bmGs);
+    prep_bmbc(pattern, pLen, bmBc);
+
+    while (offset < finish) {
+        step = MIN(step, finish - offset);
+        if (cpu_memory_rw_debug(cs, offset, buf, step, 0) == 0) {
+            find = search_boyermoore(buf, step, pattern, pLen, bmGs, bmBc);
+            if (find >= 0) {
+                ret.addr = offset + find;
+                ret.is_init = true;
+                break;
+            }
+        }
+        offset += step - pLen;
+    }
+
+    g_free(buf);
+    return ret;
+}
+
 const char *kd_api_name(int id)
 {
     return (id >= DbgKdMinimumManipulate && id < DbgKdMaximumManipulate)

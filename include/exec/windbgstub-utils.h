@@ -59,4 +59,8 @@ const char *kd_pkt_type_name(int id);
 bool windbg_on_load(void);
 void windbg_on_reset(void);
 
+InitedAddr windbg_search_vmaddr(CPUState *cs, target_ulong start,
+                                target_ulong finish, const uint8_t *pattern,
+                                int pLen);
+
 #endif /* WINDBGSTUB_UTILS_H */
