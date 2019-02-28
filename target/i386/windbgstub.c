@@ -884,10 +884,8 @@ static int fun_name(CPUState *cs, uint8_t *buf, int buf_size,                  \
     return 0;                                                                  \
 }
 
-__attribute__ ((unused)) /* unused yet */
 GEN_WINDBG_CONTEXT_RW(windbg_read_context, false)
 
-__attribute__ ((unused)) /* unused yet */
 GEN_WINDBG_CONTEXT_RW(windbg_write_context, true)
 
 __attribute__ ((unused)) /* unused yet */
@@ -895,6 +893,37 @@ GEN_WINDBG_KSPEC_REGS_RW(windbg_read_ks_regs, false)
 
 __attribute__ ((unused)) /* unused yet */
 GEN_WINDBG_KSPEC_REGS_RW(windbg_write_ks_regs, true)
+
+void kd_api_get_context(CPUState *cs, PacketData *pd)
+{
+    int err;
+
+    err = windbg_read_context(cs, pd->m64_extra, PACKET_MAX_SIZE - M64_SIZE,
+                              0, sizeof(CPU_CONTEXT));
+
+    if (err) {
+        pd->size = M64_SIZE + 0;
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+    } else {
+        pd->size = M64_SIZE + sizeof(CPU_CONTEXT);
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    }
+}
+
+void kd_api_set_context(CPUState *cs, PacketData *pd)
+{
+    int err;
+
+    err = windbg_write_context(cs, pd->m64_extra, PACKET_MAX_SIZE - M64_SIZE,
+                               0, sizeof(CPU_CONTEXT));
+
+    pd->size = M64_SIZE + 0;
+    if (err) {
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+    } else {
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    }
+}
 
 static bool find_KPCR(CPUState *cs)
 {

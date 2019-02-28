@@ -168,6 +168,14 @@ static void windbg_process_manipulate_packet(WindbgState *state)
         kd_api_write_virtual_memory(cs, data);
         break;
 
+    case DbgKdGetContextApi:
+        kd_api_get_context(cs, data);
+        break;
+
+    case DbgKdSetContextApi:
+        kd_api_set_context(cs, data);
+        break;
+
     default:
         kd_api_unsupported(cs, data);
         break;
