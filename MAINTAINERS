@@ -1800,6 +1800,17 @@ S: Odd Fixes
 F: gdbstub*
 F: gdb-xml/
 
+WinDbg stub
+M: Mikhail Abakumov <mikhail.abakumov@ispras.ru>
+R: Pavel Dovgalyuk <pavel.dovgaluk@ispras.ru>
+S: Supported
+F: include/exec/windbgstub.h
+F: include/exec/windbgstub-utils.h
+F: windbgstub.c
+F: windbgstub-utils.c
+F: stubs/windbgstub.c
+F: target/i386/windbgstub.c
+
 Memory API
 M: Paolo Bonzini <pbonzini@redhat.com>
 S: Supported
