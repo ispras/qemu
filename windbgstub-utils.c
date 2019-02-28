@@ -10,6 +10,7 @@
  */
 
 #include "exec/windbgstub-utils.h"
+#include "sysemu/sysemu.h"
 
 static const char *kd_api_names[] = {
     "DbgKdReadVirtualMemoryApi",
@@ -310,6 +311,22 @@ void kd_api_restore_breakpoint(CPUState *cs, PacketData *pd)
     } else {
         pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
     }
+}
+
+void kd_api_continue(CPUState *cs, PacketData *pd)
+{
+    uint32_t status = ldl_p(&pd->m64.u.Continue2.ContinueStatus);
+    uint32_t trace = ldl_p(&pd->m64.u.Continue2.ControlSet.TraceFlag);
+    int ssFlag = trace ? SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER : 0;
+
+    if (NT_SUCCESS(status)) {
+        cpu_single_step(cs, ssFlag);
+        if (!runstate_needs_reset()) {
+            vm_start();
+        }
+    }
+
+    pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
 }
 
 void kd_api_clear_all_internal_breakpoints(CPUState *cs, PacketData *pd)

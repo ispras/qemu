@@ -192,6 +192,11 @@ static void windbg_process_manipulate_packet(WindbgState *state)
         kd_api_restore_breakpoint(cs, data);
         break;
 
+    case DbgKdContinueApi:
+    case DbgKdContinueApi2:
+        kd_api_continue(cs, data);
+        return;
+
     case DbgKdReadControlSpaceApi:
         kd_api_read_control_space(cs, data);
         break;
