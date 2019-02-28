@@ -1829,7 +1829,7 @@ static int gdb_handle_packet(GDBState *s, const char *line_buf)
     return RS_IDLE;
 }
 
-void gdb_set_stop_cpu(CPUState *cpu)
+static void gdb_set_stop_cpu(CPUState *cpu)
 {
     GDBProcess *p = gdb_get_cpu_process(gdbserver_state, cpu);
 
@@ -2612,6 +2612,10 @@ int gdbserver_start(const char *device)
     s->state = chr ? RS_IDLE : RS_INACTIVE;
     s->mon_chr = mon_chr;
     s->current_syscall_cb = NULL;
+
+    if (!register_excp_debug_handler(gdb_set_stop_cpu)) {
+        exit(1);
+    }
 
     return 0;
 }

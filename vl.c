@@ -76,6 +76,7 @@ int main(int argc, char **argv)
 #include "sysemu/sysemu.h"
 #include "sysemu/numa.h"
 #include "exec/gdbstub.h"
+#include "exec/windbgstub.h"
 #include "qemu/timer.h"
 #include "chardev/char.h"
 #include "qemu/bitmap.h"
@@ -2392,6 +2393,7 @@ struct device_config {
         DEV_PARALLEL,  /* -parallel      */
         DEV_DEBUGCON,  /* -debugcon */
         DEV_GDB,       /* -gdb, -s */
+        DEV_WINDBG,    /* -windbg */
         DEV_SCLP,      /* s390 sclp */
     } type;
     const char *cmdline;
@@ -3311,6 +3313,9 @@ int main(int argc, char **argv, char **envp)
             case QEMU_OPTION_gdb:
                 add_device_config(DEV_GDB, optarg);
                 break;
+            case QEMU_OPTION_windbg:
+                 add_device_config(DEV_WINDBG, optarg);
+                 break;
             case QEMU_OPTION_L:
                 if (is_help_option(optarg)) {
                     list_data_dirs = true;
@@ -4417,6 +4422,9 @@ int main(int argc, char **argv, char **envp)
     qemu_opts_foreach(qemu_find_opts("mon"),
                       mon_init_func, NULL, &error_fatal);
 
+    if (foreach_device_config(DEV_WINDBG, windbg_server_start) < 0) {
+        exit(1);
+    }
     if (foreach_device_config(DEV_SERIAL, serial_parse) < 0)
         exit(1);
     if (foreach_device_config(DEV_PARALLEL, parallel_parse) < 0)

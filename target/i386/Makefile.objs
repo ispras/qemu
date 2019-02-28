@@ -20,3 +20,4 @@ obj-$(CONFIG_WHPX) += whpx-all.o
 endif
 obj-$(CONFIG_SEV) += sev.o
 obj-$(call lnot,$(CONFIG_SEV)) += sev-stub.o
+obj-$(CONFIG_WINDBGSTUB) += windbgstub.o

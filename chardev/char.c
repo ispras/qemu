@@ -38,6 +38,8 @@
 
 #include "chardev/char-mux.h"
 
+#include "exec/windbgstub.h"
+
 /***********************************************************/
 /* character device */
 
@@ -178,6 +180,8 @@ void qemu_chr_be_write_impl(Chardev *s, uint8_t *buf, int len)
 
 void qemu_chr_be_write(Chardev *s, uint8_t *buf, int len)
 {
+    windbg_debug_parser_hook(false, buf, len);
+
     if (qemu_chr_replay(s)) {
         if (replay_mode == REPLAY_MODE_PLAY) {
             return;

@@ -157,6 +157,9 @@ obj-$(TARGET_X86_64) += win_dump.o
 obj-y += migration/ram.o
 LIBS := $(libs_softmmu) $(LIBS)
 
+# WinDbg support
+obj-$(CONFIG_WINDBGSTUB) += windbgstub.o windbgstub-utils.o
+
 # Hardware support
 ifeq ($(TARGET_NAME), sparc64)
 obj-y += hw/sparc64/
