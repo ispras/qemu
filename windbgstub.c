@@ -245,6 +245,10 @@ static void windbg_process_manipulate_packet(WindbgState *state)
         kd_api_fill_memory(cs, data);
         break;
 
+    case DbgKdQueryMemoryApi:
+        kd_api_query_memory(cs, data);
+        break;
+
     case DbgKdGetContextExApi:
         kd_api_get_context_ex(cs, data);
         break;
