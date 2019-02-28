@@ -33,7 +33,6 @@
 #include "qemu/error-report.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/block-backend.h"
-#include "exec/gdbstub.h"
 #include "sysemu/dma.h"
 #include "sysemu/hw_accel.h"
 #include "sysemu/kvm.h"
@@ -78,6 +77,8 @@ int64_t max_advance;
 /* vcpu throttling controls */
 static QEMUTimer *throttle_timer;
 static unsigned int throttle_percentage;
+
+static void (*excp_debug_handler)(CPUState *cpu);
 
 #define CPU_THROTTLE_PCT_MIN 1
 #define CPU_THROTTLE_PCT_MAX 99
@@ -1103,9 +1104,24 @@ static bool cpu_can_run(CPUState *cpu)
     return true;
 }
 
+bool register_excp_debug_handler(void (*handler)(CPUState *cpu))
+{
+    if (excp_debug_handler == NULL) {
+        excp_debug_handler = handler;
+        return true;
+    } else {
+        error_report("Something debugger is already in use. '-gdb' and "
+                     "'-windbg' cannot be used at the same time");
+        return false;
+    }
+}
+
 static void cpu_handle_guest_debug(CPUState *cpu)
 {
-    gdb_set_stop_cpu(cpu);
+    if (excp_debug_handler != NULL) {
+        excp_debug_handler(cpu);
+    }
+
     qemu_system_debug_request();
     cpu->stopped = true;
 }

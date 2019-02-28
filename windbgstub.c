@@ -141,9 +141,17 @@ static bool windbg_state_change(CPUState *cs, KdStateChangeType type)
     }
 }
 
+static void windbg_excp_debug_handler(CPUState *cs)
+{
+    if (windbg_state && windbg_state->is_loaded) {
+        windbg_state_change(cs, STATE_CHANGE_BREAKPOINT);
+    }
+}
+
 static void windbg_vm_stop(void)
 {
-    vm_stop(RUN_STATE_PAUSED);
+    windbg_state_change(qemu_get_cpu(0), STATE_CHANGE_BREAKPOINT);
+    vm_stop(RUN_STATE_DEBUG);
 }
 
 static void windbg_process_manipulate_packet(WindbgState *state)
@@ -487,6 +495,10 @@ int windbg_server_start(const char *device)
                              windbg_chr_receive, NULL, NULL, NULL, NULL, true);
 
     qemu_register_reset(windbg_handle_reset, NULL);
+
+    if (!register_excp_debug_handler(windbg_excp_debug_handler)) {
+        exit(1);
+    }
 
     atexit(windbg_exit);
     return 0;

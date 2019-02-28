@@ -184,6 +184,8 @@ QemuOpts *qemu_get_machine_opts(void);
 
 bool defaults_enabled(void);
 
+bool register_excp_debug_handler(void (*handler)(CPUState *cpu));
+
 extern QemuOptsList qemu_legacy_drive_opts;
 extern QemuOptsList qemu_common_drive_opts;
 extern QemuOptsList qemu_drive_opts;
