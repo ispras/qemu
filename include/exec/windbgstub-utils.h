@@ -14,5 +14,6 @@
 
 #include "qemu/osdep.h"
 #include "exec/windbgstub.h"
+#include "exec/windbgkd.h"
 
 #endif /* WINDBGSTUB_UTILS_H */

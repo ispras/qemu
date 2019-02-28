@@ -1806,6 +1806,7 @@ R: Pavel Dovgalyuk <pavel.dovgaluk@ispras.ru>
 S: Supported
 F: include/exec/windbgstub.h
 F: include/exec/windbgstub-utils.h
+F: include/exec/windbgkd.h
 F: windbgstub.c
 F: windbgstub-utils.c
 F: stubs/windbgstub.c
