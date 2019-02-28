@@ -52,7 +52,8 @@
 
 typedef enum {
     STATE_CHANGE_LOAD_SYMBOLS,
-    STATE_CHANGE_BREAKPOINT
+    STATE_CHANGE_BREAKPOINT,
+    STATE_CHANGE_INTERRUPT
 } KdStateChangeType;
 
 typedef struct InitedAddr {

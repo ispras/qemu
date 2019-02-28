@@ -25,6 +25,7 @@
 #include "exec/exec-all.h"
 #include "exec/cpu_ldst.h"
 #include "exec/log.h"
+#include "exec/windbgstub.h"
 
 //#define DEBUG_PCALL
 
@@ -1300,10 +1301,13 @@ void x86_cpu_do_interrupt(CPUState *cs)
         assert(env->old_exception == -1);
         do_vmexit(env, cs->exception_index - EXCP_VMEXIT, env->error_code);
     } else {
-        do_interrupt_all(cpu, cs->exception_index,
-                         env->exception_is_int,
-                         env->error_code,
-                         env->exception_next_eip, 0);
+        windbg_interrupt_handler(cs, env->eip);
+        if (cs->exception_index != EXCP_DEBUG) {
+            do_interrupt_all(cpu, cs->exception_index,
+                            env->exception_is_int,
+                            env->error_code,
+                            env->exception_next_eip, 0);
+        }
         /* successfully delivered */
         env->old_exception = -1;
     }

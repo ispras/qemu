@@ -20,3 +20,9 @@ int windbg_server_start(const char *device)
 {
     return 0;
 }
+
+#ifdef WINDBG_CATCH_INTERRUPTS
+void windbg_interrupt_handler(CPUState *cs, uint64_t instr_pointer)
+{
+}
+#endif

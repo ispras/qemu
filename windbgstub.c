@@ -54,12 +54,12 @@ typedef struct WindbgState {
     bool catched_breakin_byte;
     uint32_t wait_packet_type;
     uint32_t curr_packet_id;
-
     ParsingContext ctx;
     CharBackend chr;
 } WindbgState;
 
 static WindbgState *windbg_state;
+static bool skip_debug_excp;
 
 static void windbg_state_clean(WindbgState *state)
 {
@@ -143,6 +143,11 @@ static bool windbg_state_change(CPUState *cs, KdStateChangeType type)
 
 static void windbg_excp_debug_handler(CPUState *cs)
 {
+    if (skip_debug_excp) {
+        skip_debug_excp = false;
+        return;
+    }
+
     if (windbg_state && windbg_state->is_loaded) {
         windbg_state_change(cs, STATE_CHANGE_BREAKPOINT);
     }
@@ -489,6 +494,26 @@ static void windbg_handle_reset(void *opaque)
     windbg_state_clean(windbg_state);
     windbg_on_reset();
 }
+
+#ifdef WINDBG_CATCH_INTERRUPTS
+void windbg_interrupt_handler(CPUState *cs, uint64_t instr_pointer)
+{
+    static target_ulong last_instr_pointer;
+
+    if (windbg_state && windbg_state->is_loaded
+        && last_instr_pointer != instr_pointer) {
+
+        bool need_excp = windbg_state_change(cs, STATE_CHANGE_INTERRUPT);
+        if (need_excp) {
+            cs->exception_index = EXCP_DEBUG;
+            skip_debug_excp = true;
+            last_instr_pointer = instr_pointer;
+        }
+    } else {
+        last_instr_pointer = 0;
+    }
+}
+#endif /* WINDBG_CATCH_INTERRUPTS */
 
 void windbg_try_load(void)
 {

@@ -12,6 +12,8 @@
 #ifndef WINDBGSTUB_H
 #define WINDBGSTUB_H
 
+#define WINDBG_CATCH_INTERRUPTS
+
 #ifdef DEBUG_WINDBG
 #define WINDBG_DPRINT true
 #else
@@ -21,5 +23,11 @@
 void windbg_try_load(void);
 
 int windbg_server_start(const char *device);
+
+#ifdef WINDBG_CATCH_INTERRUPTS
+void windbg_interrupt_handler(CPUState *cs, uint64_t instr_pointer);
+#else
+#define windbg_interrupt_handler(cs, instr_pointer)
+#endif
 
 #endif /* WINDBGSTUB_H */

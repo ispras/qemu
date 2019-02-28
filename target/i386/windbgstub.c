@@ -1408,6 +1408,26 @@ bool kd_init_state_change(CPUState *cs, PacketData *data,
     case STATE_CHANGE_BREAKPOINT:
         kd_state_change_excp(cs, data, NT_STATUS_BREAKPOINT);
         return true;
+    case STATE_CHANGE_INTERRUPT:
+        switch (cs->exception_index) {
+        case EXCP00_DIVZ:
+            kd_state_change_excp(cs, data, NT_STATUS_INTEGER_DIVIDE_BY_ZERO);
+            return true;
+        case EXCP03_INT3:
+            kd_state_change_excp(cs, data, NT_STATUS_BREAKPOINT);
+            return true;
+        case EXCP04_INTO:
+            kd_state_change_excp(cs, data, NT_STATUS_STACK_OVERFLOW);
+            return true;
+        case EXCP05_BOUND:
+            kd_state_change_excp(cs, data, NT_STATUS_ARRAY_BOUNDS_EXCEEDED);
+            return true;
+        case EXCP06_ILLOP:
+            kd_state_change_excp(cs, data, NT_STATUS_ILLEGAL_INSTRUCTION);
+            return true;
+        default:
+            return false;
+        }
     }
 
     return false;
