@@ -969,6 +969,94 @@ void kd_api_set_context(CPUState *cs, PacketData *pd)
     }
 }
 
+void kd_api_read_control_space(CPUState *cs, PacketData *pd)
+{
+    DBGKD_READ_MEMORY64 *mem = &pd->m64.u.ReadMemory;
+    target_ulong addr = ldtul_p(&mem->TargetBaseAddress);
+    uint32_t len = MIN(ldl_p(&mem->TransferCount), PACKET_MAX_SIZE - M64_SIZE);
+    int err = 0;
+
+#ifdef TARGET_X86_64
+
+    switch (addr) {
+    case AMD64_DEBUG_CONTROL_SPACE_KPCR:
+        addr = KPCR.addr;
+        len = sizeof(target_ulong);
+        err = cpu_memory_rw_debug(cs, addr, pd->m64_extra, len, 0);
+        break;
+
+    case AMD64_DEBUG_CONTROL_SPACE_KPRCB:
+        addr = VMEM_ADDR(cs, KPCR.addr + OFFSET_KPRCB);
+        len = sizeof(target_ulong);
+        err = cpu_memory_rw_debug(cs, addr, pd->m64_extra, len, 0);
+        break;
+
+    case AMD64_DEBUG_CONTROL_SPACE_KSPECIAL:
+        len = MIN(len, sizeof(CPU_KSPECIAL_REGISTERS));
+        err = windbg_read_ks_regs(cs, pd->m64_extra, PACKET_MAX_SIZE - M64_SIZE,
+                                  0, len);
+        break;
+
+    case AMD64_DEBUG_CONTROL_SPACE_KTHREAD:
+        addr = VMEM_ADDR(cs, addr + OFFSET_KPRCB_CURRTHREAD);
+        len = sizeof(target_ulong);
+        err = cpu_memory_rw_debug(cs, addr, pd->m64_extra, len, 0);
+        break;
+    }
+
+#else /* TARGET_I386 */
+
+    err = windbg_rw_context_ex(cs, pd->m64_extra, PACKET_MAX_SIZE - M64_SIZE,
+                               addr, len, true);
+
+#endif /* TARGET_I386 */
+
+    if (err) {
+        len = 0;
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+    } else {
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    }
+
+    stl_p(&mem->ActualBytesRead, len);
+    pd->size = M64_SIZE + len;
+}
+
+void kd_api_write_control_space(CPUState *cs, PacketData *pd)
+{
+    DBGKD_WRITE_MEMORY64 *mem = &pd->m64.u.WriteMemory;
+    target_ulong addr = ldtul_p(&mem->TargetBaseAddress);
+    uint32_t len = MIN(ldl_p(&mem->TransferCount), pd->size - M64_SIZE);
+    int err = 0;
+
+#ifdef TARGET_X86_64
+
+    if (addr == AMD64_DEBUG_CONTROL_SPACE_KSPECIAL) {
+        len = MIN(len, sizeof(CPU_KSPECIAL_REGISTERS));
+        err = windbg_write_ks_regs(cs, pd->m64_extra,
+                                   PACKET_MAX_SIZE - M64_SIZE, 0, len);
+    } else {
+        err = 1;
+    }
+
+#else /* TARGET_I386 */
+
+    err = windbg_rw_context_ex(cs, pd->m64_extra, PACKET_MAX_SIZE - M64_SIZE,
+                               addr, len, false);
+
+#endif /* TARGET_I386 */
+
+    if (err) {
+        len = 0;
+        pd->m64.ReturnStatus = NT_STATUS_UNSUCCESSFUL;
+    } else {
+        pd->m64.ReturnStatus = NT_STATUS_SUCCESS;
+    }
+
+    stl_p(&mem->ActualBytesWritten, len);
+    pd->size = M64_SIZE + 0;
+}
+
 void kd_api_get_context_ex(CPUState *cs, PacketData *pd)
 {
     DBGKD_CONTEXT_EX *ctx = &pd->m64.u.ContextEx;

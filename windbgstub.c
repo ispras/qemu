@@ -176,6 +176,14 @@ static void windbg_process_manipulate_packet(WindbgState *state)
         kd_api_set_context(cs, data);
         break;
 
+    case DbgKdReadControlSpaceApi:
+        kd_api_read_control_space(cs, data);
+        break;
+
+    case DbgKdWriteControlSpaceApi:
+        kd_api_write_control_space(cs, data);
+        break;
+
     case DbgKdGetContextExApi:
         kd_api_get_context_ex(cs, data);
         break;
