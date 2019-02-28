@@ -767,11 +767,134 @@ static int fun_name(CPUState *cs, uint8_t *buf, int buf_size,                  \
     return 0;                                                                  \
 }
 
+#define GEN_WINDBG_KSPEC_REGS_RW(fun_name, is_read)                            \
+static int fun_name(CPUState *cs, uint8_t *buf, int buf_size,                  \
+                    int offset, int len)                                       \
+{                                                                              \
+    X86CPU *cpu = X86_CPU(cs);                                                 \
+    CPUX86State *env = &cpu->env;                                              \
+    uint32_t f_size = 0;                                                       \
+                                                                               \
+    if (len < 0 || len > buf_size) {                                           \
+        WINDBG_ERROR("" #fun_name ": incorrect length %d", len);               \
+        return 1;                                                              \
+    }                                                                          \
+                                                                               \
+    if (offset < 0 || offset + len > sizeof(CPU_KSPECIAL_REGISTERS)) {         \
+        WINDBG_ERROR("" #fun_name ": incorrect offset %d", f_size);            \
+        return 2;                                                              \
+    }                                                                          \
+                                                                               \
+    len = MIN(len, sizeof(CPU_KSPECIAL_REGISTERS) - offset);                   \
+                                                                               \
+    while (offset < len) {                                                     \
+        switch (offset) {                                                      \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Cr0, f_size, {                      \
+            RW_CR(buf, cs, 0, is_read);                                        \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Cr2, f_size, {                      \
+            if (is_read) {                                                     \
+                env->cr[2] = (int32_t) ldtul_p(buf);                           \
+            } else {                                                           \
+                sttul_p(buf, (target_ulong) env->cr[2]);                       \
+            }                                                                  \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Cr3, f_size, {                      \
+            RW_CR(buf, cs, 3, is_read);                                        \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Cr4, f_size, {                      \
+            RW_CR(buf, cs, 4, is_read);                                        \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, KernelDr0, f_size, {                \
+            RW_DR(buf, cs, 0, is_read);                                        \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, KernelDr1, f_size, {                \
+            RW_DR(buf, cs, 1, is_read);                                        \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, KernelDr2, f_size, {                \
+            RW_DR(buf, cs, 2, is_read);                                        \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, KernelDr3, f_size, {                \
+            RW_DR(buf, cs, 3, is_read);                                        \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, KernelDr6, f_size, {                \
+            RW_DR(buf, cs, 6, is_read);                                        \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, KernelDr7, f_size, {                \
+            RW_DR(buf, cs, 7, is_read);                                        \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Gdtr.Pad, f_size, {});              \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Gdtr.Limit, f_size, {               \
+            rwuw_p(buf, env->gdt.limit, is_read);                              \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Gdtr.Base, f_size, {                \
+            rwtul_p(buf, env->gdt.base, is_read);                              \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Idtr.Pad, f_size, {});              \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Idtr.Limit, f_size, {               \
+            rwuw_p(buf, env->idt.limit, is_read);                              \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Idtr.Base, f_size, {                \
+            rwtul_p(buf, env->idt.base, is_read);                              \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Tr, f_size, {                       \
+            rwuw_p(buf, env->tr.selector, is_read);                            \
+        });                                                                    \
+        CASE_FIELD(CPU_KSPECIAL_REGISTERS, Ldtr, f_size, {                     \
+            rwuw_p(buf, env->tr.selector, is_read);                            \
+        });                                                                    \
+        CASE_FIELD_X32(CPU_KSPECIAL_REGISTERS, Reserved, f_size, {});          \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, MxCsr, f_size, {                \
+            rwl_p(buf, env->mxcsr, is_read);                                   \
+        });                                                                    \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, DebugControl, f_size, {});      \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, LastBranchToRip, f_size, {});   \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, LastBranchFromRip, f_size, {}); \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, LastExceptionToRip, f_size, {});\
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, LastExceptionFromRip, f_size, { \
+        });                                                                    \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, Cr8, f_size, {});               \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, MsrGsBase, f_size, {            \
+            rwtul_p(buf, env->segs[R_GS].base, is_read);                       \
+        });                                                                    \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, MsrGsSwap, f_size, {            \
+            rwtul_p(buf, env->kernelgsbase, is_read);                          \
+        });                                                                    \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, MsrStar, f_size, {              \
+            rwtul_p(buf, env->star, is_read);                                  \
+        });                                                                    \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, MsrLStar, f_size, {             \
+            rwtul_p(buf, env->lstar, is_read);                                 \
+        });                                                                    \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, MsrCStar, f_size, {             \
+            rwtul_p(buf, env->cstar, is_read);                                 \
+        });                                                                    \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, MsrSyscallMask, f_size, {       \
+            /* NOTE: Unimplemented in qemu: msr MSR_SFMASK */                  \
+        });                                                                    \
+        CASE_FIELD_X64(CPU_KSPECIAL_REGISTERS, Xcr0, f_size, {                 \
+            rwtul_p(buf, env->xcr0, is_read);                                  \
+        });                                                                    \
+        default:                                                               \
+            f_size = 1;                                                        \
+        }                                                                      \
+        offset += f_size;                                                      \
+        buf += f_size;                                                         \
+    }                                                                          \
+    return 0;                                                                  \
+}
+
 __attribute__ ((unused)) /* unused yet */
 GEN_WINDBG_CONTEXT_RW(windbg_read_context, false)
 
 __attribute__ ((unused)) /* unused yet */
 GEN_WINDBG_CONTEXT_RW(windbg_write_context, true)
+
+__attribute__ ((unused)) /* unused yet */
+GEN_WINDBG_KSPEC_REGS_RW(windbg_read_ks_regs, false)
+
+__attribute__ ((unused)) /* unused yet */
+GEN_WINDBG_KSPEC_REGS_RW(windbg_write_ks_regs, true)
 
 static bool find_KPCR(CPUState *cs)
 {
