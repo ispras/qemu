@@ -221,6 +221,10 @@ static void windbg_process_manipulate_packet(WindbgState *state)
         kd_api_write_physical_memory(cs, data);
         break;
 
+    case DbgKdGetVersionApi:
+        kd_api_get_version(cs, data);
+        break;
+
     case DbgKdClearAllInternalBreakpointsApi:
         kd_api_clear_all_internal_breakpoints(cs, data);
         return;
