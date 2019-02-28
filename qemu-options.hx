@@ -3311,6 +3311,14 @@ Shorthand for -gdb tcp::1234, i.e. open a gdbserver on TCP port 1234
 (@pxref{gdb_usage}).
 ETEXI
 
+DEF("windbg", HAS_ARG, QEMU_OPTION_windbg, \
+    "-windbg         wait for windbg connection\n", QEMU_ARCH_I386)
+STEXI
+@item -windbg
+@findex -windbg
+Wait for windbg connection.
+ETEXI
+
 DEF("d", HAS_ARG, QEMU_OPTION_d, \
     "-d item1,...    enable logging of specified items (use '-d help' for a list of log items)\n",
     QEMU_ARCH_ALL)
