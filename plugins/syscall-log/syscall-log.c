@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "plugins.h"
+#include "regnum.h"
 
 bool plugin_init(const char *args)
 {
@@ -34,7 +35,7 @@ void plugin_before_insn(uint64_t pc, void *cpu)
     qemulib_read_memory(cpu, pc + 1, &code, 1);
     /* Read EAX. There should be a header with register ids
        or a function for reading the register by the name */
-    qemulib_read_register(cpu, (uint8_t*)&reg, 0);
+    qemulib_read_register(cpu, (uint8_t*)&reg, I386_EAX_REGNUM);
     /* log system calls */
     if (code == 0x34) {
         qemulib_log("sysenter %x\n", reg);
