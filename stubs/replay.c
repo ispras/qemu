@@ -80,3 +80,8 @@ void replay_mutex_lock(void)
 void replay_mutex_unlock(void)
 {
 }
+
+bool replay_reverse_step(void)
+{
+    return false;
+}
