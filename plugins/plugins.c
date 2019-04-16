@@ -13,6 +13,8 @@
 typedef bool (*PluginInitFunc)(const char *);
 typedef bool (*PluginNeedsBeforeInsnFunc)(uint64_t, void *);
 typedef void (*PluginBeforeInsnFunc)(uint64_t, void *);
+typedef bool (*PluginNeedsBeforeTBFunc)(uint64_t, void *);
+typedef void (*PluginBeforeTBFunc)(uint64_t, void *);
 
 typedef struct QemuPluginInfo {
     const char *filename;
@@ -22,6 +24,8 @@ typedef struct QemuPluginInfo {
     PluginInitFunc init;
     PluginNeedsBeforeInsnFunc needs_before_insn;
     PluginBeforeInsnFunc before_insn;
+    PluginNeedsBeforeTBFunc needs_before_tb;
+    PluginBeforeTBFunc before_tb;
 
     QLIST_ENTRY(QemuPluginInfo) next;
 } QemuPluginInfo;
@@ -79,6 +83,10 @@ void qemu_plugin_load(const char *filename, const char *args)
         (gpointer *)&info->needs_before_insn);
     g_module_symbol(g_module, "plugin_before_insn",
         (gpointer *)&info->before_insn);
+    g_module_symbol(g_module, "plugin_needs_before_tb",
+        (gpointer *)&info->needs_before_tb);
+    g_module_symbol(g_module, "plugin_before_tb",
+        (gpointer *)&info->before_tb);
 
     QLIST_INSERT_HEAD(&qemu_plugins, info, next);
 
@@ -105,6 +113,38 @@ void plugins_instrument_before_insn(target_ulong pc, CPUState *cpu)
     gen_helper_before_insn(t_pc, t_cpu);
     tcg_temp_free(t_pc);
     tcg_temp_free_ptr(t_cpu);
+}
+
+void plugins_instrument_tb_start(target_ulong pc, CPUState *cpu)
+{
+    bool needs = false;
+    QemuPluginInfo *info;
+    QLIST_FOREACH(info, &qemu_plugins, next) {
+        if (info->needs_before_tb && info->needs_before_tb(pc, cpu)) {
+            needs = true;
+            break;
+        }
+    }
+    if (needs) {
+        TCGv t_pc = tcg_const_tl(pc);
+        TCGv_ptr t_cpu = tcg_const_ptr(cpu);
+        /* We will dispatch plugins' callbacks in our own helper below */
+        gen_helper_before_tb(t_pc, t_cpu);
+        tcg_temp_free(t_pc);
+        tcg_temp_free_ptr(t_cpu);
+    }
+}
+
+void helper_before_tb(target_ulong pc, void *cpu)
+{
+    QemuPluginInfo *info;
+    QLIST_FOREACH(info, &qemu_plugins, next) {
+        if (info->needs_before_tb && info->needs_before_tb(pc, cpu)) {
+            if (info->before_tb) {
+                info->before_tb(pc, cpu);
+            }
+        }
+    }
 }
 
 void helper_before_insn(target_ulong pc, void *cpu)

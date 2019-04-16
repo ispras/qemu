@@ -68,6 +68,7 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
     gen_tb_start(db->tb);
     ops->tb_start(db, cpu);
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
+    plugins_instrument_tb_start(db->pc_first, cpu);
 
     while (true) {
         db->num_insns++;

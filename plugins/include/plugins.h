@@ -8,6 +8,8 @@
 bool plugin_init(const char *args);
 bool plugin_needs_before_insn(uint64_t pc, void *cpu);
 void plugin_before_insn(uint64_t pc, void *cpu);
+bool plugin_needs_before_tb(uint64_t pc, void *cpu);
+void plugin_before_tb(uint64_t pc, void *cpu);
 
 /* QEMU interface */
 
