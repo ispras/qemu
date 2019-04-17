@@ -56,6 +56,9 @@ static const int gpr_map32[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
 #define IDX_NB_MXCSR    1
 /*
  *          total ----> 8+1+1+9+6+16+8+1=50 or 16+1+1+9+6+16+16+1=66
+ *                plus unmentioned ZMM
+ *                plus non-standard registers (like CS BASE)
+ *          total 73
  */
 
 #define IDX_IP_REG      CPU_NB_REGS
@@ -79,6 +82,8 @@ static const int gpr_map32[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
 #define GDB_FORCE_64 0
 #endif
 
+/* Non-standard extensions */
+#define IDX_CS_BASE     72
 
 int x86_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
 {
@@ -231,6 +236,11 @@ int x86_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
                 return gdb_get_reg64(mem_buf, env->efer);
             }
             return gdb_get_reg32(mem_buf, env->efer);
+        case IDX_CS_BASE:
+            if ((env->hflags & HF_CS64_MASK) || GDB_FORCE_64) {
+                return gdb_get_reg64(mem_buf, env->segs[R_CS].base);
+            }
+            return gdb_get_reg32(mem_buf, env->segs[R_CS].base);
         }
     }
     return 0;
@@ -436,6 +446,14 @@ int x86_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
                 return 8;
             }
             cpu_load_efer(env, ldl_p(mem_buf));
+            return 4;
+
+        case IDX_CS_BASE:
+            if (env->hflags & HF_CS64_MASK) {
+                env->segs[R_CS].base = ldq_p(mem_buf);
+                return 8;
+            }
+            env->segs[R_CS].base = ldl_p(mem_buf);
             return 4;
 
         }
