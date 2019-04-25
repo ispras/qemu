@@ -37,6 +37,9 @@ static GSList *replay_blockers;
 /* Replay breakpoints */
 uint64_t replay_break_icount = -1ULL;
 QEMUTimer *replay_break_timer;
+int replay_period = -1;
+QEMUTimer *replay_snapshot_timer;
+VMChangeStateEntry *replay_change_state_entry;
 
 bool replay_next_event_is(int event)
 {
@@ -345,6 +348,15 @@ void replay_configure(QemuOpts *opts)
     }
 
     replay_snapshot = g_strdup(qemu_opt_get(opts, "rrsnapshot"));
+
+    replay_period = qemu_opt_get_number(opts, "rrperiod", -1);
+    if (replay_period > 0) {
+        if (!replay_snapshot) {
+            error_report("rrperiod option must be used with rrsnapshot option");
+            exit(1);
+        }
+    }
+
     replay_vmstate_register();
     replay_enable(fname, mode);
 
@@ -397,6 +409,17 @@ void replay_finish(void)
     if (replay_filename) {
         g_free(replay_filename);
         replay_filename = NULL;
+    }
+
+    if (replay_change_state_entry) {
+        qemu_del_vm_change_state_handler(replay_change_state_entry);
+        replay_change_state_entry = NULL;
+    }
+
+    if (replay_snapshot_timer) {
+        timer_del(replay_snapshot_timer);
+        timer_free(replay_snapshot_timer);
+        replay_snapshot_timer = NULL;
     }
 
     g_free(replay_snapshot);

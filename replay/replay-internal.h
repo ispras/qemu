@@ -96,6 +96,12 @@ extern FILE *replay_file;
 extern uint64_t replay_break_icount;
 /* Timer for the replay breakpoint callback */
 extern QEMUTimer *replay_break_timer;
+/* Period for automatic snapshotting */
+extern int replay_period;
+/* Timer for creating snapshots */
+extern QEMUTimer *replay_snapshot_timer;
+/* State change callback for snapshot timer */
+extern VMChangeStateEntry *replay_change_state_entry;
 
 void replay_put_byte(uint8_t byte);
 void replay_put_event(uint8_t event);

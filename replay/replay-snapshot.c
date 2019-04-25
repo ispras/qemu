@@ -21,6 +21,8 @@
 #include "migration/vmstate.h"
 #include "migration/snapshot.h"
 
+static uint64_t snapshot_count = 0;
+
 static int replay_pre_save(void *opaque)
 {
     ReplayState *state = opaque;
@@ -47,6 +49,18 @@ static int replay_post_load(void *opaque, int version_id)
     }
 
     return 0;
+}
+
+static void replay_create_snapshot(void *opaque)
+{
+    Error *err = NULL;
+    char *snapshot_name = g_strdup_printf("auto_%" PRId64, snapshot_count);
+    if (save_snapshot(snapshot_name, &err)) {
+        error_report("Could not create periodical snapshot\n");
+    } else {
+        snapshot_count++;
+    }
+    timer_mod_ns(replay_snapshot_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + NANOSECONDS_PER_SECOND * replay_period);
 }
 
 static const VMStateDescription vmstate_replay = {
@@ -76,6 +90,16 @@ void replay_vmstate_register(void)
     vmstate_register(NULL, 0, &vmstate_replay, &replay_state);
 }
 
+static void replay_vm_change_state_handler(void *opaque, int running,
+                                           RunState state)
+{
+    if (running) {
+        timer_mod_ns(replay_snapshot_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + NANOSECONDS_PER_SECOND * replay_period);
+    } else {
+        timer_del(replay_snapshot_timer);
+    }
+}
+
 void replay_vmstate_init(void)
 {
     Error *err = NULL;
@@ -95,6 +119,14 @@ void replay_vmstate_init(void)
             }
         }
     }
+    if (replay_period > 0) {
+        replay_snapshot_timer = timer_new_ns(QEMU_CLOCK_REALTIME,
+            replay_create_snapshot, NULL);
+        timer_mod_ns(replay_snapshot_timer,
+            qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + NANOSECONDS_PER_SECOND * replay_period);
+        replay_change_state_entry = qemu_add_vm_change_state_handler(
+            replay_vm_change_state_handler, NULL);
+    }   
 }
 
 bool replay_can_snapshot(void)
