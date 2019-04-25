@@ -55,6 +55,15 @@ void qemu_plugin_parse_cmd_args(const char *optarg)
         qemu_opt_get(opts, "args"));
 }
 
+static void qemu_plugin_unload(QemuPluginInfo *info)
+{
+    QLIST_REMOVE(info, next);
+    g_module_close(info->g_module);
+    g_free((gpointer)info->filename);
+    g_free((gpointer)info->args);
+    g_free(info);
+}
+
 void qemu_plugin_load(const char *filename, const char *args)
 {
     GModule *g_module;
@@ -162,9 +171,13 @@ void helper_before_insn(target_ulong pc, void *cpu)
 void qemu_plugins_init(void)
 {
     QemuPluginInfo *info;
-    QLIST_FOREACH(info, &qemu_plugins, next) {
+    QemuPluginInfo *next;
+    QLIST_FOREACH_SAFE(info, &qemu_plugins, next, next) {
         if (info->init) {
-            info->init(info->args);
+            if (!info->init(info->args)) {
+                error_report("can't init plugin '%s'", info->filename);
+                qemu_plugin_unload(info);
+            }
         }
     }
 }
