@@ -47,6 +47,7 @@ enum i386_regnum
   I386_PKRU_REGNUM,
   /* Non-gdb registers */
   I386_CS_BASE_REGNUM,
+  I386_SS_BASE_REGNUM,
 };
 
 

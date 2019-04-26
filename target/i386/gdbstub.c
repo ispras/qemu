@@ -84,6 +84,7 @@ static const int gpr_map32[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
 
 /* Non-standard extensions */
 #define IDX_CS_BASE     72
+#define IDX_SS_BASE     73
 
 int x86_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
 {
@@ -241,6 +242,11 @@ int x86_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
                 return gdb_get_reg64(mem_buf, env->segs[R_CS].base);
             }
             return gdb_get_reg32(mem_buf, env->segs[R_CS].base);
+        case IDX_SS_BASE:
+            if ((env->hflags & HF_CS64_MASK) || GDB_FORCE_64) {
+                return gdb_get_reg64(mem_buf, env->segs[R_SS].base);
+            }
+            return gdb_get_reg32(mem_buf, env->segs[R_SS].base);
         }
     }
     return 0;
@@ -454,6 +460,14 @@ int x86_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
                 return 8;
             }
             env->segs[R_CS].base = ldl_p(mem_buf);
+            return 4;
+
+        case IDX_SS_BASE:
+            if (env->hflags & HF_CS64_MASK) {
+                env->segs[R_SS].base = ldq_p(mem_buf);
+                return 8;
+            }
+            env->segs[R_SS].base = ldl_p(mem_buf);
             return 4;
 
         }
