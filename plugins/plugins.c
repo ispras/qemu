@@ -10,6 +10,7 @@
 #include "qemu/option.h"
 #include "monitor/monitor.h"
 #include "qapi/qmp/qdict.h"
+#include "exec/exec-all.h"
 #include <gmodule.h>
 
 typedef bool (*PluginInitFunc)(const char *);
@@ -114,11 +115,14 @@ void monitor_load_plugin(Monitor *mon, const QDict *qdict)
             if (!plugin->init(plugin->args)) {
                 monitor_printf(mon, "Can't initialize the plugin\n");
                 qemu_plugin_unload(plugin);
+                return;
             }
         }
     } else {
         monitor_printf(mon, "Can't load the plugin\n");
+        return;
     }
+    tb_flush(first_cpu);
 }
 
 bool plugins_need_before_insn(target_ulong pc, CPUState *cpu)
