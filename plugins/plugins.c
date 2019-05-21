@@ -8,6 +8,8 @@
 #include "tcg/tcg-op.h"
 #include "qemu/queue.h"
 #include "qemu/option.h"
+#include "monitor/monitor.h"
+#include "qapi/qmp/qdict.h"
 #include <gmodule.h>
 
 typedef bool (*PluginInitFunc)(const char *);
@@ -64,19 +66,19 @@ static void qemu_plugin_unload(QemuPluginInfo *info)
     g_free(info);
 }
 
-void qemu_plugin_load(const char *filename, const char *args)
+QemuPluginInfo *qemu_plugin_load(const char *filename, const char *args)
 {
     GModule *g_module;
     QemuPluginInfo *info = NULL;
     if (!filename) {
         error_report("plugin name was not specified");
-        return;
+        return NULL;
     }
     g_module = g_module_open(filename,
         G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL);
     if (!g_module) {
         error_report("can't load plugin '%s'", filename);
-        return;
+        return NULL;
     }
     info = g_new0(QemuPluginInfo, 1);
     info->filename = g_strdup(filename);
@@ -99,7 +101,24 @@ void qemu_plugin_load(const char *filename, const char *args)
 
     QLIST_INSERT_HEAD(&qemu_plugins, info, next);
 
-    return;
+    return info;
+}
+
+void monitor_load_plugin(Monitor *mon, const QDict *qdict)
+{
+    const char *file = qdict_get_try_str(qdict, "file");
+    const char *args = qdict_get_try_str(qdict, "args");
+    QemuPluginInfo *plugin = qemu_plugin_load(file, args);
+    if (plugin) {
+        if (plugin->init) {
+            if (!plugin->init(plugin->args)) {
+                monitor_printf(mon, "Can't initialize the plugin\n");
+                qemu_plugin_unload(plugin);
+            }
+        }
+    } else {
+        monitor_printf(mon, "Can't load the plugin\n");
+    }
 }
 
 bool plugins_need_before_insn(target_ulong pc, CPUState *cpu)

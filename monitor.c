@@ -52,6 +52,7 @@
 #include "qemu/timer.h"
 #include "sysemu/hw_accel.h"
 #include "qemu/acl.h"
+#include "qemu/plugins.h"
 #include "sysemu/tpm.h"
 #include "qapi/qmp/qdict.h"
 #include "qapi/qmp/qerror.h"

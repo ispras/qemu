@@ -1943,6 +1943,20 @@ icount for the reference may be observed with 'info replay' command.
 ETEXI
 
     {
+        .name       = "load_plugin",
+        .args_type  = "file:s,args:s?",
+        .params     = "file [args]",
+        .help       = "start instrumenting by loading a plugin",
+        .cmd        = monitor_load_plugin,
+    },
+
+STEXI
+@item load_plugin
+@findex load_plugin
+Start instrumenting process by loading new plugin.
+ETEXI
+
+    {
         .name       = "info",
         .args_type  = "item:s?",
         .params     = "[subcommand]",
