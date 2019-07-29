@@ -29,3 +29,8 @@ int qemulib_read_register(void *cpu, uint8_t *mem_buf, int reg)
 
     return 0;
 }
+
+const char *qemulib_get_arch_name(void)
+{
+    return TARGET_NAME;
+}
