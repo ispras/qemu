@@ -1966,6 +1966,25 @@ The command is ignored when there are no replay breakpoints.
 ETEXI
 
     {
+        .name       = "replay_seek",
+        .args_type  = "icount:i",
+        .params     = "icount",
+        .help       = "replay execution to the specified instruction count",
+        .cmd        = hmp_replay_seek,
+    },
+
+STEXI
+@item replay_seek @var{icount}
+@findex replay_seek
+Automatically proceed to the instruction count @var{icount}, when
+replaying the execution. The command automatically loads nearest
+snapshot and replays the execution to find the desired instruction.
+When there is no preceding snapshot or the execution is not replayed,
+then the command fails.
+icount for the reference may be observed with 'info replay' command.
+ETEXI
+
+    {
         .name       = "info",
         .args_type  = "item:s?",
         .params     = "[subcommand]",
