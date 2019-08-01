@@ -50,6 +50,7 @@
 #include "sysemu/kvm.h"
 #include "hw/semihosting/semihost.h"
 #include "exec/exec-all.h"
+#include "sysemu/replay.h"
 
 #ifdef CONFIG_USER_ONLY
 #define GDB_ATTACHED "0"
@@ -371,6 +372,20 @@ typedef struct GDBState {
  */
 static int sstep_flags = SSTEP_ENABLE|SSTEP_NOIRQ|SSTEP_NOTIMER;
 
+/* Retrieves flags for single step mode. */
+static int get_sstep_flags(void)
+{
+    /*
+     * In replay mode all events written into the log should be replayed.
+     * That is why NOIRQ flag is removed in this mode.
+     */
+    if (replay_mode != REPLAY_MODE_NONE) {
+        return SSTEP_ENABLE;
+    } else {
+        return sstep_flags;
+    }
+}
+
 static GDBState *gdbserver_state;
 
 bool gdb_has_xml;
@@ -461,7 +476,7 @@ static int gdb_continue_partial(GDBState *s, char *newstates)
     CPU_FOREACH(cpu) {
         if (newstates[cpu->cpu_index] == 's') {
             trace_gdbstub_op_stepping(cpu->cpu_index);
-            cpu_single_step(cpu, sstep_flags);
+            cpu_single_step(cpu, get_sstep_flags());
         }
     }
     s->running_state = 1;
@@ -480,7 +495,7 @@ static int gdb_continue_partial(GDBState *s, char *newstates)
                 break; /* nothing to do here */
             case 's':
                 trace_gdbstub_op_stepping(cpu->cpu_index);
-                cpu_single_step(cpu, sstep_flags);
+                cpu_single_step(cpu, get_sstep_flags());
                 cpu_resume(cpu);
                 flag = 1;
                 break;
@@ -1842,8 +1857,29 @@ static void handle_step(GdbCmdContext *gdb_ctx, void *user_ctx)
         gdb_set_cpu_pc(gdb_ctx->s, (target_ulong)gdb_ctx->params[0].val_ull);
     }
 
-    cpu_single_step(gdb_ctx->s->c_cpu, sstep_flags);
+    cpu_single_step(gdb_ctx->s->c_cpu, get_sstep_flags());
     gdb_continue(gdb_ctx->s);
+}
+
+static void handle_backward(GdbCmdContext *gdb_ctx, void *user_ctx)
+{
+    if (replay_mode != REPLAY_MODE_PLAY) {
+        put_packet(gdb_ctx->s, "E22");
+    }
+    if (gdb_ctx->num_params == 1) {
+        switch (gdb_ctx->params[0].opcode) {
+        case 's':
+            if (replay_reverse_step()) {
+                gdb_continue(gdb_ctx->s);
+            } else {
+                put_packet(gdb_ctx->s, "E14");
+            }
+            return;
+        }
+    }
+
+    /* Default invalid command */
+    put_packet(gdb_ctx->s, "");
 }
 
 static void handle_v_cont_query(GdbCmdContext *gdb_ctx, void *user_ctx)
@@ -2099,6 +2135,9 @@ static void handle_query_supported(GdbCmdContext *gdb_ctx, void *user_ctx)
     if (cc->gdb_core_xml_file) {
         pstrcat(gdb_ctx->str_buf, sizeof(gdb_ctx->str_buf),
                 ";qXfer:features:read+");
+    }
+    if (replay_mode == REPLAY_MODE_PLAY) {
+        pstrcat(gdb_ctx->str_buf, sizeof(gdb_ctx->str_buf), ";ReverseStep+");
     }
 
     if (gdb_ctx->num_params &&
@@ -2437,6 +2476,17 @@ static int gdb_handle_packet(GDBState *s, const char *line_buf)
                 .schema = "L0"
             };
             cmd_parser = &step_cmd_desc;
+        }
+        break;
+    case 'b':
+        {
+            static const GdbCmdParseEntry backward_cmd_desc = {
+                .handler = handle_backward,
+                .cmd = "b",
+                .cmd_startswith = 1,
+                .schema = "o0"
+            };
+            cmd_parser = &backward_cmd_desc;
         }
         break;
     case 'F':
