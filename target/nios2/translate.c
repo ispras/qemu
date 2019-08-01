@@ -862,9 +862,7 @@ void gen_intermediate_code(CPUState *cs, TranslationBlock *tb, int max_insns)
              !tcg_op_buf_full() &&
              num_insns < max_insns);
 
-    if (tb_cflags(tb) & CF_LAST_IO) {
-        gen_io_end();
-    }
+    /* No need for gen_io_end at the end of the block */
 
     /* Indicate where the next block should start */
     switch (dc->is_jmp) {

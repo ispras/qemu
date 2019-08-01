@@ -1860,7 +1860,7 @@ static void gen_darn(DisasContext *ctx)
             gen_helper_darn64(cpu_gpr[rD(ctx->opcode)]);
         }
         if (tb_cflags(ctx->base.tb) & CF_USE_ICOUNT) {
-            gen_io_end();
+            /* No need for gen_io_end at the end of the block */
             gen_stop_exception(ctx);
         }
     }
@@ -3990,9 +3990,7 @@ static void gen_rfi(DisasContext *ctx)
     gen_update_cfar(ctx, ctx->base.pc_next - 4);
     gen_helper_rfi(cpu_env);
     gen_sync_exception(ctx);
-    if (tb_cflags(ctx->base.tb) & CF_USE_ICOUNT) {
-        gen_io_end();
-    }
+    /* No need for gen_io_end at the end of the block */
 #endif
 }
 
@@ -4010,9 +4008,7 @@ static void gen_rfid(DisasContext *ctx)
     gen_update_cfar(ctx, ctx->base.pc_next - 4);
     gen_helper_rfid(cpu_env);
     gen_sync_exception(ctx);
-    if (tb_cflags(ctx->base.tb) & CF_USE_ICOUNT) {
-        gen_io_end();
-    }
+    /* No need for gen_io_end at the end of the block */
 #endif
 }
 
@@ -4388,9 +4384,7 @@ static void gen_mtmsrd(DisasContext *ctx)
         /* Must stop the translation as machine state (may have) changed */
         /* Note that mtmsr is not always defined as context-synchronizing */
         gen_stop_exception(ctx);
-        if (tb_cflags(ctx->base.tb) & CF_USE_ICOUNT) {
-            gen_io_end();
-        }
+        /* No need for gen_io_end at the end of the block */
     }
 #endif /* !defined(CONFIG_USER_ONLY) */
 }
@@ -4428,9 +4422,7 @@ static void gen_mtmsr(DisasContext *ctx)
         tcg_gen_mov_tl(msr, cpu_gpr[rS(ctx->opcode)]);
 #endif
         gen_helper_store_msr(cpu_env, msr);
-        if (tb_cflags(ctx->base.tb) & CF_USE_ICOUNT) {
-            gen_io_end();
-        }
+        /* No need for gen_io_end at the end of the block */
         tcg_temp_free(msr);
         /* Must stop the translation as machine state (may have) changed */
         /* Note that mtmsr is not always defined as context-synchronizing */

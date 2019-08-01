@@ -885,9 +885,7 @@ static void dec_wcsr(DisasContext *dc)
         }
         gen_helper_wcsr_im(cpu_env, cpu_R[dc->r1]);
         tcg_gen_movi_tl(cpu_pc, dc->pc + 4);
-        if (tb_cflags(dc->tb) & CF_USE_ICOUNT) {
-            gen_io_end();
-        }
+        /* No need for gen_io_end at the end of the block */
         dc->is_jmp = DISAS_UPDATE;
         break;
     case CSR_IP:
@@ -897,9 +895,7 @@ static void dec_wcsr(DisasContext *dc)
         }
         gen_helper_wcsr_ip(cpu_env, cpu_R[dc->r1]);
         tcg_gen_movi_tl(cpu_pc, dc->pc + 4);
-        if (tb_cflags(dc->tb) & CF_USE_ICOUNT) {
-            gen_io_end();
-        }
+        /* No need for gen_io_end at the end of the block */
         dc->is_jmp = DISAS_UPDATE;
         break;
     case CSR_ICC:
@@ -1111,9 +1107,7 @@ void gen_intermediate_code(CPUState *cs, TranslationBlock *tb, int max_insns)
          && (dc->pc - page_start < TARGET_PAGE_SIZE)
          && num_insns < max_insns);
 
-    if (tb_cflags(tb) & CF_LAST_IO) {
-        gen_io_end();
-    }
+    /* No need for gen_io_end at the end of the block */
 
     if (unlikely(cs->singlestep_enabled)) {
         if (dc->is_jmp == DISAS_NEXT) {
