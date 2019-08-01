@@ -1875,6 +1875,13 @@ static void handle_backward(GdbCmdContext *gdb_ctx, void *user_ctx)
                 put_packet(gdb_ctx->s, "E14");
             }
             return;
+        case 'c':
+            if (replay_reverse_continue()) {
+                gdb_continue(gdb_ctx->s);
+            } else {
+                put_packet(gdb_ctx->s, "E14");
+            }
+            return;
         }
     }
 
@@ -2137,7 +2144,8 @@ static void handle_query_supported(GdbCmdContext *gdb_ctx, void *user_ctx)
                 ";qXfer:features:read+");
     }
     if (replay_mode == REPLAY_MODE_PLAY) {
-        pstrcat(gdb_ctx->str_buf, sizeof(gdb_ctx->str_buf), ";ReverseStep+");
+        pstrcat(gdb_ctx->str_buf, sizeof(gdb_ctx->str_buf),
+            ";ReverseStep+;ReverseContinue+");
     }
 
     if (gdb_ctx->num_params &&
