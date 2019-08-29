@@ -37,6 +37,12 @@ int aarch64_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
         return gdb_get_reg64(mem_buf, env->pc);
     case 33:
         return gdb_get_reg32(mem_buf, pstate_read(env));
+    case 86 ... 89:
+        return gdb_get_reg64(mem_buf, env->sp_el[n - 86]);
+    case 90:
+        return gdb_get_reg64(mem_buf, env->cp15.ttbr0_el[1]);
+    case 91:
+        return gdb_get_reg64(mem_buf, env->cp15.ttbr1_el[1]);
     }
     /* Unknown register.  */
     return 0;
