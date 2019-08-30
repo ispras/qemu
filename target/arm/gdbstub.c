@@ -21,6 +21,7 @@
 #include "qemu-common.h"
 #include "cpu.h"
 #include "exec/gdbstub.h"
+#include "internals.h"
 
 typedef struct RegisterSysregXmlParam {
     CPUState *cs;
@@ -37,6 +38,7 @@ int arm_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
+    int mode = env->uncached_cpsr & CPSR_M;
 
     if (n < 16) {
         /* Core integer register.  */
@@ -60,6 +62,14 @@ int arm_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
     case 25:
         /* CPSR */
         return gdb_get_reg32(mem_buf, cpsr_read(env));
+    case 91:
+        return mode == ARM_CPU_MODE_USR || mode == ARM_CPU_MODE_SYS
+            ? gdb_get_reg32(mem_buf, env->regs[13])
+            : gdb_get_reg32(mem_buf, env->banked_r13[BANK_USRSYS]);
+    case 92:
+        return gdb_get_reg64(mem_buf, env->cp15.ttbr0_el[1]);
+    case 93:
+        return gdb_get_reg64(mem_buf, env->cp15.ttbr1_el[1]);
     }
     /* Unknown register.  */
     return 0;
