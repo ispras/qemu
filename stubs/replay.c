@@ -88,3 +88,8 @@ int replay_read_random(void *buf, size_t len)
 {
     return 0;
 }
+
+bool replay_reverse_step(void)
+{
+    return false;
+}
