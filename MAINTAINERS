@@ -2572,6 +2572,7 @@ F: docs/replay.txt
 F: stubs/replay.c
 F: tests/acceptance/replay_kernel.py
 F: tests/acceptance/replay_linux.py
+F: qapi/replay.json
 
 IOVA Tree
 M: Peter Xu <peterx@redhat.com>
