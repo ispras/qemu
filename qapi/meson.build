@@ -36,6 +36,7 @@ qapi_all_modules = [
   'qdev',
   'qom',
   'rdma',
+  'replay',
   'rocker',
   'run-state',
   'sockets',
