@@ -23,6 +23,7 @@
 #include "hw/core/cpu.h"
 #include "sysemu/cpus.h"
 #include "qemu/lockable.h"
+#include "sysemu/replay.h"
 
 static QemuMutex qemu_cpu_list_lock;
 static QemuCond exclusive_cond;
@@ -136,7 +137,13 @@ void do_run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data,
 {
     struct qemu_work_item wi;
 
-    if (qemu_cpu_is_self(cpu)) {
+    if (qemu_cpu_is_self(cpu)
+        /*
+         * vCPU thread is waiting when replay mutex is locked
+         * and the task is not exclusive, the function may be called
+         * without other synchronization.
+         */
+        || (replay_mode != REPLAY_MODE_NONE && replay_mutex_locked())) {
         func(cpu, data);
         return;
     }

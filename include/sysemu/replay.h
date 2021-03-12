@@ -62,6 +62,7 @@ extern char *replay_snapshot;
 
 void replay_mutex_lock(void);
 void replay_mutex_unlock(void);
+bool replay_mutex_locked(void);
 
 /* Replay process control functions */
 

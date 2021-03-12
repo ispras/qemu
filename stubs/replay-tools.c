@@ -48,6 +48,11 @@ void replay_mutex_unlock(void)
 {
 }
 
+bool replay_mutex_locked(void)
+{
+    return false;
+}
+
 void replay_register_char_driver(Chardev *chr)
 {
 }
