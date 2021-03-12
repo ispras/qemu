@@ -126,6 +126,7 @@ void replay_add_event(ReplayAsyncEventKind event_kind,
 
     g_assert(replay_mutex_locked());
     QTAILQ_INSERT_TAIL(&events_list, event, events);
+    qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
 }
 
 void replay_bh_schedule_event(QEMUBH *bh)
