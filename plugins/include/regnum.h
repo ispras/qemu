@@ -104,7 +104,9 @@ enum amd64_regnum
   AMD64_ZMM31H_REGNUM = AMD64_ZMM0H_REGNUM + 31,
   AMD64_PKRU_REGNUM,
   AMD64_FSBASE_REGNUM,
-  AMD64_GSBASE_REGNUM
+  AMD64_GSBASE_REGNUM,
+  /* Non-gdb registers */
+  AMD64_TR_BASE_REGNUM,
 };
 
 enum arm_regnum {

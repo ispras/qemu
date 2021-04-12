@@ -85,7 +85,11 @@ static const int gpr_map32[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
 /* Non-standard extensions */
 #define IDX_CS_BASE     72
 #define IDX_SS_BASE     73
-#define IDX_TR_BASE     74
+#ifdef TARGET_X86_64
+#define IDX_TR_BASE   154
+#else
+#define IDX_TR_BASE   74
+#endif
 
 int x86_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
 {
